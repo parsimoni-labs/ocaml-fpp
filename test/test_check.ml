@@ -115,7 +115,8 @@ let test_sm_multiple_initial () =
     }
   |}
 
-let test_sm_empty_ok () = expect_no_errors {| state machine M { } |}
+let test_sm_empty_error () =
+  expect_error ~substr:"no initial transition" {| state machine M { } |}
 
 let test_state_no_initial () =
   expect_error ~substr:"has substates but no initial transition"
@@ -351,7 +352,7 @@ let unit_tests =
     Alcotest.test_case "no_dup_ok" `Quick test_no_dup_ok;
     Alcotest.test_case "sm_no_initial" `Quick test_sm_no_initial;
     Alcotest.test_case "sm_multiple_initial" `Quick test_sm_multiple_initial;
-    Alcotest.test_case "sm_empty_ok" `Quick test_sm_empty_ok;
+    Alcotest.test_case "sm_empty_error" `Quick test_sm_empty_error;
     Alcotest.test_case "state_no_initial" `Quick test_state_no_initial;
     Alcotest.test_case "state_multiple_initial" `Quick
       test_state_multiple_initial;

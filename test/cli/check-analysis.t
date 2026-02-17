@@ -20,9 +20,11 @@ Duplicate action name
   > EOF
   $ ofpp check dup_action.fpp
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
+  ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
   
   ✗ 1/1 file failed
   [1]
+
 
 
 Missing initial transition
@@ -37,6 +39,7 @@ Missing initial transition
   
   ✗ 1/1 file failed
   [1]
+
 
 
 Multiple initial transitions
@@ -55,6 +58,7 @@ Multiple initial transitions
   [1]
 
 
+
 Undefined action reference
   $ cat > undef_action.fpp <<EOF
   > state machine M {
@@ -67,6 +71,7 @@ Undefined action reference
   
   ✗ 1/1 file failed
   [1]
+
 
 
 Undefined guard reference
@@ -82,6 +87,7 @@ Undefined guard reference
   
   ✗ 1/1 file failed
   [1]
+
 
 
 Unreachable state
@@ -100,6 +106,7 @@ Unreachable state
   [1]
 
 
+
 Choice cycle
   $ cat > cycle.fpp <<EOF
   > state machine M {
@@ -115,6 +122,7 @@ Choice cycle
   
   ✗ 1/1 file failed
   [1]
+
 
 
 Duplicate signal transition
@@ -135,6 +143,7 @@ Duplicate signal transition
   [1]
 
 
+
 External state machine (no body) passes
   $ cat > external.fpp <<EOF
   > state machine M
@@ -142,19 +151,26 @@ External state machine (no body) passes
   $ ofpp check external.fpp
   ✓ external.fpp
 
-Empty state machine body passes
+Empty state machine body requires initial
   $ cat > empty.fpp <<EOF
   > state machine M { }
   > EOF
   $ ofpp check empty.fpp
-  ✓ empty.fpp
+  ✗ empty.fpp:1:14: error in SM 'M': state machine has no initial transition
+  
+  ✗ 1/1 file failed
+  [1]
+
+
 
 Mix of valid and failing files
   $ ofpp check ok.fpp dup_action.fpp external.fpp
   ✓ ok.fpp
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
+  ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
   ✓ external.fpp
   
   ✗ 1/3 files failed
   [1]
+
 
