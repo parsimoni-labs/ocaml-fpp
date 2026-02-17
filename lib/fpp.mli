@@ -17,6 +17,7 @@
     ]} *)
 
 module Ast = Ast
+module Check = Check
 
 (** {1 Parse Errors} *)
 

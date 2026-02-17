@@ -16,18 +16,30 @@ let check ~verbose files =
     (fun file ->
       match Fpp.parse_file file with
       | tu ->
-          incr ok;
-          if verbose then
-            let comps = Fpp.components tu in
-            let sms = Fpp.state_machines tu in
-            let topos = Fpp.topologies tu in
-            Fmt.pr "%a %s (%d component%s, %d state machine%s, %d topology)@."
-              pp_ok () file (List.length comps)
-              (if List.length comps <> 1 then "s" else "")
-              (List.length sms)
-              (if List.length sms <> 1 then "s" else "")
-              (List.length topos)
-          else Fmt.pr "%a %s@." pp_ok () file
+          let diags = Fpp.Check.run tu in
+          let errors =
+            List.filter
+              (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
+              diags
+          in
+          if errors <> [] then (
+            incr fail;
+            List.iter
+              (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
+              errors)
+          else (
+            incr ok;
+            if verbose then
+              let comps = Fpp.components tu in
+              let sms = Fpp.state_machines tu in
+              let topos = Fpp.topologies tu in
+              Fmt.pr "%a %s (%d component%s, %d state machine%s, %d topology)@."
+                pp_ok () file (List.length comps)
+                (if List.length comps <> 1 then "s" else "")
+                (List.length sms)
+                (if List.length sms <> 1 then "s" else "")
+                (List.length topos)
+            else Fmt.pr "%a %s@." pp_ok () file)
       | exception Fpp.Parse_error e ->
           incr fail;
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e)
@@ -59,7 +71,11 @@ let check_cmd =
       ~man:
         [
           `S "DESCRIPTION";
-          `P "Parse one or more FPP files and report any syntax errors.";
+          `P
+            "Parse one or more FPP files and report any syntax or semantic \
+             errors. Runs static analysis on state machines to detect \
+             duplicate names, missing initial transitions, undefined \
+             references, unreachable states, and choice cycles.";
           `S "EXAMPLES";
           `P "$(iname) Components/**/*.fpp";
         ]

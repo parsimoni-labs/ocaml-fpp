@@ -26,18 +26,18 @@ kind of issue static analysis should catch.
 
 Based on the upstream test suite at `fpp/compiler/tools/fpp-check/test/state_machine/`:
 
-- [ ] **Transition graph reachability** -- every state and choice must be
+- [x] **Transition graph reachability** -- every state and choice must be
       reachable from the initial node
-- [ ] **Choice cycle detection** -- no cycles in the choice-only subgraph
+- [x] **Choice cycle detection** -- no cycles in the choice-only subgraph
       (deadlock prevention)
-- [ ] **Initial transition validation** -- exactly one initial transition per
+- [x] **Initial transition validation** -- exactly one initial transition per
       SM and per parent state with substates
-- [ ] **Name redefinition detection** -- duplicate state/choice/action/guard/
+- [x] **Name redefinition detection** -- duplicate state/choice/action/guard/
       signal/constant names
-- [ ] **Signal use validation** -- at most one transition per signal per state
+- [x] **Signal use validation** -- at most one transition per signal per state
 - [ ] **Typed element checking** -- type compatibility for signals, actions,
       and guards flowing through choices (widening rules for numeric types)
-- [ ] **Undefined reference detection** -- undefined actions, choices, guards,
+- [x] **Undefined reference detection** -- undefined actions, choices, guards,
       signals, states, constants
 - [ ] **Non-determinism detection** -- multiple transitions on same signal
       from same state, overlapping guards
