@@ -35,11 +35,11 @@ let check ~verbose files =
   if !fail > 0 then (
     Fmt.pr "@.%a %d/%d file%s failed@." pp_err () !fail (!ok + !fail)
       (if !ok + !fail <> 1 then "s" else "");
-    `Error (false, ""))
+    1)
   else (
     if List.length files > 1 then
       Fmt.pr "@.%a %d file%s ok@." pp_ok () !ok (if !ok <> 1 then "s" else "");
-    `Ok ())
+    0)
 
 let verbose_t =
   Arg.(value & flag & info [ "v"; "verbose" ] ~doc:"Show detailed output.")
@@ -51,7 +51,7 @@ let files_t =
 
 let check_term =
   let check verbose files = check ~verbose files in
-  Term.(ret (const check $ verbose_t $ files_t))
+  Term.(const check $ verbose_t $ files_t)
 
 let check_cmd =
   let info =
@@ -85,4 +85,8 @@ let main_cmd =
   in
   Cmd.group info [ check_cmd ]
 
-let () = exit (Cmd.eval main_cmd)
+let () =
+  match Cmd.eval_value main_cmd with
+  | Ok (`Ok exit_code) -> exit exit_code
+  | Ok `Help | Ok `Version -> exit 0
+  | Error _ -> exit 1

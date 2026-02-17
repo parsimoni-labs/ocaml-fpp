@@ -13,7 +13,7 @@
 (maintainers "Thomas Gazagnaire")
 
 (source
- (github nasa/fpp-ocaml))
+ (github parsimoni-labs/ocaml-fpp))
 
 (package
  (name fpp)
