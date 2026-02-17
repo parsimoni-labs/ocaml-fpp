@@ -28,4 +28,5 @@
   menhirLib
   cmdliner
   logs
-  (alcotest :with-test)))
+  (alcotest :with-test)
+  (memtrace :with-test)))

@@ -35,8 +35,10 @@ Based on the upstream test suite at `fpp/compiler/tools/fpp-check/test/state_mac
 - [x] **Name redefinition detection** -- duplicate state/choice/action/guard/
       signal/constant names
 - [x] **Signal use validation** -- at most one transition per signal per state
-- [ ] **Typed element checking** -- type compatibility for signals, actions,
+- [x] **Typed element checking** -- type compatibility for signals, actions,
       and guards flowing through choices (widening rules for numeric types)
+- [x] **Signal coverage analysis** (warning) -- detect unhandled signals in
+      leaf states, accounting for inherited handlers from ancestor states
 - [x] **Undefined reference detection** -- undefined actions, choices, guards,
       signals, states, constants
 - [ ] **Non-determinism detection** -- multiple transitions on same signal

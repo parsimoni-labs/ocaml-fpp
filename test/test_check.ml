@@ -41,6 +41,8 @@ let expect_no_errors s =
       (String.concat "; "
          (List.map (fun (d : Fpp.Check.diagnostic) -> d.msg) errs))
 
+(* ---- Unit tests (ofpp-specific, not from upstream) ---- *)
+
 (* --- 1. Name redefinition --- *)
 
 let test_dup_action () =
@@ -115,7 +117,7 @@ let test_sm_multiple_initial () =
     }
   |}
 
-let test_sm_empty_error () =
+let test_sm_empty_ok () =
   expect_error ~substr:"no initial transition" {| state machine M { } |}
 
 let test_state_no_initial () =
@@ -341,6 +343,79 @@ let test_cycle_ok () =
 
 let test_external_sm () = expect_no_errors {| state machine M |}
 
+(* --- 7. Signal coverage --- *)
+
+let warnings s =
+  diags s
+  |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+
+let expect_warning ~substr s =
+  let ws = warnings s in
+  if
+    not
+      (List.exists
+         (fun (d : Fpp.Check.diagnostic) -> msg_contains ~substr d.msg)
+         ws)
+  then
+    Alcotest.failf "expected warning containing %S, got: [%s]" substr
+      (String.concat "; "
+         (List.map (fun (d : Fpp.Check.diagnostic) -> d.msg) ws))
+
+let expect_no_warnings s =
+  let ws = warnings s in
+  if ws <> [] then
+    Alcotest.failf "expected no warnings, got: [%s]"
+      (String.concat "; "
+         (List.map (fun (d : Fpp.Check.diagnostic) -> d.msg) ws))
+
+let test_signal_coverage_gap () =
+  expect_warning ~substr:"signal 's2' not handled in state 'S'"
+    {|
+    state machine M {
+      signal s1
+      signal s2
+      initial enter S
+      state S { on s1 enter S }
+    }
+  |}
+
+let test_signal_coverage_inherited () =
+  expect_no_warnings
+    {|
+    state machine M {
+      signal s1
+      initial enter S
+      state S {
+        on s1 enter S
+        initial enter T
+        state T
+      }
+    }
+  |}
+
+let test_signal_coverage_full () =
+  expect_no_warnings
+    {|
+    state machine M {
+      signal s1
+      signal s2
+      initial enter S
+      state S {
+        on s1 enter S
+        on s2 enter S
+      }
+    }
+  |}
+
+let test_signal_coverage_no_signals () =
+  expect_no_warnings
+    {|
+    state machine M {
+      initial enter S
+      state S
+    }
+  |}
+
 let unit_tests =
   [
     Alcotest.test_case "dup_action" `Quick test_dup_action;
@@ -352,7 +427,7 @@ let unit_tests =
     Alcotest.test_case "no_dup_ok" `Quick test_no_dup_ok;
     Alcotest.test_case "sm_no_initial" `Quick test_sm_no_initial;
     Alcotest.test_case "sm_multiple_initial" `Quick test_sm_multiple_initial;
-    Alcotest.test_case "sm_empty_error" `Quick test_sm_empty_error;
+    Alcotest.test_case "sm_empty_ok" `Quick test_sm_empty_ok;
     Alcotest.test_case "state_no_initial" `Quick test_state_no_initial;
     Alcotest.test_case "state_multiple_initial" `Quick
       test_state_multiple_initial;
@@ -373,6 +448,12 @@ let unit_tests =
     Alcotest.test_case "choice_cycle" `Quick test_choice_cycle;
     Alcotest.test_case "cycle_ok" `Quick test_cycle_ok;
     Alcotest.test_case "external_sm" `Quick test_external_sm;
+    Alcotest.test_case "signal_coverage_gap" `Quick test_signal_coverage_gap;
+    Alcotest.test_case "signal_coverage_inherited" `Quick
+      test_signal_coverage_inherited;
+    Alcotest.test_case "signal_coverage_full" `Quick test_signal_coverage_full;
+    Alcotest.test_case "signal_coverage_no_signals" `Quick
+      test_signal_coverage_no_signals;
   ]
 
 (* --- Upstream state machine check tests --- *)

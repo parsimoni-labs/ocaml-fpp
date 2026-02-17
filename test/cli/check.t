@@ -52,12 +52,12 @@ Verbose output with a component
 
 Missing file
   $ ofpp check nonexistent.fpp 2>&1
-  Usage: ofpp check [--help] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--verbose] [--warn] [OPTION]… FILE…
   ofpp: FILE… arguments: no nonexistent.fpp file or directory
   [1]
 
 No arguments
   $ ofpp check 2>&1
-  Usage: ofpp check [--help] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--verbose] [--warn] [OPTION]… FILE…
   ofpp: required argument FILE is missing
   [1]

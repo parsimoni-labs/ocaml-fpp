@@ -17,6 +17,7 @@ depends: [
   "cmdliner"
   "logs"
   "alcotest" {with-test}
+  "memtrace" {with-test}
   "odoc" {with-doc}
 ]
 build: [

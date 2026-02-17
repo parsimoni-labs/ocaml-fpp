@@ -13,10 +13,12 @@ let pp_diagnostic ppf d =
     d.sm_name d.msg
 
 let error ~sm_name loc msg = { severity = `Error; loc; sm_name; msg }
+let warning ~sm_name loc msg = { severity = `Warning; loc; sm_name; msg }
 
 (* --- 1. Name redefinition detection --- *)
 
 module SMap = Map.Make (String)
+module SSet = Set.Make (String)
 
 type name_kind = Action | Guard | Signal | State | Choice | Constant | Type
 
@@ -203,82 +205,75 @@ let empty_env =
     type_aliases = SMap.empty;
   }
 
+let add_enum_constants env (e : Ast.def_enum) =
+  List.fold_left
+    (fun m ann ->
+      let (c : Ast.def_enum_constant) = (Ast.unannotate ann).Ast.data in
+      SMap.add c.enum_const_name.data c.enum_const_name.loc m)
+    env.constants e.enum_constants
+
+let env_add_sm_member env = function
+  | Ast.Sm_def_action a ->
+      {
+        env with
+        actions = SMap.add a.action_name.data a.action_name.loc env.actions;
+        action_types =
+          SMap.add a.action_name.data a.action_type env.action_types;
+      }
+  | Ast.Sm_def_guard g ->
+      {
+        env with
+        guards = SMap.add g.guard_name.data g.guard_name.loc env.guards;
+        guard_types = SMap.add g.guard_name.data g.guard_type env.guard_types;
+      }
+  | Ast.Sm_def_signal s ->
+      {
+        env with
+        signals = SMap.add s.signal_name.data s.signal_name.loc env.signals;
+        signal_types =
+          SMap.add s.signal_name.data s.signal_type env.signal_types;
+      }
+  | Ast.Sm_def_state s ->
+      {
+        env with
+        states = SMap.add s.state_name.data s.state_name.loc env.states;
+      }
+  | Ast.Sm_def_choice c ->
+      {
+        env with
+        choices = SMap.add c.choice_name.data c.choice_name.loc env.choices;
+      }
+  | Ast.Sm_def_constant c ->
+      {
+        env with
+        constants = SMap.add c.const_name.data c.const_name.loc env.constants;
+      }
+  | Ast.Sm_def_abs_type t ->
+      { env with types = SMap.add t.abs_name.data t.abs_name.loc env.types }
+  | Ast.Sm_def_alias_type t ->
+      {
+        env with
+        types = SMap.add t.alias_name.data t.alias_name.loc env.types;
+        type_aliases = SMap.add t.alias_name.data t.alias_type env.type_aliases;
+      }
+  | Ast.Sm_def_array a ->
+      { env with types = SMap.add a.array_name.data a.array_name.loc env.types }
+  | Ast.Sm_def_enum e ->
+      {
+        env with
+        types = SMap.add e.enum_name.data e.enum_name.loc env.types;
+        constants = add_enum_constants env e;
+      }
+  | Ast.Sm_def_struct s ->
+      {
+        env with
+        types = SMap.add s.struct_name.data s.struct_name.loc env.types;
+      }
+  | _ -> env
+
 let build_sm_env members =
   List.fold_left
-    (fun env ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Sm_def_action a ->
-          {
-            env with
-            actions = SMap.add a.action_name.data a.action_name.loc env.actions;
-            action_types =
-              SMap.add a.action_name.data a.action_type env.action_types;
-          }
-      | Ast.Sm_def_guard g ->
-          {
-            env with
-            guards = SMap.add g.guard_name.data g.guard_name.loc env.guards;
-            guard_types =
-              SMap.add g.guard_name.data g.guard_type env.guard_types;
-          }
-      | Ast.Sm_def_signal s ->
-          {
-            env with
-            signals = SMap.add s.signal_name.data s.signal_name.loc env.signals;
-            signal_types =
-              SMap.add s.signal_name.data s.signal_type env.signal_types;
-          }
-      | Ast.Sm_def_state s ->
-          {
-            env with
-            states = SMap.add s.state_name.data s.state_name.loc env.states;
-          }
-      | Ast.Sm_def_choice c ->
-          {
-            env with
-            choices = SMap.add c.choice_name.data c.choice_name.loc env.choices;
-          }
-      | Ast.Sm_def_constant c ->
-          {
-            env with
-            constants =
-              SMap.add c.const_name.data c.const_name.loc env.constants;
-          }
-      | Ast.Sm_def_abs_type t ->
-          { env with types = SMap.add t.abs_name.data t.abs_name.loc env.types }
-      | Ast.Sm_def_alias_type t ->
-          {
-            env with
-            types = SMap.add t.alias_name.data t.alias_name.loc env.types;
-            type_aliases =
-              SMap.add t.alias_name.data t.alias_type env.type_aliases;
-          }
-      | Ast.Sm_def_array a ->
-          {
-            env with
-            types = SMap.add a.array_name.data a.array_name.loc env.types;
-          }
-      | Ast.Sm_def_enum e ->
-          let consts =
-            List.fold_left
-              (fun m ann ->
-                let (c : Ast.def_enum_constant) =
-                  (Ast.unannotate ann).Ast.data
-                in
-                SMap.add c.enum_const_name.data c.enum_const_name.loc m)
-              env.constants e.enum_constants
-          in
-          {
-            env with
-            types = SMap.add e.enum_name.data e.enum_name.loc env.types;
-            constants = consts;
-          }
-      | Ast.Sm_def_struct s ->
-          {
-            env with
-            types = SMap.add s.struct_name.data s.struct_name.loc env.types;
-          }
-      | _ -> env)
+    (fun env ann -> env_add_sm_member env (Ast.unannotate ann).Ast.data)
     empty_env members
 
 let build_state_env (st : Ast.def_state) parent_env =
@@ -1004,13 +999,9 @@ let widen_types (a : Ast.type_name) (b : Ast.type_name) =
     | Cat_float wa, Cat_float wb -> if wa >= wb then Some a else Some b
     | _ -> None
 
-(** Determine the context type of a choice by collecting incoming types. *)
-let compute_choice_types ~sm_name env members =
-  let choice_map = build_choice_map members in
-  (* Map: choice name -> list of incoming type_name option *)
-  let incoming : (string, Ast.type_name option list) Hashtbl.t =
-    Hashtbl.create 16
-  in
+(** Collect incoming types flowing into each choice from transitions. *)
+let collect_incoming_types env choice_map incoming members =
+  let is_choice name = Hashtbl.mem choice_map name in
   let add_incoming choice_name opt_type =
     let prev =
       match Hashtbl.find_opt incoming choice_name with
@@ -1019,21 +1010,15 @@ let compute_choice_types ~sm_name env members =
     in
     Hashtbl.replace incoming choice_name (opt_type :: prev)
   in
-  let is_choice name = Hashtbl.mem choice_map name in
-  (* Walk transitions to find what types flow into each choice. *)
-  let visit_target opt_type (qi : Ast.qual_ident Ast.node) =
-    let name = target_name qi in
+  let visit_trans opt_type (te : Ast.transition_expr) =
+    let name = target_name te.trans_target in
     if is_choice name then add_incoming name opt_type
   in
-  let visit_trans_expr opt_type (te : Ast.transition_expr) =
-    visit_target opt_type te.trans_target
-  in
-  (* First pass: collect incoming types from initials and signal transitions. *)
   let rec from_sm ms =
     List.iter
       (fun ann ->
         match (Ast.unannotate ann).Ast.data with
-        | Ast.Sm_initial te -> visit_trans_expr None te.data
+        | Ast.Sm_initial te -> visit_trans None te.data
         | Ast.Sm_def_state st -> from_state st
         | _ -> ())
       ms
@@ -1041,7 +1026,7 @@ let compute_choice_types ~sm_name env members =
     List.iter
       (fun ann ->
         match (Ast.unannotate ann).Ast.data with
-        | Ast.State_initial te -> visit_trans_expr None te.data
+        | Ast.State_initial te -> visit_trans None te.data
         | Ast.State_transition tr -> (
             let sig_type =
               match SMap.find_opt tr.st_signal.data env.signal_types with
@@ -1049,16 +1034,37 @@ let compute_choice_types ~sm_name env members =
               | None -> None
             in
             match tr.st_action with
-            | Ast.Transition te -> visit_trans_expr sig_type te.data
+            | Ast.Transition te -> visit_trans sig_type te.data
             | Ast.Do _ -> ())
         | Ast.State_def_state sub -> from_state sub
         | _ -> ())
       st.state_members
   in
-  from_sm members;
-  (* Second pass: propagate through choice chains. A choice that targets
-     another choice forwards its resolved type. We iterate until stable. *)
+  from_sm members
+
+(** Join a list of optional types via widening. *)
+let join_types types =
+  List.fold_left
+    (fun acc t ->
+      match (acc, t) with
+      | None, t -> t
+      | t, None -> t
+      | Some a, Some b -> (
+          match widen_types a b with Some w -> Some w | None -> acc))
+    None types
+
+(** Propagate types through choice chains until stable. *)
+let propagate_choice_types choice_map incoming =
   let resolved : (string, Ast.type_name option) Hashtbl.t = Hashtbl.create 16 in
+  let is_choice name = Hashtbl.mem choice_map name in
+  let add_incoming choice_name opt_type =
+    let prev =
+      match Hashtbl.find_opt incoming choice_name with
+      | Some l -> l
+      | None -> []
+    in
+    Hashtbl.replace incoming choice_name (opt_type :: prev)
+  in
   let changed = ref true in
   while !changed do
     changed := false;
@@ -1067,25 +1073,15 @@ let compute_choice_types ~sm_name env members =
         let direct =
           match Hashtbl.find_opt incoming name with Some ts -> ts | None -> []
         in
-        let joined =
-          List.fold_left
-            (fun acc t ->
-              match (acc, t) with
-              | None, t -> t
-              | t, None -> t
-              | Some a, Some b -> (
-                  match widen_types a b with Some w -> Some w | None -> acc))
-            None direct
-        in
+        let joined = join_types direct in
         let prev =
           match Hashtbl.find_opt resolved name with Some t -> t | None -> None
         in
         if joined <> prev then (
           Hashtbl.replace resolved name joined;
           changed := true;
-          (* Propagate to downstream choices. *)
           match Hashtbl.find_opt choice_map name with
-          | Some c ->
+          | Some (c : Ast.def_choice) ->
               List.iter
                 (fun cm ->
                   let te =
@@ -1099,7 +1095,10 @@ let compute_choice_types ~sm_name env members =
           | None -> ()))
       choice_map
   done;
-  (* Check for incompatible types at each choice. *)
+  resolved
+
+(** Check for incompatible types at each choice. *)
+let type_compatibility ~sm_name choice_map incoming =
   let diags = ref [] in
   Hashtbl.iter
     (fun name types ->
@@ -1114,7 +1113,7 @@ let compute_choice_types ~sm_name env members =
               | None ->
                   let loc =
                     match Hashtbl.find_opt choice_map name with
-                    | Some c -> c.choice_name.loc
+                    | Some (c : Ast.def_choice) -> c.choice_name.loc
                     | None -> Ast.dummy_loc
                   in
                   diags :=
@@ -1126,7 +1125,18 @@ let compute_choice_types ~sm_name env members =
                     :: !diags)
             rest)
     incoming;
-  (resolved, !diags)
+  !diags
+
+(** Determine the context type of a choice by collecting incoming types. *)
+let compute_choice_types ~sm_name env members =
+  let choice_map = build_choice_map members in
+  let incoming : (string, Ast.type_name option list) Hashtbl.t =
+    Hashtbl.create 16
+  in
+  collect_incoming_types env choice_map incoming members;
+  let resolved = propagate_choice_types choice_map incoming in
+  let diags = type_compatibility ~sm_name choice_map incoming in
+  (resolved, diags)
 
 (** Check typed actions in an untyped or typed context. *)
 let verify_action_type ~sm_name env ~context_type loc
@@ -1261,6 +1271,64 @@ let typed_element_checks ~sm_name env members =
   in
   choice_diags @ from_sm members
 
+(* --- 13. Signal coverage --- *)
+
+let state_direct_signals (st : Ast.def_state) =
+  List.fold_left
+    (fun acc ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.State_transition tr -> SSet.add tr.st_signal.data acc
+      | _ -> acc)
+    SSet.empty st.state_members
+
+let state_has_substates (st : Ast.def_state) =
+  List.exists
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.State_def_state _ -> true
+      | _ -> false)
+    st.state_members
+
+let missing_signal_warnings ~sm_name all_signals covered (st : Ast.def_state) =
+  let missing = SSet.diff all_signals covered in
+  SSet.elements missing
+  |> List.map (fun sig_name ->
+      warning ~sm_name st.state_name.loc
+        (Fmt.str "signal '%s' not handled in state '%s'" sig_name
+           st.state_name.data))
+
+let collect_substates (st : Ast.def_state) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.State_def_state sub -> Some sub
+      | _ -> None)
+    st.state_members
+
+let collect_sm_states members =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Sm_def_state st -> Some st
+      | _ -> None)
+    members
+
+let signal_coverage ~sm_name env members =
+  let all_signals =
+    SMap.fold (fun name _ acc -> SSet.add name acc) env.signals SSet.empty
+  in
+  if SSet.is_empty all_signals then []
+  else
+    let rec walk_state ~inherited (st : Ast.def_state) =
+      let covered = SSet.union inherited (state_direct_signals st) in
+      if state_has_substates st then
+        List.concat_map (walk_state ~inherited:covered) (collect_substates st)
+      else missing_signal_warnings ~sm_name all_signals covered st
+    in
+    List.concat_map
+      (walk_state ~inherited:SSet.empty)
+      (collect_sm_states members)
+
 (* --- Main entry points --- *)
 
 let state_machine (sm : Ast.def_state_machine) =
@@ -1309,9 +1377,10 @@ let state_machine (sm : Ast.def_state_machine) =
             members
       in
       let typed = typed_element_checks ~sm_name env members in
+      let coverage = signal_coverage ~sm_name env members in
       dup_names @ state_dup_names @ initial @ state_initial @ undef
       @ dup_signals @ reachability @ cycles @ undef_types @ undef_consts
-      @ defaults @ formats @ scope @ typed
+      @ defaults @ formats @ scope @ typed @ coverage
 
 let rec collect_state_machines members =
   List.concat_map

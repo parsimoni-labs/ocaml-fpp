@@ -174,3 +174,47 @@ Mix of valid and failing files
   [1]
 
 
+
+
+Signal coverage warnings
+  $ cat > coverage.fpp <<EOF
+  > state machine M {
+  >   signal s1
+  >   signal s2
+  >   initial enter S
+  >   state S { on s1 enter T }
+  >   state T
+  > }
+  > EOF
+  $ ofpp check --warn coverage.fpp
+  ⚠ coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
+  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
+  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ✓ coverage.fpp
+
+Signal coverage without --warn flag shows no warnings
+  $ ofpp check coverage.fpp
+  ✓ coverage.fpp
+
+Signal coverage with inherited handlers
+  $ cat > inherited.fpp <<EOF
+  > state machine M {
+  >   signal s1
+  >   initial enter P
+  >   state P {
+  >     on s1 enter P
+  >     initial enter C
+  >     state C
+  >   }
+  > }
+  > EOF
+  $ ofpp check --warn inherited.fpp
+  ✓ inherited.fpp
+
+Signal coverage warnings don't affect exit code
+  $ ofpp check --warn coverage.fpp; echo "exit=$?"
+  ⚠ coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
+  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
+  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ✓ coverage.fpp
+  exit=0
