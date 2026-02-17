@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name ofpp)
+ (package fpp)
+ (libraries fpp cmdliner fmt))

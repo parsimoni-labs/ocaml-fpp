@@ -1,0 +1,10 @@
+(library
+ (name fpp)
+ (public_name fpp)
+ (libraries fmt menhirLib))
+
+(ocamllex lexer)
+
+(menhir
+ (modules parser)
+ (flags --table))
