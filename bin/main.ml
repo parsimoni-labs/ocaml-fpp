@@ -68,7 +68,7 @@ let check_cmd =
 
 (* --- main --- *)
 
-let main_cmd =
+let cmd =
   let info =
     Cmd.info "ofpp" ~version:"%%VERSION%%"
       ~doc:"Static analysis and test generation for F Prime FPP models."
@@ -86,7 +86,7 @@ let main_cmd =
   Cmd.group info [ check_cmd ]
 
 let () =
-  match Cmd.eval_value main_cmd with
+  match Cmd.eval_value cmd with
   | Ok (`Ok exit_code) -> exit exit_code
   | Ok `Help | Ok `Version -> exit 0
   | Error _ -> exit 1

@@ -1,7 +1,4 @@
-(** Tests for {!Fpp.Ast}.
+(** Tests for {!Fpp.Ast}. *)
 
-    Verifies AST construction, location tracking, and qualified identifier
-    utilities. *)
-
-val suite : unit Alcotest.test list
-(** [suite] is the Alcotest test suite for the FPP abstract syntax tree. *)
+val suite : string * unit Alcotest.test_case list
+(** [suite] is the Alcotest test suite for {!Fpp.Ast}. *)

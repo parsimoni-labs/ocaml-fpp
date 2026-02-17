@@ -1,4 +1,4 @@
-(** Tests for FPP parser. *)
+(** Tests for {!Fpp}. *)
 
 let test_string ?filename content () =
   match Fpp.parse_string ?filename content with
@@ -129,14 +129,14 @@ let expected_failures =
 let is_expected_failure path =
   List.exists (fun suffix -> String.ends_with ~suffix path) expected_failures
 
-let rec find_fpp_files dir prefix =
+let rec fpp_files dir prefix =
   if not (Sys.file_exists dir && Sys.is_directory dir) then []
   else
     Sys.readdir dir |> Array.to_list |> List.sort String.compare
     |> List.concat_map (fun name ->
         let path = Filename.concat dir name in
         let rel = if prefix = "" then name else Filename.concat prefix name in
-        if Sys.is_directory path then find_fpp_files path rel
+        if Sys.is_directory path then fpp_files path rel
         else if Filename.check_suffix name ".fpp" then [ (rel, path) ]
         else [])
 
@@ -157,39 +157,34 @@ let test_upstream_file (rel_path, abs_path) () =
           msg
 
 let suite =
-  [
-    ( "basic",
-      [
-        Alcotest.test_case "empty" `Quick test_empty;
-        Alcotest.test_case "constant" `Quick test_constant;
-        Alcotest.test_case "module" `Quick test_module;
-        Alcotest.test_case "enum" `Quick test_enum;
-        Alcotest.test_case "struct" `Quick test_struct;
-        Alcotest.test_case "array" `Quick test_array;
-        Alcotest.test_case "port" `Quick test_port;
-        Alcotest.test_case "annotations" `Quick test_annotations;
-        Alcotest.test_case "multiline_string" `Quick test_multiline_string;
-      ] );
-    ( "components",
-      [
-        Alcotest.test_case "passive" `Quick test_passive_component;
-        Alcotest.test_case "active" `Quick test_active_component;
-        Alcotest.test_case "queued" `Quick test_queued_component;
-        Alcotest.test_case "with_ports" `Quick test_component_with_ports;
-        Alcotest.test_case "with_commands" `Quick test_component_with_commands;
-        Alcotest.test_case "with_telemetry" `Quick test_component_with_telemetry;
-        Alcotest.test_case "with_events" `Quick test_component_with_events;
-        Alcotest.test_case "with_params" `Quick test_component_with_params;
-      ] );
-    ( "topology",
-      [
-        Alcotest.test_case "instance" `Quick test_instance;
-        Alcotest.test_case "topology" `Quick test_topology;
-        Alcotest.test_case "connections" `Quick test_connections;
-      ] );
-    ( "upstream",
-      List.map
+  ( "fpp",
+    [
+      Alcotest.test_case "empty" `Quick test_empty;
+      Alcotest.test_case "constant" `Quick test_constant;
+      Alcotest.test_case "module" `Quick test_module;
+      Alcotest.test_case "enum" `Quick test_enum;
+      Alcotest.test_case "struct" `Quick test_struct;
+      Alcotest.test_case "array" `Quick test_array;
+      Alcotest.test_case "port" `Quick test_port;
+      Alcotest.test_case "passive_component" `Quick test_passive_component;
+      Alcotest.test_case "active_component" `Quick test_active_component;
+      Alcotest.test_case "queued_component" `Quick test_queued_component;
+      Alcotest.test_case "component_with_ports" `Quick test_component_with_ports;
+      Alcotest.test_case "component_with_commands" `Quick
+        test_component_with_commands;
+      Alcotest.test_case "component_with_telemetry" `Quick
+        test_component_with_telemetry;
+      Alcotest.test_case "component_with_events" `Quick
+        test_component_with_events;
+      Alcotest.test_case "component_with_params" `Quick
+        test_component_with_params;
+      Alcotest.test_case "instance" `Quick test_instance;
+      Alcotest.test_case "topology" `Quick test_topology;
+      Alcotest.test_case "connections" `Quick test_connections;
+      Alcotest.test_case "annotations" `Quick test_annotations;
+      Alcotest.test_case "multiline_string" `Quick test_multiline_string;
+    ]
+    @ List.map
         (fun ((rel, _) as entry) ->
           Alcotest.test_case rel `Quick (test_upstream_file entry))
-        (find_fpp_files upstream_dir "") );
-  ]
+        (fpp_files upstream_dir "") )

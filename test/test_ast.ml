@@ -1,4 +1,4 @@
-(** Tests for Fpp.Ast module. *)
+(** Tests for {!Fpp.Ast}. *)
 
 open Fpp
 
@@ -25,11 +25,9 @@ let test_annotate () =
   Alcotest.(check int) "value" 42 (Ast.unannotate x)
 
 let suite =
-  [
-    ( "qual_ident",
-      [
-        Alcotest.test_case "to_string" `Quick test_qual_ident_to_string;
-        Alcotest.test_case "roundtrip" `Quick test_qual_ident_roundtrip;
-      ] );
-    ("annotate", [ Alcotest.test_case "basic" `Quick test_annotate ]);
-  ]
+  ( "ast",
+    [
+      Alcotest.test_case "qual_ident_to_string" `Quick test_qual_ident_to_string;
+      Alcotest.test_case "qual_ident_roundtrip" `Quick test_qual_ident_roundtrip;
+      Alcotest.test_case "annotate" `Quick test_annotate;
+    ] )

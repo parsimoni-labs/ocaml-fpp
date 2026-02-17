@@ -26,7 +26,7 @@ exception Parse_error of error
 exception Lexer_error of string * Lexing.position
 
 val pp_error : error Fmt.t
-(** [pp_error ppf e] pretty-prints parse error [e] on [ppf]. *)
+(** [pp_error] is a pretty-printer for parse errors. *)
 
 (** {1 Parsing} *)
 
