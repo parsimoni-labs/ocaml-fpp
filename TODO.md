@@ -12,14 +12,17 @@
       post-annotations after commas, `phase` expressions, `locate dictionary
       type`, optional graph targets, `every` throttle, contextual keywords,
       semicolons as whitespace
-
-## In Progress
-
-- [ ] Cram tests for `ofpp check` CLI
+- [x] Cram tests for `ofpp check` CLI
 
 ## Static Analysis (`ofpp check`)
 
 ### State Machine Analysis
+
+**Real-world example**: `fprime-community/fprime-sensors` has an
+`ImuStateMachine` (5 states, 4 signals, 5 actions) where signal coverage
+analysis reveals gaps: `error` is unhandled in RESET, `success` is unhandled
+in RUN, and `reconfigure` is unhandled in 4 of 5 states. This is exactly the
+kind of issue static analysis should catch.
 
 Based on the upstream test suite at `fpp/compiler/tools/fpp-check/test/state_machine/`:
 

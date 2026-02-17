@@ -1,16 +1,10 @@
 (** Tests for FPP parser. *)
 
-let _test_file file () =
-  match Fpp.parse_file file with
-  | _tu -> ()
-  | exception Fpp.Parse_error e -> Alcotest.failf "%a" Fpp.pp_error e
-
 let test_string ?filename content () =
   match Fpp.parse_string ?filename content with
   | _tu -> ()
   | exception Fpp.Parse_error e -> Alcotest.failf "%a" Fpp.pp_error e
 
-(* Basic syntax tests *)
 let test_empty () = test_string "" ()
 let test_constant () = test_string {|constant x = 42|} ()
 let test_module () = test_string {|module M { constant x = 1 }|} ()
@@ -129,26 +123,12 @@ let upstream_dir =
   List.find_opt (fun d -> Sys.file_exists d && Sys.is_directory d) candidates
   |> Option.value ~default:"upstream"
 
-(* Files expected to fail: syntax error tests and known limitations *)
 let expected_failures =
-  [
-    "syntax/illegal-character.fpp";
-    (* intentional lexer error *)
-    "syntax/parse-error.fpp";
-    (* intentional parse error *)
-  ]
+  [ "syntax/illegal-character.fpp"; "syntax/parse-error.fpp" ]
 
 let is_expected_failure path =
-  List.exists
-    (fun suffix ->
-      String.length path >= String.length suffix
-      && String.sub path
-           (String.length path - String.length suffix)
-           (String.length suffix)
-         = suffix)
-    expected_failures
+  List.exists (fun suffix -> String.ends_with ~suffix path) expected_failures
 
-(* Recursively find all .fpp files under a directory *)
 let rec find_fpp_files dir prefix =
   if not (Sys.file_exists dir && Sys.is_directory dir) then []
   else

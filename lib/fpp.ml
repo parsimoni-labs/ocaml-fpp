@@ -1,7 +1,7 @@
-(** FPP Parser - Full FPP language parser using Menhir.
+(** FPP Parser.
 
     This module provides the main entry point for parsing FPP files using the
-    menhir-generated parser. *)
+    Menhir-generated parser. *)
 
 module Ast = Ast
 
@@ -10,47 +10,39 @@ module Ast = Ast
 type error = { msg : string; file : string; line : int; col : int }
 
 exception Parse_error of error
+exception Lexer_error = Lexer.Error
 
 let pp_error ppf e = Fmt.pf ppf "%s:%d:%d: %s" e.file e.line e.col e.msg
 
 (** {1 Parsing} *)
 
-exception Lexer_error = Lexer.Error
+let is_contextual_keyword = function
+  | Parser.ENTRY | Parser.EXIT | Parser.STATE | Parser.ACTION | Parser.GUARD
+  | Parser.SIGNAL | Parser.MACHINE | Parser.PHASE | Parser.FORMAT | Parser.ID
+  | Parser.SIZE | Parser.TIME | Parser.ON | Parser.CHANGE | Parser.HIGH
+  | Parser.LOW | Parser.RED | Parser.ORANGE | Parser.YELLOW | Parser.ALWAYS
+  | Parser.BLOCK | Parser.DROP | Parser.HOOK | Parser.BASE | Parser.CPU
+  | Parser.STACK | Parser.QUEUE | Parser.GROUP | Parser.TEXT | Parser.GET
+  | Parser.SET | Parser.SEND | Parser.RECV | Parser.RESP | Parser.REG
+  | Parser.SAVE | Parser.SECONDS ->
+      true
+  | _ -> false
 
-(* Tokens that can end an expression (value-ending tokens). *)
-let is_value_end = function
+let is_value_end tok =
+  match tok with
   | Parser.INT _ | Parser.FLOAT _ | Parser.STRING _ | Parser.BOOL _
   | Parser.IDENT _ | Parser.PRIM_TYPE _ | Parser.RPAREN | Parser.RBRACKET
   | Parser.RBRACE ->
       true
-  (* Contextual keywords usable as identifiers *)
-  | Parser.ENTRY | Parser.EXIT | Parser.STATE | Parser.ACTION | Parser.GUARD
-  | Parser.SIGNAL | Parser.MACHINE | Parser.PHASE | Parser.FORMAT | Parser.ID
-  | Parser.SIZE | Parser.TIME | Parser.ON | Parser.CHANGE | Parser.HIGH
-  | Parser.LOW | Parser.RED | Parser.ORANGE | Parser.YELLOW | Parser.ALWAYS
-  | Parser.BLOCK | Parser.DROP | Parser.HOOK | Parser.BASE | Parser.CPU
-  | Parser.STACK | Parser.QUEUE | Parser.GROUP | Parser.TEXT | Parser.GET
-  | Parser.SET | Parser.SEND | Parser.RECV | Parser.RESP | Parser.REG
-  | Parser.SAVE | Parser.SECONDS ->
-      true
-  | _ -> false
+  | tok -> is_contextual_keyword tok
 
-(* Tokens that can start an expression (value-starting tokens). *)
-let is_value_start = function
+let is_value_start tok =
+  match tok with
   | Parser.INT _ | Parser.FLOAT _ | Parser.STRING _ | Parser.BOOL _
   | Parser.IDENT _ | Parser.PRIM_TYPE _ | Parser.LPAREN | Parser.LBRACKET
   | Parser.LBRACE | Parser.MINUS ->
       true
-  | Parser.ENTRY | Parser.EXIT | Parser.STATE | Parser.ACTION | Parser.GUARD
-  | Parser.SIGNAL | Parser.MACHINE | Parser.PHASE | Parser.FORMAT | Parser.ID
-  | Parser.SIZE | Parser.TIME | Parser.ON | Parser.CHANGE | Parser.HIGH
-  | Parser.LOW | Parser.RED | Parser.ORANGE | Parser.YELLOW | Parser.ALWAYS
-  | Parser.BLOCK | Parser.DROP | Parser.HOOK | Parser.BASE | Parser.CPU
-  | Parser.STACK | Parser.QUEUE | Parser.GROUP | Parser.TEXT | Parser.GET
-  | Parser.SET | Parser.SEND | Parser.RECV | Parser.RESP | Parser.REG
-  | Parser.SAVE | Parser.SECONDS ->
-      true
-  | _ -> false
+  | tok -> is_contextual_keyword tok
 
 (* Wrap the lexer to insert virtual commas for newline-separated elements
    inside [...] brackets (array literals). When a newline is crossed between
@@ -87,27 +79,19 @@ let newline_aware_lexer base_lexer =
       end
     end
 
+let error_of_pos msg pos =
+  {
+    msg;
+    file = pos.Lexing.pos_fname;
+    line = pos.Lexing.pos_lnum;
+    col = pos.Lexing.pos_cnum - pos.Lexing.pos_bol;
+  }
+
 let parse_lexbuf lexbuf =
   try Parser.translation_unit (newline_aware_lexer Lexer.token) lexbuf with
-  | Lexer.Error (msg, pos) ->
-      raise
-        (Parse_error
-           {
-             msg;
-             file = pos.Lexing.pos_fname;
-             line = pos.Lexing.pos_lnum;
-             col = pos.Lexing.pos_cnum - pos.Lexing.pos_bol;
-           })
+  | Lexer.Error (msg, pos) -> raise (Parse_error (error_of_pos msg pos))
   | Parser.Error ->
-      let pos = lexbuf.Lexing.lex_curr_p in
-      raise
-        (Parse_error
-           {
-             msg = "syntax error";
-             file = pos.Lexing.pos_fname;
-             line = pos.Lexing.pos_lnum;
-             col = pos.Lexing.pos_cnum - pos.Lexing.pos_bol;
-           })
+      raise (Parse_error (error_of_pos "syntax error" lexbuf.Lexing.lex_curr_p))
 
 let parse_string ?(filename = "<string>") content =
   let lexbuf = Lexing.from_string content in
@@ -127,8 +111,19 @@ let parse_file filename =
 
 (** {1 AST Queries} *)
 
-(* Helper to extract data from annotated nodes *)
 let unannotate_node (_, node, _) = node.Ast.data
+
+(* Generic recursive collector over module members. *)
+let rec collect f members =
+  List.concat_map
+    (fun ann ->
+      match f (unannotate_node ann) with
+      | Some x -> [ x ]
+      | None -> (
+          match unannotate_node ann with
+          | Ast.Mod_def_module m -> collect f m.Ast.module_members
+          | _ -> []))
+    members
 
 let modules tu =
   List.filter_map
@@ -138,33 +133,29 @@ let modules tu =
       | _ -> None)
     tu.Ast.tu_members
 
-let rec collect_components members =
+let components tu =
+  collect
+    (function Ast.Mod_def_component c -> Some c | _ -> None)
+    tu.Ast.tu_members
+
+let rec collect_with_ns f ?(ns = []) members =
   List.concat_map
     (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_component c -> [ c ]
-      | Ast.Mod_def_module m -> collect_components m.Ast.module_members
-      | _ -> [])
+      match f ns (unannotate_node ann) with
+      | Some x -> [ x ]
+      | None -> (
+          match unannotate_node ann with
+          | Ast.Mod_def_module m ->
+              let ns = ns @ [ m.Ast.module_name.data ] in
+              collect_with_ns f ~ns m.Ast.module_members
+          | _ -> []))
     members
 
-let components tu = collect_components tu.Ast.tu_members
+let components_with_namespace tu =
+  collect_with_ns
+    (fun ns -> function Ast.Mod_def_component c -> Some (ns, c) | _ -> None)
+    tu.Ast.tu_members
 
-(** Collect components with their parent module namespace (for C++
-    qualification) *)
-let rec collect_components_with_ns ?(ns = []) members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_component c -> [ (ns, c) ]
-      | Ast.Mod_def_module m ->
-          let new_ns = ns @ [ m.Ast.module_name.data ] in
-          collect_components_with_ns ~ns:new_ns m.Ast.module_members
-      | _ -> [])
-    members
-
-let components_with_namespace tu = collect_components_with_ns tu.Ast.tu_members
-
-(** Get the C++ namespace string for a component ("::" separated) *)
 let component_namespace tu comp =
   let pairs = components_with_namespace tu in
   match
@@ -175,21 +166,24 @@ let component_namespace tu comp =
   | Some (ns, _) -> String.concat "::" ns
   | None -> ""
 
-(** Get components with a helpful error if none found. *)
 let require_components tu =
-  match collect_components tu.Ast.tu_members with
+  match components tu with
   | [] ->
-      let hint =
-        "No component definition found. FPP components are defined with:\n\
-        \  active component Name { ... }\n\
-        \  passive component Name { ... }\n\
-        \  queued component Name { ... }\n\
-         Make sure your .fpp file contains a component definition."
-      in
-      raise (Parse_error { msg = hint; file = "<input>"; line = 0; col = 0 })
+      raise
+        (Parse_error
+           {
+             msg =
+               "No component definition found. FPP components are defined with:\n\
+               \  active component Name { ... }\n\
+               \  passive component Name { ... }\n\
+               \  queued component Name { ... }\n\
+                Make sure your .fpp file contains a component definition.";
+             file = "<input>";
+             line = 0;
+             col = 0;
+           })
   | comps -> comps
 
-(** Find component by name, or return the only component if just one. *)
 let component ?name tu =
   let comps = require_components tu in
   match name with
@@ -198,107 +192,72 @@ let component ?name tu =
       | Some c -> c
       | None ->
           let names = List.map (fun c -> c.Ast.comp_name.data) comps in
-          let hint =
-            Fmt.str "Component '%s' not found. Available: %s" n
-              (String.concat ", " names)
-          in
           raise
-            (Parse_error { msg = hint; file = "<input>"; line = 0; col = 0 }))
+            (Parse_error
+               {
+                 msg =
+                   Fmt.str "Component '%s' not found. Available: %s" n
+                     (String.concat ", " names);
+                 file = "<input>";
+                 line = 0;
+                 col = 0;
+               }))
   | None -> (
       match comps with
       | [ c ] -> c
       | _ ->
           let names = List.map (fun c -> c.Ast.comp_name.data) comps in
-          let hint =
-            Fmt.str
-              "Multiple components found: %s.\n\
-               Use --component <name> to specify which one."
-              (String.concat ", " names)
-          in
           raise
-            (Parse_error { msg = hint; file = "<input>"; line = 0; col = 0 }))
+            (Parse_error
+               {
+                 msg =
+                   Fmt.str
+                     "Multiple components found: %s.\n\
+                      Use --component <name> to specify which one."
+                     (String.concat ", " names);
+                 file = "<input>";
+                 line = 0;
+                 col = 0;
+               }))
 
-let rec collect_topologies members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_topology t -> [ t ]
-      | Ast.Mod_def_module m -> collect_topologies m.Ast.module_members
-      | _ -> [])
-    members
+let topologies tu =
+  collect
+    (function Ast.Mod_def_topology t -> Some t | _ -> None)
+    tu.Ast.tu_members
 
-let topologies tu = collect_topologies tu.Ast.tu_members
+let instances tu =
+  collect
+    (function Ast.Mod_def_component_instance i -> Some i | _ -> None)
+    tu.Ast.tu_members
 
-let rec collect_instances members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_component_instance i -> [ i ]
-      | Ast.Mod_def_module m -> collect_instances m.Ast.module_members
-      | _ -> [])
-    members
+let port_defs tu =
+  collect
+    (function Ast.Mod_def_port p -> Some p | _ -> None)
+    tu.Ast.tu_members
 
-let instances tu = collect_instances tu.Ast.tu_members
+let enums tu =
+  collect
+    (function Ast.Mod_def_enum e -> Some e | _ -> None)
+    tu.Ast.tu_members
 
-let rec collect_port_defs members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_port p -> [ p ]
-      | Ast.Mod_def_module m -> collect_port_defs m.Ast.module_members
-      | _ -> [])
-    members
+let structs tu =
+  collect
+    (function Ast.Mod_def_struct s -> Some s | _ -> None)
+    tu.Ast.tu_members
 
-let port_defs tu = collect_port_defs tu.Ast.tu_members
+let constants tu =
+  collect
+    (function Ast.Mod_def_constant c -> Some c | _ -> None)
+    tu.Ast.tu_members
 
-let rec collect_enums members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_enum e -> [ e ]
-      | Ast.Mod_def_module m -> collect_enums m.Ast.module_members
-      | _ -> [])
-    members
-
-let enums tu = collect_enums tu.Ast.tu_members
-
-let rec collect_structs members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_struct s -> [ s ]
-      | Ast.Mod_def_module m -> collect_structs m.Ast.module_members
-      | _ -> [])
-    members
-
-let structs tu = collect_structs tu.Ast.tu_members
-
-let rec collect_constants members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_constant c -> [ c ]
-      | Ast.Mod_def_module m -> collect_constants m.Ast.module_members
-      | _ -> [])
-    members
-
-let constants tu = collect_constants tu.Ast.tu_members
-
-let rec collect_state_machines members =
-  List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Ast.Mod_def_state_machine sm -> [ sm ]
-      | Ast.Mod_def_module m -> collect_state_machines m.Ast.module_members
-      | _ -> [])
-    members
-
-let state_machines tu = collect_state_machines tu.Ast.tu_members
+let state_machines tu =
+  collect
+    (function Ast.Mod_def_state_machine sm -> Some sm | _ -> None)
+    tu.Ast.tu_members
 
 (** {1 AST Helpers} *)
 
-let type_to_string t =
-  match t with
+let type_to_string = function
   | Ast.Type_bool -> "bool"
   | Ast.Type_int i -> (
       match i with
@@ -314,14 +273,12 @@ let type_to_string t =
   | Ast.Type_string _ -> "string"
   | Ast.Type_qual q -> Ast.qual_ident_to_string q.Ast.data
 
-let rec expr_to_int e =
-  match e with
+let rec expr_to_int = function
   | Ast.Expr_literal (Ast.Lit_int s) -> int_of_string_opt s
   | Ast.Expr_paren { data; _ } -> expr_to_int data
   | _ -> None
 
-let rec expr_to_string e =
-  match e with
+let rec expr_to_string = function
   | Ast.Expr_literal (Ast.Lit_int s) -> s
   | Ast.Expr_literal (Ast.Lit_float s) -> s
   | Ast.Expr_literal (Ast.Lit_string s) -> s
@@ -335,66 +292,61 @@ let qual_ident_to_string = Ast.qual_ident_to_string
 
 (** {1 Component Member Extractors} *)
 
-open Ast
+let filter_comp_members f comp =
+  List.filter_map (fun (_, m, _) -> f m.Ast.data) comp.Ast.comp_members
 
 let commands comp =
-  List.filter_map
-    (fun (_, m, _) ->
-      match m.data with Comp_spec_command c -> Some c | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function Ast.Comp_spec_command c -> Some c | _ -> None)
+    comp
 
 let ports comp =
-  List.filter_map
-    (fun (_, m, _) ->
-      match m.data with
-      | Comp_spec_port_instance (Port_general p) -> Some p
-      | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function
+      | Ast.Comp_spec_port_instance (Ast.Port_general p) -> Some p | _ -> None)
+    comp
 
 let events comp =
-  List.filter_map
-    (fun (_, m, _) ->
-      match m.data with Comp_spec_event e -> Some e | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function Ast.Comp_spec_event e -> Some e | _ -> None)
+    comp
 
 let telemetry comp =
-  List.filter_map
-    (fun (_, m, _) ->
-      match m.data with Comp_spec_tlm_channel t -> Some t | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function Ast.Comp_spec_tlm_channel t -> Some t | _ -> None)
+    comp
 
 let params comp =
-  List.filter_map
-    (fun (_, m, _) ->
-      match m.data with Comp_spec_param p -> Some p | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function Ast.Comp_spec_param p -> Some p | _ -> None)
+    comp
 
 let is_input = function
-  | Async_input | Guarded_input | Sync_input -> true
-  | Output -> false
+  | Ast.Async_input | Ast.Guarded_input | Ast.Sync_input -> true
+  | Ast.Output -> false
 
-let is_output = function Output -> true | _ -> false
+let is_output = function Ast.Output -> true | _ -> false
 
-(** Extract enums defined within a component *)
 let component_enums comp =
-  List.filter_map
-    (fun (_, m, _) -> match m.data with Comp_def_enum e -> Some e | _ -> None)
-    comp.comp_members
+  filter_comp_members
+    (function Ast.Comp_def_enum e -> Some e | _ -> None)
+    comp
 
-(** Collect enums from both module level and component level with namespace *)
-let rec collect_enums_with_ns ?(ns = []) members =
+let enums_with_namespace tu =
+  collect_with_ns
+    (fun ns -> function
+      | Ast.Mod_def_enum e -> Some (ns, e)
+      | Ast.Mod_def_component c ->
+          let comp_ns = ns @ [ c.Ast.comp_name.data ] in
+          (* Return first enum if any; the rest are handled by concat_map *)
+          ignore comp_ns;
+          None
+      | _ -> None)
+    tu.Ast.tu_members
+  @
+  (* Also collect enums inside components *)
   List.concat_map
-    (fun ann ->
-      match unannotate_node ann with
-      | Mod_def_enum e -> [ (ns, e) ]
-      | Mod_def_module m ->
-          let new_ns = ns @ [ m.module_name.data ] in
-          collect_enums_with_ns ~ns:new_ns m.module_members
-      | Mod_def_component c ->
-          (* Enums inside components use the component as part of namespace *)
-          let comp_ns = ns @ [ c.comp_name.data ] in
-          List.map (fun e -> (comp_ns, e)) (component_enums c)
-      | _ -> [])
-    members
-
-let enums_with_namespace tu = collect_enums_with_ns tu.tu_members
+    (fun (ns, c) ->
+      let comp_ns = ns @ [ c.Ast.comp_name.data ] in
+      List.map (fun e -> (comp_ns, e)) (component_enums c))
+    (components_with_namespace tu)
