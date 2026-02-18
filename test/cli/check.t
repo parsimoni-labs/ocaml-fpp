@@ -23,6 +23,7 @@ Parse multiple files
   ✓ 2 files ok
 
 
+
 Report syntax errors
   $ cat > bad.fpp <<EOF
   > constant x =
@@ -34,6 +35,7 @@ Report syntax errors
   [1]
 
 
+
 Mix of valid and invalid files
   $ ofpp check hello.fpp bad.fpp
   ✗ bad.fpp:2:0: syntax error
@@ -41,6 +43,7 @@ Mix of valid and invalid files
   
   ✗ 1/2 files failed
   [1]
+
 
 
 Verbose output with a component
@@ -52,12 +55,14 @@ Verbose output with a component
 
 Missing file
   $ ofpp check nonexistent.fpp 2>&1
-  Usage: ofpp check [--help] [--skip=ANALYSIS] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
+         [OPTION]… FILE…
   ofpp: FILE… arguments: no nonexistent.fpp file or directory
   [1]
 
 No arguments
   $ ofpp check 2>&1
-  Usage: ofpp check [--help] [--skip=ANALYSIS] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
+         [OPTION]… FILE…
   ofpp: required argument FILE is missing
   [1]

@@ -11,7 +11,7 @@
     - {b Warning-level analyses} are optional and detect suspicious patterns:
       missing signal handlers, livelock cycles, unused declarations, transition
       shadowing, and potential deadlocks. See {!Check_warn} for details. Each
-      analysis can be individually disabled via {!skip}. *)
+      analysis can be individually controlled via {!make_config}. *)
 
 (** {1 Analysis categories} *)
 
@@ -40,23 +40,58 @@ val all_analyses : analysis list
 (** All optional analyses. *)
 
 val analysis_of_string : string -> analysis option
-(** [analysis_of_string s] parses an analysis name. Returns [None] for
-    unrecognised names. *)
+(** [analysis_of_string s] parses an analysis name or 3-letter abbreviation.
+    Recognises both full names (["coverage"]) and abbreviations (["cov"]).
+    Returns [None] for unrecognised names. *)
+
+val string_of_analysis : analysis -> string
+(** [string_of_analysis a] is the canonical name of [a]. *)
 
 val analyses : string list
 (** Names of all optional analyses, for CLI documentation. *)
 
+(** {1 Severity levels} *)
+
+type level =
+  | Off  (** Analysis disabled. *)
+  | Warning  (** Analysis reports warnings (default). *)
+  | Error  (** Analysis reports errors; warnings promoted to errors. *)
+
+(** {1 Warning and error specs} *)
+
+type directive =
+  | Enable of analysis  (** Enable a single analysis. *)
+  | Disable of analysis  (** Disable a single analysis. *)
+  | Enable_all  (** Enable all analyses. *)
+  | Disable_all  (** Disable all analyses. *)
+
+val parse_spec : string -> (directive list, string) result
+(** [parse_spec s] parses a warning/error specification string. The spec is
+    comma-separated. Each item is optionally prefixed with [+] (enable) or [-]
+    (disable); bare names enable. The special names ["all"] and ["A"] target
+    every analysis. Analysis names and 3-letter abbreviations are accepted.
+
+    Examples: ["A"], ["-cov,-liv"], ["+coverage,-unused"], ["-all,+deadlock"].
+*)
+
 (** {1 Configuration} *)
 
 type config
-(** Analysis configuration controlling which optional analyses run. *)
+(** Analysis configuration controlling which optional analyses run and at what
+    severity level. *)
 
 val default : config
-(** Default configuration: all analyses enabled. *)
+(** Default configuration: all analyses enabled at warning level. *)
 
-val skip : analysis list -> config -> config
-(** [skip analyses config] returns a new configuration with the given analyses
-    disabled. Core checks are unaffected. *)
+val config : warning_spec:directive list -> error_spec:directive list -> config
+(** [config ~warning_spec ~error_spec] builds a configuration from parsed specs.
+    The warning spec controls on/off (default: all on). The error spec promotes
+    enabled analyses to error level (default: none). An analysis disabled by the
+    warning spec cannot be promoted by the error spec. *)
+
+val level_of : config -> analysis -> level
+(** [level_of config analysis] is the effective level of [analysis] in [config].
+*)
 
 (** {1 Diagnostics} *)
 

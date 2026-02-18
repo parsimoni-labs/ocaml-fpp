@@ -77,6 +77,12 @@ let check_file config file =
           (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
           diags
       in
+      let warnings =
+        List.filter
+          (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+          diags
+      in
+      pp_warnings Fmt.stdout warnings;
       if errors <> [] then (
         List.iter
           (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
@@ -87,15 +93,9 @@ let check_file config file =
           components = 0;
           state_machines = 0;
           topologies = 0;
-          warnings = 0;
+          warnings = List.length warnings;
         })
       else
-        let warnings =
-          List.filter
-            (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
-            diags
-        in
-        pp_warnings Fmt.stdout warnings;
         let comps = Fpp.components tu in
         let sms = Fpp.state_machines tu in
         let topos = Fpp.topologies tu in
@@ -168,15 +168,8 @@ let pp_file_result ~verbose r =
       (if r.topologies <> 1 then "ies" else "y")
   else Fmt.pr "%a %s@." pp_ok () r.file
 
-let check ~verbose ~skip files =
-  let config =
-    List.fold_left
-      (fun c name ->
-        match Fpp.Check.analysis_of_string name with
-        | Some a -> Fpp.Check.skip [ a ] c
-        | None -> c)
-      Fpp.Check.default skip
-  in
+let check ~verbose ~warning_spec ~error_spec files =
+  let config = Fpp.Check.config ~warning_spec ~error_spec in
   let results = List.map (check_file config) files in
   let multi = List.length files > 1 in
   if verbose && multi then pp_summary_table Fmt.stdout results
@@ -197,16 +190,42 @@ let check ~verbose ~skip files =
 let verbose_t =
   Arg.(value & flag & info [ "v"; "verbose" ] ~doc:"Show detailed output.")
 
-let skip_t =
-  let analysis_names = Fpp.Check.analyses in
-  let doc =
-    Fmt.str "Skip an analysis. May be repeated. $(docv) is one of %s."
-      (Arg.doc_alts analysis_names)
+let spec_conv =
+  let parse s =
+    match Fpp.Check.parse_spec s with
+    | Ok ds -> Ok ds
+    | Error msg -> Error (`Msg msg)
   in
-  Arg.(
-    value
-    & opt_all (enum (List.map (fun a -> (a, a)) analysis_names)) []
-    & info [ "skip" ] ~doc ~docv:"ANALYSIS")
+  let pp ppf ds =
+    let pp_directive ppf = function
+      | Fpp.Check.Enable a -> Fmt.pf ppf "+%s" (Fpp.Check.string_of_analysis a)
+      | Fpp.Check.Disable a -> Fmt.pf ppf "-%s" (Fpp.Check.string_of_analysis a)
+      | Fpp.Check.Enable_all -> Fmt.string ppf "+all"
+      | Fpp.Check.Disable_all -> Fmt.string ppf "-all"
+    in
+    Fmt.(list ~sep:comma pp_directive) ppf ds
+  in
+  Arg.conv (parse, pp)
+
+let warning_spec_t =
+  let doc =
+    "Warning specification. Comma-separated list of analyses to enable or \
+     disable. Prefix with $(b,-) to disable, $(b,+) or bare name to enable. \
+     Use $(b,all) or $(b,A) for all analyses. Names: $(b,coverage) ($(b,cov)), \
+     $(b,liveness) ($(b,liv)), $(b,unused) ($(b,unu)), $(b,shadowing) \
+     ($(b,sha)), $(b,deadlock) ($(b,dea)), $(b,completeness) ($(b,com))."
+  in
+  let open Arg in
+  value & opt_all spec_conv [] & info [ "w"; "warning" ] ~doc ~docv:"SPEC"
+
+let error_spec_t =
+  let doc =
+    "Error promotion specification. Same syntax as $(b,-w). Promotes enabled \
+     analyses to error level, causing a non-zero exit code when triggered. An \
+     analysis disabled by $(b,-w) cannot be promoted."
+  in
+  let open Arg in
+  value & opt_all spec_conv [] & info [ "e"; "error" ] ~doc ~docv:"SPEC"
 
 let files_t =
   Arg.(
@@ -214,8 +233,12 @@ let files_t =
     & info [] ~docv:"FILE" ~doc:"FPP files to check.")
 
 let check_term =
-  let check verbose skip files = check ~verbose ~skip files in
-  Term.(const check $ verbose_t $ skip_t $ files_t)
+  let check verbose warning_specs error_specs files =
+    let warning_spec = List.concat warning_specs in
+    let error_spec = List.concat error_specs in
+    check ~verbose ~warning_spec ~error_spec files
+  in
+  Term.(const check $ verbose_t $ warning_spec_t $ error_spec_t $ files_t)
 
 let check_cmd =
   let info =
@@ -229,11 +252,23 @@ let check_cmd =
              references, unreachable states, choice cycles, type mismatches) \
              and warnings (signal coverage gaps, liveness issues).";
           `P
-            "All analyses run by default. Use $(b,--skip) to disable specific \
-             warning-level analyses.";
+            "All warning-level analyses run by default. Use $(b,-w) to \
+             selectively enable or disable analyses, and $(b,-e) to promote \
+             warnings to errors.";
           `S "EXAMPLES";
           `P "$(iname) Components/**/*.fpp";
-          `P "$(iname) --skip coverage model.fpp";
+          `P "$(iname) -w -cov model.fpp";
+          `Noblank;
+          `Pre "  Disable the coverage analysis.";
+          `P "$(iname) -e all model.fpp";
+          `Noblank;
+          `Pre "  Promote all warnings to errors.";
+          `P "$(iname) -w -all,+deadlock model.fpp";
+          `Noblank;
+          `Pre "  Only run the deadlock analysis.";
+          `P "$(iname) -e cov,dea -w -sha model.fpp";
+          `Noblank;
+          `Pre "  Promote coverage and deadlock to errors, disable shadowing.";
         ]
   in
   Cmd.v info check_term

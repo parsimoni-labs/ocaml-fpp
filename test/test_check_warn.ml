@@ -315,6 +315,127 @@ let test_guard_nested_with_else () =
     }
   |}
 
+(* ── Warning spec ──────────────────────────────────────────────────── *)
+
+let test_parse_spec_all () =
+  match Fpp.Check.parse_spec "all" with
+  | Ok [ Fpp.Check.Enable_all ] -> ()
+  | _ -> Alcotest.fail "expected Enable_all"
+
+let test_parse_spec_A () =
+  match Fpp.Check.parse_spec "A" with
+  | Ok [ Fpp.Check.Enable_all ] -> ()
+  | _ -> Alcotest.fail "expected Enable_all from 'A'"
+
+let test_parse_spec_disable_all () =
+  match Fpp.Check.parse_spec "-all" with
+  | Ok [ Fpp.Check.Disable_all ] -> ()
+  | _ -> Alcotest.fail "expected Disable_all"
+
+let test_parse_spec_abbreviations () =
+  match Fpp.Check.parse_spec "-cov,+liv" with
+  | Ok [ Fpp.Check.Disable Coverage; Fpp.Check.Enable Liveness ] -> ()
+  | _ -> Alcotest.fail "expected Disable Coverage, Enable Liveness"
+
+let test_parse_spec_bare_names () =
+  match Fpp.Check.parse_spec "deadlock,unused" with
+  | Ok [ Fpp.Check.Enable Deadlock; Fpp.Check.Enable Unused ] -> ()
+  | _ -> Alcotest.fail "expected Enable Deadlock, Enable Unused"
+
+let test_parse_spec_unknown () =
+  match Fpp.Check.parse_spec "bogus" with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "expected error for unknown analysis"
+
+let parse_spec_or_fail s =
+  match Fpp.Check.parse_spec s with
+  | Ok ds -> ds
+  | Error msg -> Alcotest.failf "parse_spec failed: %s" msg
+
+let warnings_with ~warning_spec ~error_spec s =
+  let ws = parse_spec_or_fail warning_spec in
+  let es = parse_spec_or_fail error_spec in
+  diags_with_config ~warning_spec:ws ~error_spec:es s
+  |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+
+let test_config_disable_coverage () =
+  let ws =
+    warnings_with ~warning_spec:"-cov" ~error_spec:""
+      {|
+    state machine M {
+      signal s1
+      signal s2
+      initial enter S
+      state S { on s1 enter S }
+    }
+  |}
+  in
+  let has_coverage =
+    List.exists
+      (fun (d : Fpp.Check.diagnostic) ->
+        msg_contains ~substr:"not handled" d.msg)
+      ws
+  in
+  if has_coverage then Alcotest.fail "coverage should be disabled"
+
+let test_error_promotion () =
+  let ds =
+    let ws = parse_spec_or_fail "" in
+    let es = parse_spec_or_fail "all" in
+    diags_with_config ~warning_spec:ws ~error_spec:es
+      {|
+      state machine M {
+        signal s1
+        signal s2
+        initial enter S
+        state S { on s1 enter S }
+      }
+    |}
+  in
+  let promoted =
+    List.filter
+      (fun (d : Fpp.Check.diagnostic) ->
+        d.severity = `Error && msg_contains ~substr:"not handled" d.msg)
+      ds
+  in
+  if promoted = [] then Alcotest.fail "expected promoted errors for coverage"
+
+let test_disabled_not_promoted () =
+  let config =
+    Fpp.Check.config
+      ~warning_spec:
+        (match Fpp.Check.parse_spec "-cov" with Ok ds -> ds | _ -> [])
+      ~error_spec:
+        (match Fpp.Check.parse_spec "all" with Ok ds -> ds | _ -> [])
+  in
+  let level = Fpp.Check.level_of config Fpp.Check.Coverage in
+  if level <> Fpp.Check.Off then
+    Alcotest.fail "disabled analysis should stay Off even with -e all"
+
+let test_config_only_deadlock () =
+  let config =
+    Fpp.Check.config
+      ~warning_spec:
+        (match Fpp.Check.parse_spec "-all,+deadlock" with
+        | Ok ds -> ds
+        | _ -> [])
+      ~error_spec:[]
+  in
+  List.iter
+    (fun a ->
+      let expected =
+        if a = Fpp.Check.Deadlock then Fpp.Check.Warning else Fpp.Check.Off
+      in
+      let actual = Fpp.Check.level_of config a in
+      if actual <> expected then
+        Alcotest.failf "expected %s for %s"
+          (match expected with
+          | Off -> "Off"
+          | Warning -> "Warning"
+          | Error -> "Error")
+          (Fpp.Check.string_of_analysis a))
+    Fpp.Check.all_analyses
+
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
@@ -354,4 +475,19 @@ let suite =
       Alcotest.test_case "guard_nested_no_else" `Quick test_guard_nested_no_else;
       Alcotest.test_case "guard_nested_with_else" `Quick
         test_guard_nested_with_else;
+      Alcotest.test_case "parse_spec_all" `Quick test_parse_spec_all;
+      Alcotest.test_case "parse_spec_A" `Quick test_parse_spec_A;
+      Alcotest.test_case "parse_spec_disable_all" `Quick
+        test_parse_spec_disable_all;
+      Alcotest.test_case "parse_spec_abbreviations" `Quick
+        test_parse_spec_abbreviations;
+      Alcotest.test_case "parse_spec_bare_names" `Quick
+        test_parse_spec_bare_names;
+      Alcotest.test_case "parse_spec_unknown" `Quick test_parse_spec_unknown;
+      Alcotest.test_case "config_disable_coverage" `Quick
+        test_config_disable_coverage;
+      Alcotest.test_case "error_promotion" `Quick test_error_promotion;
+      Alcotest.test_case "disabled_not_promoted" `Quick
+        test_disabled_not_promoted;
+      Alcotest.test_case "config_only_deadlock" `Quick test_config_only_deadlock;
     ] )

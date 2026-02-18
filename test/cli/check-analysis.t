@@ -20,11 +20,13 @@ Duplicate action name
   > }
   > EOF
   $ ofpp check dup_action.fpp
+  ! dup_action.fpp:3:9: warning in SM 'M': unused action 'a'
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
   ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
   
   ✗ 1/1 file failed
   [1]
+
 
 
 
@@ -40,6 +42,7 @@ Missing initial transition
   
   ✗ 1/1 file failed
   [1]
+
 
 
 
@@ -60,6 +63,7 @@ Multiple initial transitions
 
 
 
+
 Undefined action reference
   $ cat > undef_action.fpp <<EOF
   > state machine M {
@@ -72,6 +76,7 @@ Undefined action reference
   
   ✗ 1/1 file failed
   [1]
+
 
 
 
@@ -91,6 +96,7 @@ Undefined guard reference
 
 
 
+
 Unreachable state
   $ cat > unreachable.fpp <<EOF
   > state machine M {
@@ -101,10 +107,23 @@ Unreachable state
   > }
   > EOF
   $ ofpp check unreachable.fpp
+  ╭───┬─────────────────────┬────┬───────────────────────────────────────────────╮
+  │   │ Location            │ SM │ Warning                                       │
+  ├───┼─────────────────────┼────┼───────────────────────────────────────────────┤
+  │ ! │ unreachable.fpp:4:8 │ M  │ signal 's' not handled in state 'S'           │
+  │ ! │ unreachable.fpp:5:8 │ M  │ signal 's' not handled in state 'T'           │
+  │ ! │ unreachable.fpp:2:9 │ M  │ unused signal 's'                             │
+  │ ! │ unreachable.fpp:4:8 │ M  │ state 'S' has no outgoing transitions         │
+  │   │                     │    │ (potential deadlock)                          │
+  │ ! │ unreachable.fpp:5:8 │ M  │ state 'T' has no outgoing transitions         │
+  │   │                     │    │ (potential deadlock)                          │
+  ╰───┴─────────────────────┴────┴───────────────────────────────────────────────╯
+  
   ✗ unreachable.fpp:5:8: error in SM 'M': unreachable state 'T'
   
   ✗ 1/1 file failed
   [1]
+
 
 
 
@@ -123,6 +142,7 @@ Choice cycle
   
   ✗ 1/1 file failed
   [1]
+
 
 
 
@@ -145,6 +165,7 @@ Duplicate signal transition
 
 
 
+
 External state machine (no body) passes
   $ cat > external.fpp <<EOF
   > state machine M
@@ -164,8 +185,10 @@ Empty state machine body requires initial
 
 
 
+
 Mix of valid and failing files
   $ ofpp check ok.fpp dup_action.fpp external.fpp
+  ! dup_action.fpp:3:9: warning in SM 'M': unused action 'a'
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
   ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
   ✓ ok.fpp
@@ -173,6 +196,7 @@ Mix of valid and failing files
   
   ✗ 1/3 files failed
   [1]
+
 
 
 
@@ -200,6 +224,7 @@ Signal coverage warnings
   ╰───┴──────────────────┴────┴──────────────────────────────────────────────────╯
   
   ✓ coverage.fpp
+
 
 Signal coverage with inherited handlers
   $ cat > inherited.fpp <<EOF
@@ -231,6 +256,7 @@ Signal coverage warnings don't affect exit code
   
   ✓ coverage.fpp
   exit=0
+
 
 Liveness: cycle with no exit
   $ cat > livelock.fpp <<EOF
@@ -268,6 +294,7 @@ Liveness: cycle with exit (no warning)
   ╰───┴────────────────────┴────┴────────────────────────────────────────────────╯
   
   ✓ cycle_exit.fpp
+
 
 Liveness: three-state cycle
   $ cat > tri_cycle.fpp <<EOF
@@ -308,6 +335,7 @@ Unused declarations
   ✓ unused.fpp
 
 
+
 Transition shadowing
   $ cat > shadow.fpp <<EOF
   > state machine M {
@@ -344,6 +372,7 @@ Deadlock: sink state with no transitions
   ╰───┴──────────────┴────┴──────────────────────────────────────────────────────╯
   
   ✓ sink.fpp
+
 
 
 Deadlock: inherited handler prevents warning
@@ -395,8 +424,73 @@ Contextual hints for undefined references
   > }
   > EOF
   $ ofpp check hint.fpp
+  ! hint.fpp:2:8: warning in SM 'M': unused guard 'myGuard'
   ✗ hint.fpp:3:15: error in SM 'M': undefined action 'myGuard' (a guard 'myGuard' exists)
   
   ✗ 1/1 file failed
   [1]
 
+
+Disable coverage with --warning
+  $ ofpp check --warning=-cov coverage.fpp
+  ╭───┬──────────────────┬────┬──────────────────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                                          │
+  ├───┼──────────────────┼────┼──────────────────────────────────────────────────┤
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                               │
+  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential │
+  │   │                  │    │ deadlock)                                        │
+  ╰───┴──────────────────┴────┴──────────────────────────────────────────────────╯
+  
+  ✓ coverage.fpp
+
+
+Disable all warnings with --warning
+  $ ofpp check --warning=-all coverage.fpp
+  ✓ coverage.fpp
+
+Only enable deadlock with --warning
+  $ ofpp check --warning=-all,+dea coverage.fpp
+  ! coverage.fpp:6:8: warning in SM 'M': state 'T' has no outgoing transitions (potential deadlock)
+  ✓ coverage.fpp
+
+Promote all warnings to errors with --error
+  $ ofpp check --error=all livelock.fpp
+  ✗ livelock.fpp:5:8: error in SM 'M': states {'A', 'B'} form a cycle with no exit
+  
+  ✗ 1/1 file failed
+  [1]
+
+
+Promote specific analysis to error
+  $ cat > sink2.fpp <<EOF
+  > state machine M {
+  >   signal s
+  >   initial enter A
+  >   state A { on s enter B }
+  >   state B
+  > }
+  > EOF
+  $ ofpp check --warning=-cov --error=dea sink2.fpp
+  ✗ sink2.fpp:5:8: error in SM 'M': state 'B' has no outgoing transitions (potential deadlock)
+  
+  ✗ 1/1 file failed
+  [1]
+
+
+Disabled analysis not promoted by --error (deadlock stays off)
+  $ ofpp check --warning=-dea --error=all coverage.fpp
+  ✗ coverage.fpp:5:8: error in SM 'M': signal 's2' not handled in state 'S'
+  ✗ coverage.fpp:6:8: error in SM 'M': signal 's1' not handled in state 'T'
+  ✗ coverage.fpp:6:8: error in SM 'M': signal 's2' not handled in state 'T'
+  ✗ coverage.fpp:3:9: error in SM 'M': unused signal 's2'
+  
+  ✗ 1/1 file failed
+  [1]
+
+
+Unknown analysis in spec
+  $ ofpp check -w bogus ok.fpp 2>&1
+  Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
+         [OPTION]… FILE…
+  ofpp: option -w: unknown analysis 'bogus'
+  [1]

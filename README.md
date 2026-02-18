@@ -10,6 +10,55 @@ and eventually generate tests from FPP specifications.
 **ofpp is not affiliated with or endorsed by NASA or JPL.** It is an
 independent experiment that consumes the same `.fpp` source files.
 
+## Quick example
+
+A thermostat controller defined in FPP:
+
+```fpp
+state machine Thermostat {
+  action startHeating
+  action startCooling
+  action stopHvac
+
+  guard tooHot
+  guard tooCold
+
+  signal tempReading
+  signal shutdown
+
+  initial enter Idle
+
+  state Idle {
+    on tempReading if tooCold enter Heating
+    on tempReading if tooHot enter Cooling
+    on shutdown enter Off
+  }
+
+  state Heating {
+    entry do { startHeating }
+    on tempReading do { stopHvac } enter Idle
+    on shutdown do { stopHvac } enter Off
+  }
+
+  state Cooling {
+    entry do { startCooling }
+    on tempReading do { stopHvac } enter Idle
+    on shutdown do { stopHvac } enter Off
+  }
+
+  state Off
+}
+```
+
+`ofpp dot -o thermostat.svg Thermostat.fpp` renders:
+
+![Thermostat state machine](doc/thermostat.svg)
+
+A more complex example with nested states and choices (satellite deployment
+sequence):
+
+![Deployment sequence state machine](doc/deploy.svg)
+
 ## About FPP
 
 FPP (F Prime Prime) is designed and maintained by the F Prime team at NASA
@@ -36,7 +85,7 @@ for state machine visualisation.
 ## `ofpp check` -- static analysis
 
 ```
-ofpp check [--verbose] [--skip ANALYSIS] FILE...
+ofpp check [--verbose] [-w SPEC] [-e SPEC] FILE...
 ```
 
 Parse one or more FPP files and report syntax or semantic errors with
@@ -72,39 +121,38 @@ specifiers on non-numeric types and resolves type aliases.
 ### Warning-level analyses
 
 These detect suspicious patterns that may indicate bugs but are not necessarily
-errors. Each can be individually disabled with `--skip`.
+errors. Each can be individually controlled with `-w` (enable/disable) and
+promoted to errors with `-e`.
 
-**Signal coverage** (`--skip coverage`) checks that every leaf state handles
-every declared signal, either directly or via inheritance from an ancestor
-state. This analysis is novel to ofpp -- the upstream compiler does not perform
-it.
+| Analysis | Name | Abbrev. | Description |
+|---|---|---|---|
+| Signal coverage | `coverage` | `cov` | Checks that every leaf state handles every declared signal, either directly or via inheritance from an ancestor. Novel to ofpp. |
+| Liveness | `liveness` | `liv` | Detects groups of states forming a cycle with no exit path, using Tarjan's SCC algorithm. |
+| Unused declarations | `unused` | `unu` | Reports actions, guards, and signals declared but never referenced. |
+| Transition shadowing | `shadowing` | `sha` | Warns when a child state handles a signal that an ancestor already handles. |
+| Deadlock detection | `deadlock` | `dea` | Warns about leaf states with no outgoing transitions and no ancestor handler. |
+| Guard completeness | `completeness` | `com` | Warns when a choice has no `else` branch. |
 
-**Liveness** (`--skip liveness`) detects groups of states forming a cycle with
-no exit path to a terminal state, using Tarjan's SCC algorithm with backward
-reachability analysis.
+### Warning and error specs
 
-**Unused declarations** (`--skip unused`) reports actions, guards, and signals
-declared but never referenced in any transition, choice, or entry/exit action.
+The `-w`/`--warning` flag controls which analyses are enabled. The
+`-e`/`--error` flag promotes enabled analyses to error level (causing a
+non-zero exit code when triggered). An analysis disabled by `-w` cannot be
+promoted by `-e`.
 
-**Transition shadowing** (`--skip shadowing`) warns when a child state handles
-a signal that an ancestor already handles. The child's handler overrides the
-parent's, which may be intentional or accidental. Inspired by SCADE and
-Stateflow edit-time checks.
-
-**Deadlock detection** (`--skip deadlock`) warns about leaf states with no
-outgoing transitions and no ancestor handler, when the state machine declares
-at least one signal. Such states can never react to any event.
-
-**Guard completeness** (`--skip completeness`) warns when a choice definition
-has no `else` branch. A missing else means the choice may fail to transition if
-no guard evaluates to true.
+Specs are comma-separated. Each item is optionally prefixed with `+` (enable)
+or `-` (disable); bare names enable. The special name `all` targets every
+analysis. Both full names and 3-letter abbreviations are accepted.
 
 ### Examples
 
 ```
 ofpp check Components/**/*.fpp
 ofpp check --verbose model.fpp
-ofpp check --skip coverage --skip liveness model.fpp
+ofpp check --warning=-cov model.fpp              # disable coverage
+ofpp check --warning=-all,+deadlock model.fpp    # only deadlock
+ofpp check --error=all model.fpp                 # all warnings are errors
+ofpp check --error=cov,dea --warning=-sha m.fpp  # promote coverage+deadlock, disable shadowing
 ```
 
 ## `ofpp dot` -- state machine diagrams

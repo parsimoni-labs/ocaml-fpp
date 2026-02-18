@@ -8,6 +8,10 @@ let parse s =
 
 let diags s = Fpp.Check.run Fpp.Check.default (parse s)
 
+let diags_with_config ~warning_spec ~error_spec s =
+  let config = Fpp.Check.config ~warning_spec ~error_spec in
+  Fpp.Check.run config (parse s)
+
 let errors s =
   diags s |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
 
