@@ -99,6 +99,10 @@ standards (DO-178C, MISRA, SCADE) and real-world incidents motivate each check.
 
 ### Topology Analysis
 
+The parser already has full AST support for topologies, connection graphs
+(direct and pattern-based), and component instances. 36 upstream test files
+exist for connection validation. No semantic checks are implemented yet.
+
 - [ ] **Required ports connected** -- all required ports have connections
 - [ ] **Port type compatibility** -- connected ports have matching types
 - [ ] **Port direction compatibility** -- output to input only
@@ -115,10 +119,11 @@ standards (DO-178C, MISRA, SCADE) and real-world incidents motivate each check.
 
 ## Visualization (`ofpp dot`)
 
-- [x] **State machine → Graphviz/DOT** -- render state machines as visual
-      graphs (not available in the upstream fpp toolchain)
-- [ ] **Additional output formats** -- D2, TikZ, or direct SVG for modern
-      rendering without external tools
+- [x] **State machine → D2** -- render state machines as D2 diagrams with
+      ELK layout, hierarchical containers, and UML statechart notation.
+      Auto-invokes `d2` for SVG/PNG/PDF via `-o` flag
+- [ ] **Topology → D2** -- render topologies as connection diagrams showing
+      component instances, port wiring, and connection patterns
 
 ## Test Generation (`ofpp test`)
 
