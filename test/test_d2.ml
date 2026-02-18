@@ -131,14 +131,23 @@ let test_structured_labels () =
   |}
   in
   Alcotest.(check bool)
-    "source-arrowhead for guard" true
-    (contains ~substr:"source-arrowhead.label: [g]" d2);
+    "label node for guard+actions" true
+    (contains ~substr:"__e0: |md" d2);
   Alcotest.(check bool)
-    "target-arrowhead for actions" true
-    (contains ~substr:"target-arrowhead.label: / a1, a2" d2);
+    "bold signal with escaped guard" true
+    (contains ~substr:{|**s** \[g\]|} d2);
   Alcotest.(check bool)
-    "actions-only target-arrowhead" true
-    (contains ~substr:"target-arrowhead.label: / a1" d2);
+    "actions in label node" true
+    (contains ~substr:"/ a1, a2" d2);
+  Alcotest.(check bool)
+    "undirected edge to label node" true
+    (contains ~substr:"S1 -- __e0" d2);
+  Alcotest.(check bool)
+    "directed edge from label node" true
+    (contains ~substr:"__e0 -> S2" d2);
+  Alcotest.(check bool)
+    "actions-only label node" true
+    (contains ~substr:"__e1: |md" d2);
   Alcotest.(check bool)
     "signal-only edge stays simple" true
     (contains ~substr:"S2 -> S2: s\n" d2)
@@ -157,11 +166,17 @@ let test_choice_with_actions () =
   |}
   in
   Alcotest.(check bool)
-    "choice target-arrowhead for actions" true
-    (contains ~substr:"target-arrowhead.label: / a1" d2);
+    "choice label node for actions" true
+    (contains ~substr:"__e0: |md" d2);
   Alcotest.(check bool)
-    "choice guard as label" true
-    (contains ~substr:{|: "[g]"|} d2)
+    "escaped guard in markdown" true
+    (contains ~substr:{|\[g\]|} d2);
+  Alcotest.(check bool)
+    "actions in choice label node" true
+    (contains ~substr:"/ a1" d2);
+  Alcotest.(check bool)
+    "choice else stays simple" true
+    (contains ~substr:"C -> S: else" d2)
 
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 

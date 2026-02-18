@@ -58,6 +58,46 @@ let actions_of_transition (tr : Ast.spec_state_transition) =
 let actions_of_trans_expr (te : Ast.transition_expr) =
   List.map (fun (a : Ast.ident Ast.node) -> a.data) te.trans_actions
 
+let escape_md_brackets s =
+  let buf = Buffer.create (String.length s) in
+  String.iter
+    (fun c ->
+      match c with
+      | '[' -> Buffer.add_string buf {|\[|}
+      | ']' -> Buffer.add_string buf {|\]|}
+      | c -> Buffer.add_char buf c)
+    s;
+  Buffer.contents buf
+
+let is_quoted s =
+  String.length s >= 2 && s.[0] = '"' && s.[String.length s - 1] = '"'
+
+let edge_label_md label guard actions =
+  let lbl_part =
+    if label = "" then ""
+    else if is_quoted label then
+      escape_md_brackets (String.sub label 1 (String.length label - 2))
+    else if label = "else" then "else"
+    else "**" ^ label ^ "**"
+  in
+  let first_line =
+    match (lbl_part, guard) with
+    | "", None -> ""
+    | "", Some g -> escape_md_brackets g
+    | l, None -> l
+    | l, Some g -> l ^ " " ^ escape_md_brackets g
+  in
+  match (first_line, actions) with
+  | "", None -> ""
+  | "", Some a -> a
+  | fl, None -> fl
+  | fl, Some a -> fl ^ "\n" ^ a
+
+let flat_edge_label label guard actions =
+  List.filter_map Fun.id
+    [ (if label = "" then None else Some label); guard; actions ]
+  |> String.concat " "
+
 (* ── Edge accumulator ─────────────────────────────────────────────── *)
 
 type edge = {
@@ -280,19 +320,24 @@ let pp ppf (sm : Ast.def_state_machine) =
           | _ -> ())
         members;
       (* All edges at top level with fully qualified IDs *)
+      let eid = ref 0 in
       List.iter
         (fun e ->
           match (e.label, e.guard, e.actions) with
           | "", None, None -> Fmt.pf ppf "%s -> %s@." e.src e.dst
           | lbl, None, None -> Fmt.pf ppf "%s -> %s: %s@." e.src e.dst lbl
-          | lbl, guard, actions ->
-              if lbl = "" then Fmt.pf ppf "%s -> %s {" e.src e.dst
-              else Fmt.pf ppf "%s -> %s: %s {" e.src e.dst lbl;
-              (match guard with
-              | Some g -> Fmt.pf ppf "@.  source-arrowhead.label: %s" g
-              | None -> ());
-              (match actions with
-              | Some a -> Fmt.pf ppf "@.  target-arrowhead.label: %s" a
-              | None -> ());
-              Fmt.pf ppf "@.}@.")
+          | _ when e.src = e.dst ->
+              let flat = flat_edge_label e.label e.guard e.actions in
+              Fmt.pf ppf "%s -> %s: %s@." e.src e.dst flat
+          | _ ->
+              let id = Printf.sprintf "__e%d" !eid in
+              incr eid;
+              let md = edge_label_md e.label e.guard e.actions in
+              Fmt.pf ppf "%s: |md@." id;
+              List.iter
+                (fun line -> Fmt.pf ppf "  %s@." line)
+                (String.split_on_char '\n' md);
+              Fmt.pf ppf "| { shape: text }@.";
+              Fmt.pf ppf "%s -- %s@." e.src id;
+              Fmt.pf ppf "%s -> %s@." id e.dst)
         (List.rev !edges)

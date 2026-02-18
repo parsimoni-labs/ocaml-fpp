@@ -202,13 +202,18 @@ Structured edge labels with guard and actions
   S1: S1 { class: state }
   S2: S2 { class: state }
   __init__ -> S1
-  S1 -> S2: s {
-    source-arrowhead.label: [g]
-    target-arrowhead.label: / a1, a2
-  }
-  S2 -> S1: s {
-    target-arrowhead.label: / a1
-  }
+  __e0: |md
+    **s** \[g\]
+    / a1, a2
+  | { shape: text }
+  S1 -- __e0
+  __e0 -> S2
+  __e1: |md
+    **s**
+    / a1
+  | { shape: text }
+  S2 -- __e1
+  __e1 -> S1
 
 Render to PNG via -o
   $ ofpp dot -o sm.png simple.fpp
