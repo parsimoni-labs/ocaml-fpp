@@ -1,4 +1,4 @@
-Basic state machine with self-transition
+Basic state machine (D2 to stdout)
   $ cat > simple.fpp <<EOF
   > state machine M {
   >   signal s
@@ -7,16 +7,31 @@ Basic state machine with self-transition
   > }
   > EOF
   $ ofpp dot simple.fpp
-  digraph M {
-    rankdir=TB
-    fontname="Helvetica"
-    node [fontname="Helvetica" fontsize=11]
-    edge [fontname="Helvetica" fontsize=10]
-    __init__ [shape=point width=0.25]
-    __init__ -> S [style=dashed label=""]
-    S [label="S" shape=Mrecord]
-    S -> S [label="s"]
+  vars: {
+    d2-config: {
+      layout-engine: elk
+    }
   }
+  classes: {
+    state: {
+      style.border-radius: 8
+      style.fill: "#e8f0fe"
+      style.stroke: "#4285f4"
+      style.font-color: "#1a1a2e"
+    }
+    choice: {
+      shape: diamond
+      style.fill: "#fff8e1"
+      style.stroke: "#f9ab00"
+      style.font-color: "#1a1a2e"
+    }
+  }
+  # M
+  direction: down
+  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  S: S { class: state }
+  __init__ -> S
+  S -> S: s
 
 Choice with guard and else
   $ cat > choice.fpp <<EOF
@@ -28,20 +43,35 @@ Choice with guard and else
   > }
   > EOF
   $ ofpp dot choice.fpp
-  digraph M {
-    rankdir=TB
-    fontname="Helvetica"
-    node [fontname="Helvetica" fontsize=11]
-    edge [fontname="Helvetica" fontsize=10]
-    __init__ [shape=point width=0.25]
-    __init__ -> C [style=dashed label=""]
-    S [label="S" shape=Mrecord]
-    C [label="C" shape=diamond]
-    C -> S [label="[g]"]
-    C -> S [label="else"]
+  vars: {
+    d2-config: {
+      layout-engine: elk
+    }
   }
+  classes: {
+    state: {
+      style.border-radius: 8
+      style.fill: "#e8f0fe"
+      style.stroke: "#4285f4"
+      style.font-color: "#1a1a2e"
+    }
+    choice: {
+      shape: diamond
+      style.fill: "#fff8e1"
+      style.stroke: "#f9ab00"
+      style.font-color: "#1a1a2e"
+    }
+  }
+  # M
+  direction: down
+  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  S: S { class: state }
+  C: C { class: choice }
+  __init__ -> C
+  C -> S: "[g]"
+  C -> S: else
 
-Hierarchical state machine with cluster subgraph
+Hierarchical state machine
   $ cat > hier.fpp <<EOF
   > state machine M {
   >   signal s1
@@ -56,87 +86,46 @@ Hierarchical state machine with cluster subgraph
   > }
   > EOF
   $ ofpp dot hier.fpp
-  digraph M {
-    rankdir=TB
-    fontname="Helvetica"
-    node [fontname="Helvetica" fontsize=11]
-    edge [fontname="Helvetica" fontsize=10]
-    __init__ [shape=point width=0.25]
-    __init__ -> P [style=dashed label=""]
-    subgraph cluster_P {
-      label="P"
-      style=rounded
-      __init_P__ [shape=point width=0.2]
-      __init_P__ -> P_A [style=dashed label=""]
-      P_A [label="A" shape=Mrecord]
-      P_A -> P_B [label="s2"]
-      P_B [label="B" shape=Mrecord]
+  vars: {
+    d2-config: {
+      layout-engine: elk
     }
-    P -> P [label="s1"]
   }
-
-Entry and exit actions in state labels
-  $ cat > actions.fpp <<EOF
-  > state machine M {
-  >   action a1
-  >   action a2
-  >   signal s
-  >   initial enter S
-  >   state S {
-  >     entry do { a1 }
-  >     exit do { a2 }
-  >     on s enter S
-  >   }
-  > }
-  > EOF
-  $ ofpp dot actions.fpp
-  digraph M {
-    rankdir=TB
-    fontname="Helvetica"
-    node [fontname="Helvetica" fontsize=11]
-    edge [fontname="Helvetica" fontsize=10]
-    __init__ [shape=point width=0.25]
-    __init__ -> S [style=dashed label=""]
-    S [label="S\nentry / a1\nexit / a2" shape=Mrecord]
-    S -> S [label="s"]
+  classes: {
+    state: {
+      style.border-radius: 8
+      style.fill: "#e8f0fe"
+      style.stroke: "#4285f4"
+      style.font-color: "#1a1a2e"
+    }
+    choice: {
+      shape: diamond
+      style.fill: "#fff8e1"
+      style.stroke: "#f9ab00"
+      style.font-color: "#1a1a2e"
+    }
   }
+  # M
+  direction: down
+  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  P: P {
+    style.border-radius: 8
+    style.fill: "#f8f9fa"
+    style.stroke: "#5f6368"
+    A: A { class: state }
+    B: B { class: state }
+    __init__: "" { shape: circle; width: 12; height: 12; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  }
+  __init__ -> P
+  P.A -> P.B: s2
+  P.__init__ -> P.A
+  P -> P: s1
 
 External state machine (no body) produces no output
   $ cat > ext.fpp <<EOF
   > state machine M
   > EOF
   $ ofpp dot ext.fpp
-
-D2 format output
-  $ ofpp dot -f d2 simple.fpp
-  M: {label: M}
-  direction: down
-  (***) -> S: {style.stroke-dash: 3}
-  S: S
-  S -> S: s
-
-D2 hierarchical state machine
-  $ ofpp dot -f d2 hier.fpp
-  M: {label: M}
-  direction: down
-  (***) -> P: {style.stroke-dash: 3}
-  P: P {
-    P.A: A
-    P.A -> P.B: s2
-    P.B: B
-  }
-  P -> P.A: {style.stroke-dash: 3}
-  P -> P: s1
-
-D2 choice with guard
-  $ ofpp dot -f d2 choice.fpp
-  M: {label: M}
-  direction: down
-  (***) -> C: {style.stroke-dash: 3}
-  S: S
-  C: C {shape: diamond}
-  C -> S: [g]
-  C -> S: else
 
 Filter by SM name
   $ cat > multi.fpp <<EOF
@@ -150,12 +139,45 @@ Filter by SM name
   > }
   > EOF
   $ ofpp dot --sm B multi.fpp
-  digraph B {
-    rankdir=TB
-    fontname="Helvetica"
-    node [fontname="Helvetica" fontsize=11]
-    edge [fontname="Helvetica" fontsize=10]
-    __init__ [shape=point width=0.25]
-    __init__ -> T [style=dashed label=""]
-    T [label="T" shape=Mrecord]
+  vars: {
+    d2-config: {
+      layout-engine: elk
+    }
   }
+  classes: {
+    state: {
+      style.border-radius: 8
+      style.fill: "#e8f0fe"
+      style.stroke: "#4285f4"
+      style.font-color: "#1a1a2e"
+    }
+    choice: {
+      shape: diamond
+      style.fill: "#fff8e1"
+      style.stroke: "#f9ab00"
+      style.font-color: "#1a1a2e"
+    }
+  }
+  # B
+  direction: down
+  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  T: T { class: state }
+  __init__ -> T
+
+Render to PNG via -o
+  $ ofpp dot -o sm.png simple.fpp
+  $ test -f sm.png && echo "PNG created"
+  PNG created
+
+Render to SVG via -o
+  $ ofpp dot -o sm.svg simple.fpp
+  $ test -f sm.svg && echo "SVG created"
+  SVG created
+
+D2 output compiles for all upstream state machines
+  $ for f in "$TESTDIR"/../upstream/state_machine/*.fpp; do
+  >   d2out=$(ofpp dot "$f" 2>/dev/null)
+  >   if [ -n "$d2out" ]; then
+  >     echo "$d2out" | d2 - /dev/null 2>/dev/null || echo "FAIL: $(basename $f)"
+  >   fi
+  > done

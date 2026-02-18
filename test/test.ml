@@ -9,4 +9,5 @@ let () =
       Test_check_core.suite;
       Test_check_warn.suite;
       Test_check.suite;
+      Test_d2.suite;
     ]

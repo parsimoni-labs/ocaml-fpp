@@ -283,7 +283,7 @@ let test_guard_completeness_with_else () =
     }
   |}
 
-let test_guard_completeness_nested_no_else () =
+let test_guard_nested_no_else () =
   expect_warning ~substr:"no else branch"
     {|
     state machine M {
@@ -299,7 +299,7 @@ let test_guard_completeness_nested_no_else () =
     }
   |}
 
-let test_guard_completeness_nested_with_else () =
+let test_guard_nested_with_else () =
   expect_no_warnings
     {|
     state machine M {
@@ -351,8 +351,7 @@ let suite =
         test_guard_completeness_no_else;
       Alcotest.test_case "guard_completeness_with_else" `Quick
         test_guard_completeness_with_else;
-      Alcotest.test_case "guard_completeness_nested_no_else" `Quick
-        test_guard_completeness_nested_no_else;
-      Alcotest.test_case "guard_completeness_nested_with_else" `Quick
-        test_guard_completeness_nested_with_else;
+      Alcotest.test_case "guard_nested_no_else" `Quick test_guard_nested_no_else;
+      Alcotest.test_case "guard_nested_with_else" `Quick
+        test_guard_nested_with_else;
     ] )

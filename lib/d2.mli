@@ -8,4 +8,5 @@
     state machines (no body) produce no output. *)
 
 val pp : Ast.def_state_machine Fmt.t
-(** [pp ppf sm] writes a D2 diagram for state machine [sm] to [ppf]. *)
+(** Pretty-prints a state machine definition as a D2 diagram. External state
+    machines (no body) produce no output. *)

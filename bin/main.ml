@@ -240,11 +240,28 @@ let check_cmd =
 
 (* --- dot command --- *)
 
-type graph_format = Dot | D2
+let image_extensions = [ ".svg"; ".png"; ".pdf" ]
 
-let dot ~format ~sm_name files =
-  let pp = match format with Dot -> Fpp.Dot.pp | D2 -> Fpp.D2.pp in
+let is_image_output path =
+  let ext = Filename.extension path in
+  List.mem (String.lowercase_ascii ext) image_extensions
+
+let run_d2 d2_text output_path =
+  let cmd =
+    Fmt.str "d2 --layout elk - %s 2>/dev/null" (Filename.quote output_path)
+  in
+  let oc = Unix.open_process_out cmd in
+  output_string oc d2_text;
+  match Unix.close_process_out oc with
+  | Unix.WEXITED 0 -> true
+  | _ ->
+      Fmt.epr "%a d2 failed to render %s@." pp_err () output_path;
+      false
+
+let dot ~output ~sm_name files =
   let ok = ref true in
+  let buf = Buffer.create 4096 in
+  let ppf = Fmt.with_buffer buf in
   List.iter
     (fun file ->
       match Fpp.parse_file file with
@@ -259,22 +276,37 @@ let dot ~format ~sm_name files =
                     sm.sm_name.data = name)
                   sms
           in
-          List.iter (fun sm -> pp Fmt.stdout sm) sms
+          List.iter
+            (fun sm ->
+              Buffer.clear buf;
+              Fpp.D2.pp ppf sm;
+              Fmt.flush ppf ();
+              let d2_text = Buffer.contents buf in
+              match output with
+              | Some path when is_image_output path ->
+                  if not (run_d2 d2_text path) then ok := false
+              | Some path ->
+                  (* Write D2 text to file *)
+                  let oc = open_out path in
+                  Fun.protect
+                    ~finally:(fun () -> close_out oc)
+                    (fun () -> output_string oc d2_text)
+              | None -> Fmt.pr "%s" d2_text)
+            sms
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
           ok := false)
     files;
   if !ok then 0 else 1
 
-let format_t =
+let output_t =
   let doc =
-    "Output format. $(docv) is one of $(b,dot) (Graphviz DOT) or $(b,d2) (D2 \
-     diagramming language)."
+    "Output file. For image formats ($(b,.svg), $(b,.png), $(b,.pdf)), invokes \
+     $(b,d2) automatically. For other extensions, writes D2 text. If omitted, \
+     D2 text is written to stdout."
   in
   Arg.(
-    value
-    & opt (enum [ ("dot", Dot); ("d2", D2) ]) Dot
-    & info [ "f"; "format" ] ~doc ~docv:"FORMAT")
+    value & opt (some string) None & info [ "o"; "output" ] ~doc ~docv:"FILE")
 
 let sm_name_t =
   Arg.(
@@ -289,8 +321,8 @@ let dot_files_t =
     & info [] ~docv:"FILE" ~doc:"FPP files to render.")
 
 let dot_term =
-  let dot format sm_name files = dot ~format ~sm_name files in
-  Term.(const dot $ format_t $ sm_name_t $ dot_files_t)
+  let dot output sm_name files = dot ~output ~sm_name files in
+  Term.(const dot $ output_t $ sm_name_t $ dot_files_t)
 
 let dot_cmd =
   let info =
@@ -299,12 +331,14 @@ let dot_cmd =
         [
           `S "DESCRIPTION";
           `P
-            "Parse FPP files and output diagrams for each state machine. \
-             Supports Graphviz DOT (default) and D2 output formats.";
+            "Parse FPP files and output state machine diagrams in D2 format. \
+             With $(b,-o), renders directly to SVG, PNG, or PDF (requires \
+             $(b,d2) to be installed).";
           `S "EXAMPLES";
-          `P "$(iname) model.fpp | dot -Tpng -o sm.png";
-          `P "$(iname) -f d2 model.fpp | d2 - sm.svg";
-          `P "$(iname) --sm M model.fpp | dot -Tsvg -o M.svg";
+          `P "$(iname) model.fpp                    # D2 to stdout";
+          `P "$(iname) -o sm.svg model.fpp          # render to SVG";
+          `P "$(iname) -o sm.png model.fpp          # render to PNG";
+          `P "$(iname) model.fpp | d2 - sm.svg      # manual pipe";
         ]
   in
   Cmd.v info dot_term
