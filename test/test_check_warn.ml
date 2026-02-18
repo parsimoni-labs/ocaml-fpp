@@ -259,6 +259,62 @@ let test_deadlock_no_signals () =
     }
   |}
 
+(* ── Guard completeness ────────────────────────────────────────────── *)
+
+let test_guard_completeness_no_else () =
+  expect_warning ~substr:"no else branch"
+    {|
+    state machine M {
+      guard g
+      initial enter C
+      state S
+      choice C { if g enter S }
+    }
+  |}
+
+let test_guard_completeness_with_else () =
+  expect_no_warnings
+    {|
+    state machine M {
+      guard g
+      initial enter C
+      state S
+      choice C { if g enter S else enter S }
+    }
+  |}
+
+let test_guard_completeness_nested_no_else () =
+  expect_warning ~substr:"no else branch"
+    {|
+    state machine M {
+      guard g
+      signal s
+      initial enter S
+      state S {
+        on s enter C
+        initial enter T
+        state T
+        choice C { if g enter T }
+      }
+    }
+  |}
+
+let test_guard_completeness_nested_with_else () =
+  expect_no_warnings
+    {|
+    state machine M {
+      guard g
+      signal s
+      initial enter S
+      state S {
+        on s enter C
+        initial enter T
+        state T
+        choice C { if g enter T else enter T }
+      }
+    }
+  |}
+
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
@@ -291,4 +347,12 @@ let suite =
       Alcotest.test_case "deadlock_inherited_handler" `Quick
         test_deadlock_inherited_handler;
       Alcotest.test_case "deadlock_no_signals" `Quick test_deadlock_no_signals;
+      Alcotest.test_case "guard_completeness_no_else" `Quick
+        test_guard_completeness_no_else;
+      Alcotest.test_case "guard_completeness_with_else" `Quick
+        test_guard_completeness_with_else;
+      Alcotest.test_case "guard_completeness_nested_no_else" `Quick
+        test_guard_completeness_nested_no_else;
+      Alcotest.test_case "guard_completeness_nested_with_else" `Quick
+        test_guard_completeness_nested_with_else;
     ] )

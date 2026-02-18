@@ -373,6 +373,43 @@ let transition_shadowing ~sm_name members =
     (walk_state ~parent_signals:SSet.empty)
     (collect_sm_states members)
 
+(* ── Guard completeness ────────────────────────────────────────────── *)
+
+(** Check whether a choice definition has an else branch. *)
+let choice_has_else (c : Ast.def_choice) =
+  List.exists
+    (fun cm -> match cm with Ast.Choice_else _ -> true | _ -> false)
+    c.choice_members
+
+(** Warn about choices that lack an else branch. A choice without else may
+    silently fail to transition if no guard evaluates to true. The UML
+    specification considers such models "ill-formed". *)
+let guard_completeness ~sm_name members =
+  let rec from_state (st : Ast.def_state) =
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.State_def_choice c -> check_choice c
+        | Ast.State_def_state sub -> from_state sub
+        | _ -> [])
+      st.state_members
+  and check_choice (c : Ast.def_choice) =
+    if choice_has_else c then []
+    else
+      [
+        warning ~sm_name c.choice_name.loc
+          (Fmt.str "choice '%s' has no else branch (may fail to transition)"
+             c.choice_name.data);
+      ]
+  in
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Sm_def_choice c -> check_choice c
+      | Ast.Sm_def_state st -> from_state st
+      | _ -> [])
+    members
+
 (* ── Sink state / deadlock detection ────────────────────────────────── *)
 
 (** Warn about leaf states that have no outgoing transitions (direct or

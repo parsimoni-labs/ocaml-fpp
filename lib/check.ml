@@ -5,9 +5,16 @@
 
 (* ── Analysis categories ────────────────────────────────────────────── *)
 
-type analysis = Coverage | Liveness | Unused | Shadowing | Deadlock
+type analysis =
+  | Coverage
+  | Liveness
+  | Unused
+  | Shadowing
+  | Deadlock
+  | Completeness
 
-let all_analyses = [ Coverage; Liveness; Unused; Shadowing; Deadlock ]
+let all_analyses =
+  [ Coverage; Liveness; Unused; Shadowing; Deadlock; Completeness ]
 
 let analysis_of_string = function
   | "coverage" -> Some Coverage
@@ -15,9 +22,11 @@ let analysis_of_string = function
   | "unused" -> Some Unused
   | "shadowing" -> Some Shadowing
   | "deadlock" -> Some Deadlock
+  | "completeness" -> Some Completeness
   | _ -> None
 
-let analyses = [ "coverage"; "liveness"; "unused"; "shadowing"; "deadlock" ]
+let analyses =
+  [ "coverage"; "liveness"; "unused"; "shadowing"; "deadlock"; "completeness" ]
 
 (* ── Configuration ──────────────────────────────────────────────────── *)
 
@@ -27,6 +36,7 @@ type config = {
   unused : bool;
   shadowing : bool;
   deadlock : bool;
+  completeness : bool;
 }
 
 let default =
@@ -36,6 +46,7 @@ let default =
     unused = true;
     shadowing = true;
     deadlock = true;
+    completeness = true;
   }
 
 let skip analyses config =
@@ -46,7 +57,8 @@ let skip analyses config =
       | Liveness -> { c with liveness = false }
       | Unused -> { c with unused = false }
       | Shadowing -> { c with shadowing = false }
-      | Deadlock -> { c with deadlock = false })
+      | Deadlock -> { c with deadlock = false }
+      | Completeness -> { c with completeness = false })
     config analyses
 
 (* ── Re-exported types ──────────────────────────────────────────────── *)
@@ -90,7 +102,12 @@ let state_machine config (sm : Ast.def_state_machine) =
         if config.deadlock then Check_warn.deadlock_states ~sm_name env members
         else []
       in
-      core @ coverage @ live @ unused @ shadow @ dead
+      let complete =
+        if config.completeness then
+          Check_warn.guard_completeness ~sm_name members
+        else []
+      in
+      core @ coverage @ live @ unused @ shadow @ dead @ complete
 
 let rec collect_state_machines members =
   List.concat_map

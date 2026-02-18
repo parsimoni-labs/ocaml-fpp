@@ -33,6 +33,12 @@ Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https:/
       from terminal states
 - [x] **Unused declarations** -- actions, guards, signals declared but never
       referenced
+- [x] **Transition shadowing** -- child state handles a signal that an
+      ancestor already handles (may be intentional override or accidental)
+- [x] **Deadlock detection** -- leaf states with no outgoing transitions
+      (direct or inherited) when signals are defined
+- [x] **Guard completeness** -- choices without else branches (may fail to
+      transition if no guard evaluates to true)
 
 #### Future: safety and certification checks
 
@@ -40,18 +46,6 @@ Prioritised by safety impact and implementation feasibility. References to
 standards (DO-178C, MISRA, SCADE) and real-world incidents motivate each check.
 
 ##### Structural and determinism
-
-- [ ] **Transition shadowing** -- warn when a child state handles a signal
-      that an ancestor already handles; may be intentional (override) or
-      accidental. SCADE and
-      [Stateflow](https://www.mathworks.com/help/stateflow/ug/stateflow-edit-time-checks.html)
-      flag this as an edit-time check.
-- [ ] **Sink state / deadlock** -- warn about leaf states with no outgoing
-      transitions (potential deadlock). The
-      [Hitomi X-ray satellite (2016)](https://en.wikipedia.org/wiki/Hitomi_(satellite))
-      was destroyed by a cascading state machine failure. HDL lint tools flag
-      this as a primary FSM defect
-      ([Semiengineering](https://semiengineering.com/developing-robust-finite-state-machines-code-with-lint-tools/)).
 - [ ] **Guard mutual exclusivity** -- when a state has multiple guarded
       transitions on the same signal, warn if guards are not provably
       exclusive. Non-exclusive guards create nondeterminism; SCADE formally
@@ -78,10 +72,6 @@ standards (DO-178C, MISRA, SCADE) and real-world incidents motivate each check.
 
 ##### Coverage and completeness (DO-178C alignment)
 
-- [ ] **Guard completeness** -- warn when choice guard outcomes are not
-      exhaustive. UML specification states models without else branches are
-      "ill-formed"
-      ([UML state machine](https://en.wikipedia.org/wiki/UML_state_machine)).
 - [ ] **Dead transition detection** -- transitions whose guard conditions
       can never be true given the state machine structure. Stateflow's
       "dead logic detection" identifies these

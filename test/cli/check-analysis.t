@@ -361,6 +361,31 @@ Deadlock: inherited handler prevents warning
   $ ofpp check no_deadlock.fpp
   ✓ no_deadlock.fpp
 
+Guard completeness: choice without else
+  $ cat > no_else.fpp <<EOF
+  > state machine M {
+  >   guard g
+  >   initial enter C
+  >   state S
+  >   choice C { if g enter S }
+  > }
+  > EOF
+  $ ofpp check no_else.fpp
+  ! no_else.fpp:5:9: warning in SM 'M': choice 'C' has no else branch (may fail to transition)
+  ✓ no_else.fpp
+
+Guard completeness: choice with else (no warning)
+  $ cat > with_else.fpp <<EOF
+  > state machine M {
+  >   guard g
+  >   initial enter C
+  >   state S
+  >   choice C { if g enter S else enter S }
+  > }
+  > EOF
+  $ ofpp check with_else.fpp
+  ✓ with_else.fpp
+
 Contextual hints for undefined references
   $ cat > hint.fpp <<EOF
   > state machine M {

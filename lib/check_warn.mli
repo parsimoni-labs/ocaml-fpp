@@ -54,6 +54,19 @@ val transition_shadowing :
   Ast.state_machine_member Ast.node Ast.annotated list ->
   Check_env.diagnostic list
 
+(** {1 Guard completeness}
+
+    Warns when a choice definition has no [else] branch. A missing else means
+    that if no guard evaluates to true, the choice silently fails to transition.
+    The UML specification considers models without else branches "ill-formed".
+    Only the structural presence of an else branch is checked -- guard semantics
+    are opaque. *)
+
+val guard_completeness :
+  sm_name:string ->
+  Ast.state_machine_member Ast.node Ast.annotated list ->
+  Check_env.diagnostic list
+
 (** {1 Deadlock detection}
 
     Warns about leaf states that have no outgoing transitions and no ancestor

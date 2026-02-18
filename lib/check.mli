@@ -31,6 +31,10 @@ type analysis =
   | Deadlock
       (** Deadlock detection: warns when a leaf state has no outgoing
           transitions and no ancestor provides a handler. *)
+  | Completeness
+      (** Guard completeness: warns when a choice definition has no [else]
+          branch. A missing else means the choice may fail to transition if no
+          guard evaluates to true. *)
 
 val all_analyses : analysis list
 (** All optional analyses. *)
