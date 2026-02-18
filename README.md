@@ -34,7 +34,7 @@ machines, topologies, ports, and more).
 ### `ofpp check`
 
 ```
-ofpp check [--verbose] [--warn] Components/**/*.fpp
+ofpp check [--verbose] Components/**/*.fpp
 ```
 
 Parse one or more FPP files and report syntax or semantic errors with
@@ -53,10 +53,10 @@ Parse one or more FPP files and report syntax or semantic errors with
 11. **Initial transition scope** -- initial transitions target local states/choices
 12. **Typed element checking** -- type compatibility for signals, actions, and guards
 
-With `--warn`, ofpp also performs **signal coverage analysis** (novel to ofpp,
-not in the upstream compiler): at each leaf state, it warns about signals that
-are not handled, accounting for inherited handlers from ancestor states. This
-catches gaps like an `error` signal missing from a RESET state.
+ofpp also performs **signal coverage analysis** (novel to ofpp, not in the
+upstream compiler): at each leaf state, it warns about signals that are not
+handled, accounting for inherited handlers from ancestor states. This catches
+gaps like an `error` signal missing from a RESET state.
 
 In verbose mode, the output includes component, state machine, and topology
 counts per file.

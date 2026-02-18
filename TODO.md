@@ -2,10 +2,10 @@
 
 ## Done
 
-- [x] **Phase 0**: Repository setup, dune-project, opam, .ocamlformat
-- [x] **Phase 1**: Parser extraction (ast, lexer, parser, fpp.ml/mli)
-- [x] **Phase 2**: CLI foundation (`ofpp check <files>`)
-- [x] **Phase 3**: Import 670 upstream NASA FPP test files, all passing
+- [x] Repository setup, dune-project, opam, .ocamlformat
+- [x] Parser (ast, lexer, parser, fpp.ml/mli)
+- [x] CLI foundation (`ofpp check <files>`)
+- [x] Import 670 upstream NASA FPP test files, all passing
 - [x] Zero Menhir conflicts
 - [x] Significant newlines (virtual comma insertion in `[...]` brackets)
 - [x] Full FPP grammar: empty enums/structs, trailing commas,
@@ -24,7 +24,7 @@ analysis reveals gaps: `error` is unhandled in RESET, `success` is unhandled
 in RUN, and `reconfigure` is unhandled in 4 of 5 states. This is exactly the
 kind of issue static analysis should catch.
 
-Based on the upstream test suite at `fpp/compiler/tools/fpp-check/test/state_machine/`:
+Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https://github.com/nasa/fpp/tree/main/compiler/tools/fpp-check/test/state_machine):
 
 - [x] **Transition graph reachability** -- every state and choice must be
       reachable from the initial node

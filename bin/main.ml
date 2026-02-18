@@ -10,7 +10,7 @@ let pp_warn ppf () = Fmt.pf ppf "%a" Fmt.(styled `Yellow string) "⚠"
 
 (* --- check command --- *)
 
-let check ~verbose ~warn files =
+let check ~verbose files =
   let ok = ref 0 in
   let fail = ref 0 in
   List.iter
@@ -28,17 +28,15 @@ let check ~verbose ~warn files =
             List.iter
               (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
               errors)
-          else (
-            (if warn then
-               let warnings =
-                 List.filter
-                   (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
-                   diags
-               in
-               List.iter
-                 (fun d ->
-                   Fmt.pr "%a %a@." pp_warn () Fpp.Check.pp_diagnostic d)
-                 warnings);
+          else
+            let warnings =
+              List.filter
+                (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+                diags
+            in
+            List.iter
+              (fun d -> Fmt.pr "%a %a@." pp_warn () Fpp.Check.pp_diagnostic d)
+              warnings;
             incr ok;
             if verbose then
               let comps = Fpp.components tu in
@@ -50,7 +48,7 @@ let check ~verbose ~warn files =
                 (List.length sms)
                 (if List.length sms <> 1 then "s" else "")
                 (List.length topos)
-            else Fmt.pr "%a %s@." pp_ok () file)
+            else Fmt.pr "%a %s@." pp_ok () file
       | exception Fpp.Parse_error e ->
           incr fail;
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e)
@@ -67,19 +65,14 @@ let check ~verbose ~warn files =
 let verbose_t =
   Arg.(value & flag & info [ "v"; "verbose" ] ~doc:"Show detailed output.")
 
-let warn_t =
-  Arg.(
-    value & flag
-    & info [ "warn" ] ~doc:"Show analysis warnings (e.g. signal coverage).")
-
 let files_t =
   Arg.(
     non_empty & pos_all file []
     & info [] ~docv:"FILE" ~doc:"FPP files to check.")
 
 let check_term =
-  let check verbose warn files = check ~verbose ~warn files in
-  Term.(const check $ verbose_t $ warn_t $ files_t)
+  let check verbose files = check ~verbose files in
+  Term.(const check $ verbose_t $ files_t)
 
 let check_cmd =
   let info =
