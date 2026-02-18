@@ -1,26 +1,28 @@
 (** State machine static analysis. *)
 
-type analysis = Coverage | Liveness
+type analysis = Coverage | Liveness | Unused
 
-let all_analyses = [ Coverage; Liveness ]
+let all_analyses = [ Coverage; Liveness; Unused ]
 
 let analysis_of_string = function
   | "coverage" -> Some Coverage
   | "liveness" -> Some Liveness
+  | "unused" -> Some Unused
   | _ -> None
 
-let analyses = [ "coverage"; "liveness" ]
+let analyses = [ "coverage"; "liveness"; "unused" ]
 
-type config = { coverage : bool; liveness : bool }
+type config = { coverage : bool; liveness : bool; unused : bool }
 
-let default = { coverage = true; liveness = true }
+let default = { coverage = true; liveness = true; unused = true }
 
 let skip analyses config =
   List.fold_left
     (fun c a ->
       match a with
       | Coverage -> { c with coverage = false }
-      | Liveness -> { c with liveness = false })
+      | Liveness -> { c with liveness = false }
+      | Unused -> { c with unused = false })
     config analyses
 
 type diagnostic = {
@@ -335,17 +337,47 @@ let verify_target ~sm_name env (qi : Ast.qual_ident Ast.node) =
     let name = Ast.qual_ident_to_string qi.data in
     [ error ~sm_name qi.loc (Fmt.str "undefined state or choice '%s'" name) ]
 
+(** Suggest what kind an undefined name actually is, if it exists in a different
+    namespace. *)
+let hint_kind env name ~expected =
+  let candidates =
+    (if expected <> "action" && SMap.mem name env.actions then [ "action" ]
+     else [])
+    @ (if expected <> "guard" && SMap.mem name env.guards then [ "guard" ]
+       else [])
+    @ (if expected <> "signal" && SMap.mem name env.signals then [ "signal" ]
+       else [])
+    @ (if expected <> "state" && SMap.mem name env.states then [ "state" ]
+       else [])
+    @
+    if expected <> "choice" && SMap.mem name env.choices then [ "choice" ]
+    else []
+  in
+  match candidates with
+  | [ kind ] ->
+      let article =
+        match kind.[0] with 'a' | 'e' | 'i' | 'o' | 'u' -> "an" | _ -> "a"
+      in
+      Fmt.str " (%s %s '%s' exists)" article kind name
+  | _ -> ""
+
 let verify_action ~sm_name env (id : Ast.ident Ast.node) =
   if SMap.mem id.data env.actions then []
-  else [ error ~sm_name id.loc (Fmt.str "undefined action '%s'" id.data) ]
+  else
+    let hint = hint_kind env id.data ~expected:"action" in
+    [ error ~sm_name id.loc (Fmt.str "undefined action '%s'%s" id.data hint) ]
 
 let verify_guard ~sm_name env (id : Ast.ident Ast.node) =
   if SMap.mem id.data env.guards then []
-  else [ error ~sm_name id.loc (Fmt.str "undefined guard '%s'" id.data) ]
+  else
+    let hint = hint_kind env id.data ~expected:"guard" in
+    [ error ~sm_name id.loc (Fmt.str "undefined guard '%s'%s" id.data hint) ]
 
 let verify_signal ~sm_name env (id : Ast.ident Ast.node) =
   if SMap.mem id.data env.signals then []
-  else [ error ~sm_name id.loc (Fmt.str "undefined signal '%s'" id.data) ]
+  else
+    let hint = hint_kind env id.data ~expected:"signal" in
+    [ error ~sm_name id.loc (Fmt.str "undefined signal '%s'%s" id.data hint) ]
 
 let verify_trans_expr ~sm_name env (te : Ast.transition_expr) =
   List.concat_map (verify_action ~sm_name env) te.trans_actions
@@ -1566,6 +1598,79 @@ let liveness ~sm_name members =
             ])
       sccs
 
+(* --- 15. Unused declarations --- *)
+
+(** Collect all action/guard/signal names actually referenced in transitions,
+    choices, entry/exit actions, and initial transitions. *)
+let collect_used_names members =
+  let used_actions = Hashtbl.create 16 in
+  let used_guards = Hashtbl.create 16 in
+  let used_signals = Hashtbl.create 16 in
+  let use_action (id : Ast.ident Ast.node) =
+    Hashtbl.replace used_actions id.data true
+  in
+  let use_guard (id : Ast.ident Ast.node) =
+    Hashtbl.replace used_guards id.data true
+  in
+  let use_signal (id : Ast.ident Ast.node) =
+    Hashtbl.replace used_signals id.data true
+  in
+  let visit_trans_expr (te : Ast.transition_expr) =
+    List.iter use_action te.trans_actions
+  in
+  let visit_choice (c : Ast.def_choice) =
+    List.iter
+      (fun cm ->
+        match cm with
+        | Ast.Choice_if (guard_opt, te) ->
+            Option.iter use_guard guard_opt;
+            visit_trans_expr te.data
+        | Ast.Choice_else te -> visit_trans_expr te.data)
+      c.choice_members
+  in
+  let rec visit_sm_members ms =
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Sm_initial te -> visit_trans_expr te.data
+        | Ast.Sm_def_choice c -> visit_choice c
+        | Ast.Sm_def_state st -> visit_state st
+        | _ -> ())
+      ms
+  and visit_state (st : Ast.def_state) =
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.State_initial te -> visit_trans_expr te.data
+        | Ast.State_transition tr -> (
+            use_signal tr.st_signal;
+            Option.iter use_guard tr.st_guard;
+            match tr.st_action with
+            | Ast.Transition te -> visit_trans_expr te.data
+            | Ast.Do actions -> List.iter use_action actions)
+        | Ast.State_entry actions -> List.iter use_action actions
+        | Ast.State_exit actions -> List.iter use_action actions
+        | Ast.State_def_choice c -> visit_choice c
+        | Ast.State_def_state sub -> visit_state sub
+        | _ -> ())
+      st.state_members
+  in
+  visit_sm_members members;
+  (used_actions, used_guards, used_signals)
+
+let unused_declarations ~sm_name env members =
+  let used_actions, used_guards, used_signals = collect_used_names members in
+  let check_unused kind used declared =
+    SMap.fold
+      (fun name loc acc ->
+        if Hashtbl.mem used name then acc
+        else warning ~sm_name loc (Fmt.str "unused %s '%s'" kind name) :: acc)
+      declared []
+  in
+  check_unused "action" used_actions env.actions
+  @ check_unused "guard" used_guards env.guards
+  @ check_unused "signal" used_signals env.signals
+
 (* --- Main entry points --- *)
 
 let state_machine config (sm : Ast.def_state_machine) =
@@ -1618,9 +1723,12 @@ let state_machine config (sm : Ast.def_state_machine) =
         if config.coverage then signal_coverage ~sm_name env members else []
       in
       let live = if config.liveness then liveness ~sm_name members else [] in
+      let unused =
+        if config.unused then unused_declarations ~sm_name env members else []
+      in
       dup_names @ state_dup_names @ initial @ state_initial @ undef
       @ dup_signals @ reachability @ cycles @ undef_types @ undef_consts
-      @ defaults @ formats @ scope @ typed @ coverage @ live
+      @ defaults @ formats @ scope @ typed @ coverage @ live @ unused
 
 let rec collect_state_machines members =
   List.concat_map

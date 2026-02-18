@@ -4,8 +4,9 @@ Valid state machine passes
   >   action a
   >   guard g
   >   signal s
+  >   initial enter C
+  >   choice C { if g do { a } enter S else enter S }
   >   state S { on s enter S }
-  >   initial enter S
   > }
   > EOF
   $ ofpp check ok.fpp
@@ -193,6 +194,7 @@ Signal coverage warnings
   │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S' │
   │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T' │
   │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T' │
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                   │
   ╰───┴──────────────────┴────┴──────────────────────────────────────╯
   
   ✓ coverage.fpp
@@ -220,6 +222,7 @@ Signal coverage warnings don't affect exit code
   │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S' │
   │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T' │
   │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T' │
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                   │
   ╰───┴──────────────────┴────┴──────────────────────────────────────╯
   
   ✓ coverage.fpp
@@ -273,3 +276,43 @@ Liveness: three-state cycle
   $ ofpp check tri_cycle.fpp
   ! tri_cycle.fpp:4:8: warning in SM 'M': states {'A', 'B', 'C'} form a cycle with no exit
   ✓ tri_cycle.fpp
+
+Unused declarations
+  $ cat > unused.fpp <<EOF
+  > state machine M {
+  >   action doStuff
+  >   action unused_action
+  >   guard isReady
+  >   signal go
+  >   signal stale_signal
+  >   initial enter C
+  >   choice C { if isReady do { doStuff } enter S else enter S }
+  >   state S { on go enter S }
+  > }
+  > EOF
+  $ ofpp check unused.fpp
+  ╭───┬────────────────┬────┬────────────────────────────────────────────────╮
+  │   │ Location       │ SM │ Warning                                        │
+  ├───┼────────────────┼────┼────────────────────────────────────────────────┤
+  │ ! │ unused.fpp:9:8 │ M  │ signal 'stale_signal' not handled in state 'S' │
+  │ ! │ unused.fpp:3:9 │ M  │ unused action 'unused_action'                  │
+  │ ! │ unused.fpp:6:9 │ M  │ unused signal 'stale_signal'                   │
+  ╰───┴────────────────┴────┴────────────────────────────────────────────────╯
+  
+  ✓ unused.fpp
+
+
+Contextual hints for undefined references
+  $ cat > hint.fpp <<EOF
+  > state machine M {
+  >   guard myGuard
+  >   initial do { myGuard } enter S
+  >   state S
+  > }
+  > EOF
+  $ ofpp check hint.fpp
+  ✗ hint.fpp:3:15: error in SM 'M': undefined action 'myGuard' (a guard 'myGuard' exists)
+  
+  ✗ 1/1 file failed
+  [1]
+

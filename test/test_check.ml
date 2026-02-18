@@ -475,6 +475,101 @@ let test_liveness_single_state () =
     }
   |}
 
+(* --- 9. Unused declarations --- *)
+
+let test_unused_action () =
+  expect_warning ~substr:"unused action 'a'"
+    {|
+    state machine M {
+      action a
+      signal s
+      initial enter S
+      state S { on s enter S }
+    }
+  |}
+
+let test_unused_guard () =
+  expect_warning ~substr:"unused guard 'g'"
+    {|
+    state machine M {
+      guard g
+      signal s
+      initial enter S
+      state S { on s enter S }
+    }
+  |}
+
+let test_unused_signal () =
+  expect_warning ~substr:"unused signal 's2'"
+    {|
+    state machine M {
+      signal s1
+      signal s2
+      initial enter S
+      state S { on s1 enter S }
+    }
+  |}
+
+let test_all_used () =
+  expect_no_warnings
+    {|
+    state machine M {
+      action a
+      guard g
+      signal s
+      initial enter C
+      choice C { if g do { a } enter S else enter S }
+      state S { on s enter S }
+    }
+  |}
+
+let test_action_used_in_entry () =
+  expect_no_warnings
+    {|
+    state machine M {
+      action a
+      signal s
+      initial enter S
+      state S {
+        entry do { a }
+        on s enter S
+      }
+    }
+  |}
+
+(* --- 10. Contextual undefined reference hints --- *)
+
+let test_undef_action_hint_guard () =
+  expect_error ~substr:"a guard 'g' exists"
+    {|
+    state machine M {
+      guard g
+      state S
+      initial do { g } enter S
+    }
+  |}
+
+let test_undef_guard_hint_action () =
+  expect_error ~substr:"an action 'a' exists"
+    {|
+    state machine M {
+      action a
+      state S
+      initial enter C
+      choice C { if a enter S else enter S }
+    }
+  |}
+
+let test_undef_signal_hint_state () =
+  expect_error ~substr:"a state 's' exists"
+    {|
+    state machine M {
+      initial enter S
+      state S { on s enter S }
+      state s
+    }
+  |}
+
 let unit_tests =
   [
     Alcotest.test_case "dup_action" `Quick test_dup_action;
@@ -520,6 +615,17 @@ let unit_tests =
     Alcotest.test_case "liveness_three_state_cycle" `Quick
       test_liveness_three_state_cycle;
     Alcotest.test_case "liveness_single_state" `Quick test_liveness_single_state;
+    Alcotest.test_case "unused_action" `Quick test_unused_action;
+    Alcotest.test_case "unused_guard" `Quick test_unused_guard;
+    Alcotest.test_case "unused_signal" `Quick test_unused_signal;
+    Alcotest.test_case "all_used" `Quick test_all_used;
+    Alcotest.test_case "action_used_in_entry" `Quick test_action_used_in_entry;
+    Alcotest.test_case "undef_action_hint_guard" `Quick
+      test_undef_action_hint_guard;
+    Alcotest.test_case "undef_guard_hint_action" `Quick
+      test_undef_guard_hint_action;
+    Alcotest.test_case "undef_signal_hint_state" `Quick
+      test_undef_signal_hint_state;
   ]
 
 (* --- Upstream state machine check tests --- *)

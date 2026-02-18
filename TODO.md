@@ -6,10 +6,42 @@
 
 Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https://github.com/nasa/fpp/tree/main/compiler/tools/fpp-check/test/state_machine):
 
-- [ ] **Non-determinism detection** -- multiple transitions on same signal
-      from same state, overlapping guards
-- [x] **Liveness properties** -- cycle detection via Tarjan SCC + backward
-      reachability from terminal states
+#### Core checks (always enabled, 101 upstream tests pass)
+
+- [x] **Name redefinition** -- duplicate actions, guards, signals, states,
+      choices, constants, types
+- [x] **Initial transition validation** -- missing, multiple, scope
+      correctness (parent/child)
+- [x] **Undefined references** -- actions, guards, signals, states, choices,
+      constants, types; with contextual hints ("a guard 'x' exists")
+- [x] **Duplicate signal transitions** -- same signal handled twice in one
+      state
+- [x] **Reachability** -- unreachable states and choices
+- [x] **Choice cycle detection** -- infinite choice-to-choice loops
+- [x] **Type checking** -- signal/action/guard type compatibility, widening
+      (I16→I32, F32→F64), choice type propagation
+- [x] **Default value validation** -- struct extra fields, string-to-numeric
+      conversion, enum defaults
+- [x] **Format string validation** -- format specifiers on non-numeric types,
+      alias resolution
+
+#### Warning-level analyses (can be disabled with `--skip`)
+
+- [x] **Signal coverage** -- signals not handled in leaf states (accounting
+      for inheritance from parent states)
+- [x] **Liveness** -- cycle detection via Tarjan SCC + backward reachability
+      from terminal states
+- [x] **Unused declarations** -- actions, guards, signals declared but never
+      referenced
+
+#### Future
+
+- [ ] **Numeric range checking** -- literal values fit in declared types
+      (e.g. `-1` in `U32`) ([nasa/fpp#102](https://github.com/nasa/fpp/issues/102))
+- [ ] **Guard completeness** -- warn when choice guard outcomes are not
+      exhaustive
+- [ ] **Buffer size validation** -- FPP data types fit in uplink/downlink
+      buffers ([nasa/fpp#679](https://github.com/nasa/fpp/issues/679))
 
 ### Topology Analysis
 
@@ -18,7 +50,6 @@ Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https:/
 - [ ] **Port direction compatibility** -- output to input only
 - [ ] **No duplicate connections** to single sync input ports
 - [ ] **Async dependency cycle detection** -- circular async message flows
-- [ ] **Priority inversion warnings**
 - [ ] **Rate group coverage** -- every active component is scheduled
 
 ### Component Validation
@@ -41,17 +72,14 @@ Three output formats, all driven by FPP model analysis:
 
 Generate filled GTest test cases using standard F Prime test macros:
 
+- [ ] **State machine coverage** -- all states, transitions, guards
 - [ ] **Command coverage** -- all opcodes, parameter combinations
 - [ ] **Event coverage** -- all event types, all severity levels
 - [ ] **Telemetry coverage** -- all channels, update modes
-- [ ] **Parameter coverage** -- all params, validation paths
 - [ ] **Port coverage** -- all invocations (sync/async/guarded)
-- [ ] **State machine coverage** -- all states, transitions, guards
-- [ ] **Boundary tests** -- type boundaries (U8: 0/255, I16: -32768/32767, etc.)
-- [ ] **Component kind tests** --
-  - Passive: sync execution, guarded port serialisation
-  - Active: queue full, overflow, dispatch ordering, priority
-  - Queued: queue bounds, poke semantics
+- [ ] **Boundary tests** -- type boundaries (U8: 0/255, I16: -32768/32767)
+- [ ] **Component kind tests** -- passive (sync, guarded), active (queue,
+      dispatch, priority), queued (bounds, poke)
 
 ### `--format=vectors` (portable JSON)
 
@@ -75,17 +103,6 @@ Generate filled GTest test cases using standard F Prime test macros:
 - [ ] Publish to opam
 - [ ] API documentation (odoc)
 - [ ] Examples directory
-
-## Model Checking (`ofpp check`)
-
-Motivated by upstream issues
-([nasa/fpp#679](https://github.com/nasa/fpp/issues/679),
-[nasa/fpp#911](https://github.com/nasa/fpp/issues/911)):
-
-- [ ] **Buffer size validation** -- check that FPP data types fit in
-      uplink/downlink buffers at compile time (nasa/fpp#679)
-- [ ] **Guard completeness** -- ensure choice branches cover all cases;
-      warn when guard outcomes are not exhaustive
 
 ## Research / Future
 

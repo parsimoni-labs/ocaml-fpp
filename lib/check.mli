@@ -7,6 +7,7 @@
 type analysis =
   | Coverage
   | Liveness
+  | Unused
       (** Optional analyses that can be disabled. Core checks (name
           redefinition, initial transitions, undefined references, reachability,
           choice cycles, type checking) always run. *)
