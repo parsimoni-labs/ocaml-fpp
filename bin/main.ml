@@ -240,7 +240,10 @@ let check_cmd =
 
 (* --- dot command --- *)
 
-let dot ~sm_name files =
+type graph_format = Dot | D2
+
+let dot ~format ~sm_name files =
+  let pp = match format with Dot -> Fpp.Dot.pp | D2 -> Fpp.D2.pp in
   let ok = ref true in
   List.iter
     (fun file ->
@@ -256,12 +259,22 @@ let dot ~sm_name files =
                     sm.sm_name.data = name)
                   sms
           in
-          List.iter (fun sm -> Fpp.Dot.pp Fmt.stdout sm) sms
+          List.iter (fun sm -> pp Fmt.stdout sm) sms
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
           ok := false)
     files;
   if !ok then 0 else 1
+
+let format_t =
+  let doc =
+    "Output format. $(docv) is one of $(b,dot) (Graphviz DOT) or $(b,d2) (D2 \
+     diagramming language)."
+  in
+  Arg.(
+    value
+    & opt (enum [ ("dot", Dot); ("d2", D2) ]) Dot
+    & info [ "f"; "format" ] ~doc ~docv:"FORMAT")
 
 let sm_name_t =
   Arg.(
@@ -276,21 +289,21 @@ let dot_files_t =
     & info [] ~docv:"FILE" ~doc:"FPP files to render.")
 
 let dot_term =
-  let dot sm_name files = dot ~sm_name files in
-  Term.(const dot $ sm_name_t $ dot_files_t)
+  let dot format sm_name files = dot ~format ~sm_name files in
+  Term.(const dot $ format_t $ sm_name_t $ dot_files_t)
 
 let dot_cmd =
   let info =
-    Cmd.info "dot" ~doc:"Render state machines as Graphviz DOT graphs."
+    Cmd.info "dot" ~doc:"Render state machines as diagrams."
       ~man:
         [
           `S "DESCRIPTION";
           `P
-            "Parse FPP files and output Graphviz DOT digraphs for each state \
-             machine. Pipe the output to $(b,dot -Tpng) or $(b,dot -Tsvg) for \
-             visualisation.";
+            "Parse FPP files and output diagrams for each state machine. \
+             Supports Graphviz DOT (default) and D2 output formats.";
           `S "EXAMPLES";
           `P "$(iname) model.fpp | dot -Tpng -o sm.png";
+          `P "$(iname) -f d2 model.fpp | d2 - sm.svg";
           `P "$(iname) --sm M model.fpp | dot -Tsvg -o M.svg";
         ]
   in

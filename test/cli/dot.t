@@ -107,6 +107,37 @@ External state machine (no body) produces no output
   > EOF
   $ ofpp dot ext.fpp
 
+D2 format output
+  $ ofpp dot -f d2 simple.fpp
+  M: {label: M}
+  direction: down
+  (***) -> S: {style.stroke-dash: 3}
+  S: S
+  S -> S: s
+
+D2 hierarchical state machine
+  $ ofpp dot -f d2 hier.fpp
+  M: {label: M}
+  direction: down
+  (***) -> P: {style.stroke-dash: 3}
+  P: P {
+    P.A: A
+    P.A -> P.B: s2
+    P.B: B
+  }
+  P -> P.A: {style.stroke-dash: 3}
+  P -> P: s1
+
+D2 choice with guard
+  $ ofpp dot -f d2 choice.fpp
+  M: {label: M}
+  direction: down
+  (***) -> C: {style.stroke-dash: 3}
+  S: S
+  C: C {shape: diamond}
+  C -> S: [g]
+  C -> S: else
+
 Filter by SM name
   $ cat > multi.fpp <<EOF
   > state machine A {
