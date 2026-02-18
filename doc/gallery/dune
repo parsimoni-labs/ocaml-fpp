@@ -1,0 +1,80 @@
+(executable
+ (name gen_index)
+ (public_name gen_gallery_index)
+ (package fpp))
+
+; --- SVG generation rules ---
+
+(rule
+ (mode promote)
+ (target thermostat.svg)
+ (deps thermostat.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target deploy.svg)
+ (deps deploy.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target fan_out.svg)
+ (deps fan_out.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target self_loops.svg)
+ (deps self_loops.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target choice_chain.svg)
+ (deps choice_chain.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target deep_nesting.svg)
+ (deps deep_nesting.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target spaghetti.svg)
+ (deps spaghetti.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+; --- HTML gallery ---
+
+(rule
+ (mode promote)
+ (target index.html)
+ (deps
+  thermostat.fpp
+  thermostat.svg
+  deploy.fpp
+  deploy.svg
+  fan_out.fpp
+  fan_out.svg
+  self_loops.fpp
+  self_loops.svg
+  choice_chain.fpp
+  choice_chain.svg
+  deep_nesting.fpp
+  deep_nesting.svg
+  spaghetti.fpp
+  spaghetti.svg)
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{exe:gen_index.exe} .))))
