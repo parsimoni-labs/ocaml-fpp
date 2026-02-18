@@ -7,7 +7,7 @@ Parse a valid FPP file
 
 Parse a valid FPP file with verbose output
   $ ofpp check -v hello.fpp
-  ✓ hello.fpp (0 components, 0 state machines, 0 topology)
+  ✓ hello.fpp (0 components, 0 state machines, 0 topologies)
 
 Parse multiple files
   $ cat > a.fpp <<EOF
@@ -36,8 +36,8 @@ Report syntax errors
 
 Mix of valid and invalid files
   $ ofpp check hello.fpp bad.fpp
-  ✓ hello.fpp
   ✗ bad.fpp:2:0: syntax error
+  ✓ hello.fpp
   
   ✗ 1/2 files failed
   [1]
@@ -48,16 +48,16 @@ Verbose output with a component
   > active component Led { }
   > EOF
   $ ofpp check -v comp.fpp
-  ✓ comp.fpp (1 component, 0 state machines, 0 topology)
+  ✓ comp.fpp (1 component, 0 state machines, 0 topologies)
 
 Missing file
   $ ofpp check nonexistent.fpp 2>&1
-  Usage: ofpp check [--help] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--skip=ANALYSIS] [--verbose] [OPTION]… FILE…
   ofpp: FILE… arguments: no nonexistent.fpp file or directory
   [1]
 
 No arguments
   $ ofpp check 2>&1
-  Usage: ofpp check [--help] [--verbose] [OPTION]… FILE…
+  Usage: ofpp check [--help] [--skip=ANALYSIS] [--verbose] [OPTION]… FILE…
   ofpp: required argument FILE is missing
   [1]

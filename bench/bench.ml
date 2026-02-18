@@ -46,7 +46,7 @@ let check tus =
   let n_warnings = ref 0 in
   List.iter
     (fun tu ->
-      let diags = Fpp.Check.run tu in
+      let diags = Fpp.Check.run Fpp.Check.default tu in
       List.iter
         (fun (d : Fpp.Check.diagnostic) ->
           incr n_diags;
@@ -89,7 +89,7 @@ let () =
   let (), total_ns =
     time_ns (fun () ->
         for _ = 1 to iters do
-          List.iter (fun tu -> ignore (Fpp.Check.run tu)) tus
+          List.iter (fun tu -> ignore (Fpp.Check.run Fpp.Check.default tu)) tus
         done)
   in
   let per_iter_us = total_ns /. Float.of_int iters /. 1e3 in

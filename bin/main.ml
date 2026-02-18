@@ -4,66 +4,209 @@ open Cmdliner
 
 (* --- Output helpers --- *)
 
-let pp_ok ppf () = Fmt.pf ppf "%a" Fmt.(styled `Green string) "✓"
-let pp_err ppf () = Fmt.pf ppf "%a" Fmt.(styled `Red string) "✗"
-let pp_warn ppf () = Fmt.pf ppf "%a" Fmt.(styled `Yellow string) "!"
+let ok_style = Tty.Style.(bold + fg Tty.Color.green)
+let err_style = Tty.Style.(bold + fg Tty.Color.red)
+let warn_style = Tty.Style.(bold + fg Tty.Color.yellow)
+let pp_ok ppf () = Fmt.pf ppf "%a" (Tty.Style.styled ok_style Fmt.string) "✓"
+let pp_err ppf () = Fmt.pf ppf "%a" (Tty.Style.styled err_style Fmt.string) "✗"
+
+let pp_warn ppf () =
+  Fmt.pf ppf "%a" (Tty.Style.styled warn_style Fmt.string) "!"
+
+(* --- Warnings table --- *)
+
+let pp_warnings_table ppf (warnings : Fpp.Check.diagnostic list) =
+  (* Measure the fixed columns to give the Warning column the remaining space *)
+  let max_loc, max_name =
+    List.fold_left
+      (fun (ml, mn) (d : Fpp.Check.diagnostic) ->
+        let loc = Fmt.str "%s:%d:%d" d.loc.file d.loc.line d.loc.col in
+        (max ml (String.length loc), max mn (String.length d.sm_name)))
+      (String.length "Location", String.length "SM")
+      warnings
+  in
+  (* 3 (icon col) + 3*3 (separators) + 2 (borders) = 14 chars of overhead *)
+  let used = 14 + max_loc + max_name in
+  let warn_max = max 30 (Tty.terminal_width () - used) in
+  let columns =
+    Tty.Table.
+      [
+        column ~style:warn_style "";
+        column "Location";
+        column "SM";
+        column ~max_width:warn_max ~overflow:`Wrap "Warning";
+      ]
+  in
+  let rows =
+    List.map
+      (fun (d : Fpp.Check.diagnostic) ->
+        [
+          Tty.Span.text "!";
+          Tty.Span.text (Fmt.str "%s:%d:%d" d.loc.file d.loc.line d.loc.col);
+          Tty.Span.text d.sm_name;
+          Tty.Span.text d.msg;
+        ])
+      warnings
+  in
+  let table = Tty.Table.of_rows ~border:Tty.Border.rounded columns rows in
+  Fmt.pf ppf "%a@." Tty.Table.pp table
+
+let pp_warnings ppf (warnings : Fpp.Check.diagnostic list) =
+  match warnings with
+  | [] -> ()
+  | [ w ] -> Fmt.pf ppf "%a %a@." pp_warn () Fpp.Check.pp_diagnostic w
+  | _ -> pp_warnings_table ppf warnings
 
 (* --- check command --- *)
 
-let check ~verbose files =
-  let ok = ref 0 in
-  let fail = ref 0 in
-  List.iter
-    (fun file ->
-      match Fpp.parse_file file with
-      | tu ->
-          let diags = Fpp.Check.run tu in
-          let errors =
-            List.filter
-              (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
-              diags
-          in
-          if errors <> [] then (
-            incr fail;
-            List.iter
-              (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
-              errors)
-          else
-            let warnings =
-              List.filter
-                (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
-                diags
-            in
-            List.iter
-              (fun d -> Fmt.pr "%a %a@." pp_warn () Fpp.Check.pp_diagnostic d)
-              warnings;
-            incr ok;
-            if verbose then
-              let comps = Fpp.components tu in
-              let sms = Fpp.state_machines tu in
-              let topos = Fpp.topologies tu in
-              Fmt.pr "%a %s (%d component%s, %d state machine%s, %d topology)@."
-                pp_ok () file (List.length comps)
-                (if List.length comps <> 1 then "s" else "")
-                (List.length sms)
-                (if List.length sms <> 1 then "s" else "")
-                (List.length topos)
-            else Fmt.pr "%a %s@." pp_ok () file
-      | exception Fpp.Parse_error e ->
-          incr fail;
-          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e)
-    files;
-  if !fail > 0 then (
-    Fmt.pr "@.%a %d/%d file%s failed@." pp_err () !fail (!ok + !fail)
-      (if !ok + !fail <> 1 then "s" else "");
+type file_result = {
+  file : string;
+  status : [ `Ok | `Fail ];
+  components : int;
+  state_machines : int;
+  topologies : int;
+  warnings : int;
+}
+
+let check_file config file =
+  match Fpp.parse_file file with
+  | tu ->
+      let diags = Fpp.Check.run config tu in
+      let errors =
+        List.filter
+          (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
+          diags
+      in
+      if errors <> [] then (
+        List.iter
+          (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
+          errors;
+        {
+          file;
+          status = `Fail;
+          components = 0;
+          state_machines = 0;
+          topologies = 0;
+          warnings = 0;
+        })
+      else
+        let warnings =
+          List.filter
+            (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+            diags
+        in
+        pp_warnings Fmt.stdout warnings;
+        let comps = Fpp.components tu in
+        let sms = Fpp.state_machines tu in
+        let topos = Fpp.topologies tu in
+        {
+          file;
+          status = `Ok;
+          components = List.length comps;
+          state_machines = List.length sms;
+          topologies = List.length topos;
+          warnings = List.length warnings;
+        }
+  | exception Fpp.Parse_error e ->
+      Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
+      {
+        file;
+        status = `Fail;
+        components = 0;
+        state_machines = 0;
+        topologies = 0;
+        warnings = 0;
+      }
+
+let pp_summary_table ppf results =
+  let columns =
+    Tty.Table.
+      [
+        column "";
+        column "File";
+        column ~align:`Right "Components";
+        column ~align:`Right "State Machines";
+        column ~align:`Right "Topologies";
+        column ~align:`Right "Warnings";
+      ]
+  in
+  let rows =
+    List.map
+      (fun r ->
+        let icon, style =
+          match r.status with
+          | `Ok -> ("✓", ok_style)
+          | `Fail -> ("✗", err_style)
+        in
+        let warn_cell =
+          if r.warnings > 0 then
+            Tty.Span.styled warn_style (string_of_int r.warnings)
+          else Tty.Span.text "0"
+        in
+        [
+          Tty.Span.styled style icon;
+          Tty.Span.text r.file;
+          Tty.Span.text (string_of_int r.components);
+          Tty.Span.text (string_of_int r.state_machines);
+          Tty.Span.text (string_of_int r.topologies);
+          warn_cell;
+        ])
+      results
+  in
+  let table = Tty.Table.of_rows ~border:Tty.Border.rounded columns rows in
+  Fmt.pf ppf "@.%a" Tty.Table.pp table
+
+let pp_file_result ~verbose r =
+  if r.status = `Fail then ()
+  else if verbose then
+    Fmt.pr "%a %s (%d component%s, %d state machine%s, %d topolog%s)@." pp_ok ()
+      r.file r.components
+      (if r.components <> 1 then "s" else "")
+      r.state_machines
+      (if r.state_machines <> 1 then "s" else "")
+      r.topologies
+      (if r.topologies <> 1 then "ies" else "y")
+  else Fmt.pr "%a %s@." pp_ok () r.file
+
+let check ~verbose ~skip files =
+  let config =
+    List.fold_left
+      (fun c name ->
+        match Fpp.Check.analysis_of_string name with
+        | Some a -> Fpp.Check.skip [ a ] c
+        | None -> c)
+      Fpp.Check.default skip
+  in
+  let results = List.map (check_file config) files in
+  let multi = List.length files > 1 in
+  if verbose && multi then pp_summary_table Fmt.stdout results
+  else List.iter (pp_file_result ~verbose) results;
+  let n_ok = List.length (List.filter (fun r -> r.status = `Ok) results) in
+  let n_fail = List.length (List.filter (fun r -> r.status = `Fail) results) in
+  if n_fail > 0 then (
+    Fmt.pr "@.%a %d/%d file%s failed@." pp_err () n_fail (n_ok + n_fail)
+      (if n_ok + n_fail <> 1 then "s" else "");
     1)
   else (
-    if List.length files > 1 then
-      Fmt.pr "@.%a %d file%s ok@." pp_ok () !ok (if !ok <> 1 then "s" else "");
+    if multi then
+      Fmt.pr "@.%a %d file%s ok@." pp_ok () n_ok (if n_ok <> 1 then "s" else "");
     0)
+
+(* --- cmdliner terms --- *)
 
 let verbose_t =
   Arg.(value & flag & info [ "v"; "verbose" ] ~doc:"Show detailed output.")
+
+let skip_t =
+  let analysis_names = Fpp.Check.analyses in
+  let doc =
+    Fmt.str "Skip an analysis. May be repeated. $(docv) is one of %s."
+      (Arg.doc_alts analysis_names)
+  in
+  Arg.(
+    value
+    & opt_all (enum (List.map (fun a -> (a, a)) analysis_names)) []
+    & info [ "skip" ] ~doc ~docv:"ANALYSIS")
 
 let files_t =
   Arg.(
@@ -71,8 +214,8 @@ let files_t =
     & info [] ~docv:"FILE" ~doc:"FPP files to check.")
 
 let check_term =
-  let check verbose files = check ~verbose files in
-  Term.(const check $ verbose_t $ files_t)
+  let check verbose skip files = check ~verbose ~skip files in
+  Term.(const check $ verbose_t $ skip_t $ files_t)
 
 let check_cmd =
   let info =
@@ -81,12 +224,16 @@ let check_cmd =
         [
           `S "DESCRIPTION";
           `P
-            "Parse one or more FPP files and report any syntax or semantic \
-             errors. Runs static analysis on state machines to detect \
-             duplicate names, missing initial transitions, undefined \
-             references, unreachable states, and choice cycles.";
+            "Parse one or more FPP files and run static analysis. Reports \
+             errors (duplicate names, missing initial transitions, undefined \
+             references, unreachable states, choice cycles, type mismatches) \
+             and warnings (signal coverage gaps, liveness issues).";
+          `P
+            "All analyses run by default. Use $(b,--skip) to disable specific \
+             warning-level analyses.";
           `S "EXAMPLES";
           `P "$(iname) Components/**/*.fpp";
+          `P "$(iname) --skip coverage model.fpp";
         ]
   in
   Cmd.v info check_term

@@ -8,8 +8,8 @@ Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https:/
 
 - [ ] **Non-determinism detection** -- multiple transitions on same signal
       from same state, overlapping guards
-- [ ] **Liveness properties** -- every state eventually reaches a terminal
-      state (under fairness)
+- [x] **Liveness properties** -- cycle detection via Tarjan SCC + backward
+      reachability from terminal states
 
 ### Topology Analysis
 
@@ -75,6 +75,17 @@ Generate filled GTest test cases using standard F Prime test macros:
 - [ ] Publish to opam
 - [ ] API documentation (odoc)
 - [ ] Examples directory
+
+## Model Checking (`ofpp check`)
+
+Motivated by upstream issues
+([nasa/fpp#679](https://github.com/nasa/fpp/issues/679),
+[nasa/fpp#911](https://github.com/nasa/fpp/issues/911)):
+
+- [ ] **Buffer size validation** -- check that FPP data types fit in
+      uplink/downlink buffers at compile time (nasa/fpp#679)
+- [ ] **Guard completeness** -- ensure choice branches cover all cases;
+      warn when guard outcomes are not exhaustive
 
 ## Research / Future
 

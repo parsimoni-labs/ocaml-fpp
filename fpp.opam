@@ -16,6 +16,7 @@ depends: [
   "menhirLib"
   "cmdliner"
   "logs"
+  "tty"
   "alcotest" {with-test}
   "memtrace" {with-test}
   "odoc" {with-doc}
@@ -35,3 +36,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/parsimoni-labs/ocaml-fpp.git"
+pin-depends: [
+  ["tty.dev" "git+https://tangled.org/gazagnaire.org/ocaml-tty.git"]
+]

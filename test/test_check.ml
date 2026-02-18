@@ -6,7 +6,7 @@ let parse s =
   | exception Fpp.Parse_error e ->
       Alcotest.failf "parse error: %a" Fpp.pp_error e
 
-let diags s = Fpp.Check.run (parse s)
+let diags s = Fpp.Check.run Fpp.Check.default (parse s)
 
 let errors s =
   diags s |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
@@ -416,6 +416,65 @@ let test_signal_coverage_no_signals () =
     }
   |}
 
+(* --- 8. Liveness analysis --- *)
+
+let test_liveness_cycle_no_exit () =
+  expect_warning ~substr:"form a cycle with no exit"
+    {|
+    state machine M {
+      signal s
+      initial enter A
+      state A { on s enter B }
+      state B { on s enter A }
+    }
+  |}
+
+let expect_no_liveness_warnings s =
+  let ws = warnings s in
+  let liveness_ws =
+    List.filter
+      (fun (d : Fpp.Check.diagnostic) -> msg_contains ~substr:"cycle" d.msg)
+      ws
+  in
+  if liveness_ws <> [] then
+    Alcotest.failf "expected no liveness warnings, got: [%s]"
+      (String.concat "; "
+         (List.map (fun (d : Fpp.Check.diagnostic) -> d.msg) liveness_ws))
+
+let test_liveness_cycle_with_exit () =
+  expect_no_liveness_warnings
+    {|
+    state machine M {
+      signal s1
+      signal s2
+      initial enter A
+      state A { on s1 enter B on s2 enter C }
+      state B { on s1 enter A on s2 enter C }
+      state C
+    }
+  |}
+
+let test_liveness_three_state_cycle () =
+  expect_warning ~substr:"'A', 'B', 'C'"
+    {|
+    state machine M {
+      signal s
+      initial enter A
+      state A { on s enter B }
+      state B { on s enter C }
+      state C { on s enter A }
+    }
+  |}
+
+let test_liveness_single_state () =
+  expect_no_warnings
+    {|
+    state machine M {
+      initial enter S
+      state S
+    }
+  |}
+
 let unit_tests =
   [
     Alcotest.test_case "dup_action" `Quick test_dup_action;
@@ -454,6 +513,13 @@ let unit_tests =
     Alcotest.test_case "signal_coverage_full" `Quick test_signal_coverage_full;
     Alcotest.test_case "signal_coverage_no_signals" `Quick
       test_signal_coverage_no_signals;
+    Alcotest.test_case "liveness_cycle_no_exit" `Quick
+      test_liveness_cycle_no_exit;
+    Alcotest.test_case "liveness_cycle_with_exit" `Quick
+      test_liveness_cycle_with_exit;
+    Alcotest.test_case "liveness_three_state_cycle" `Quick
+      test_liveness_three_state_cycle;
+    Alcotest.test_case "liveness_single_state" `Quick test_liveness_single_state;
   ]
 
 (* --- Upstream state machine check tests --- *)
@@ -481,7 +547,7 @@ let parse_file path =
 
 let errors_of_file path =
   let tu = parse_file path in
-  Fpp.Check.run tu
+  Fpp.Check.run Fpp.Check.default tu
   |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
 
 (* Files that upstream says should produce no errors. *)

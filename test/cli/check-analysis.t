@@ -165,9 +165,9 @@ Empty state machine body requires initial
 
 Mix of valid and failing files
   $ ofpp check ok.fpp dup_action.fpp external.fpp
-  ✓ ok.fpp
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
   ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
+  ✓ ok.fpp
   ✓ external.fpp
   
   ✗ 1/3 files failed
@@ -187,9 +187,14 @@ Signal coverage warnings
   > }
   > EOF
   $ ofpp check coverage.fpp
-  ! coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
-  ! coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
-  ! coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ╭───┬──────────────────┬────┬──────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                              │
+  ├───┼──────────────────┼────┼──────────────────────────────────────┤
+  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S' │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T' │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T' │
+  ╰───┴──────────────────┴────┴──────────────────────────────────────╯
+  
   ✓ coverage.fpp
 
 Signal coverage with inherited handlers
@@ -209,8 +214,62 @@ Signal coverage with inherited handlers
 
 Signal coverage warnings don't affect exit code
   $ ofpp check coverage.fpp; echo "exit=$?"
-  ! coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
-  ! coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
-  ! coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ╭───┬──────────────────┬────┬──────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                              │
+  ├───┼──────────────────┼────┼──────────────────────────────────────┤
+  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S' │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T' │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T' │
+  ╰───┴──────────────────┴────┴──────────────────────────────────────╯
+  
   ✓ coverage.fpp
   exit=0
+
+Liveness: cycle with no exit
+  $ cat > livelock.fpp <<EOF
+  > state machine M {
+  >   signal s
+  >   initial enter C
+  >   state C { on s enter A }
+  >   state A { on s enter B }
+  >   state B { on s enter A }
+  > }
+  > EOF
+  $ ofpp check livelock.fpp
+  ! livelock.fpp:5:8: warning in SM 'M': states {'A', 'B'} form a cycle with no exit
+  ✓ livelock.fpp
+
+Liveness: cycle with exit (no warning)
+  $ cat > cycle_exit.fpp <<EOF
+  > state machine M {
+  >   signal s1
+  >   signal s2
+  >   initial enter A
+  >   state A { on s1 enter B on s2 enter C }
+  >   state B { on s1 enter A on s2 enter C }
+  >   state C
+  > }
+  > EOF
+  $ ofpp check cycle_exit.fpp
+  ╭───┬────────────────────┬────┬──────────────────────────────────────╮
+  │   │ Location           │ SM │ Warning                              │
+  ├───┼────────────────────┼────┼──────────────────────────────────────┤
+  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's1' not handled in state 'C' │
+  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's2' not handled in state 'C' │
+  ╰───┴────────────────────┴────┴──────────────────────────────────────╯
+  
+  ✓ cycle_exit.fpp
+
+Liveness: three-state cycle
+  $ cat > tri_cycle.fpp <<EOF
+  > state machine M {
+  >   signal s
+  >   initial enter A
+  >   state A { on s enter B }
+  >   state B { on s enter C }
+  >   state C { on s enter A }
+  > }
+  > EOF
+  $ ofpp check tri_cycle.fpp
+  ! tri_cycle.fpp:4:8: warning in SM 'M': states {'A', 'B', 'C'} form a cycle with no exit
+  ✓ tri_cycle.fpp

@@ -28,5 +28,6 @@
   menhirLib
   cmdliner
   logs
+  tty
   (alcotest :with-test)
   (memtrace :with-test)))

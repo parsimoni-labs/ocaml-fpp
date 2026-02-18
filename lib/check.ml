@@ -1,5 +1,28 @@
 (** State machine static analysis. *)
 
+type analysis = Coverage | Liveness
+
+let all_analyses = [ Coverage; Liveness ]
+
+let analysis_of_string = function
+  | "coverage" -> Some Coverage
+  | "liveness" -> Some Liveness
+  | _ -> None
+
+let analyses = [ "coverage"; "liveness" ]
+
+type config = { coverage : bool; liveness : bool }
+
+let default = { coverage = true; liveness = true }
+
+let skip analyses config =
+  List.fold_left
+    (fun c a ->
+      match a with
+      | Coverage -> { c with coverage = false }
+      | Liveness -> { c with liveness = false })
+    config analyses
+
 type diagnostic = {
   severity : [ `Error | `Warning ];
   loc : Ast.loc;
@@ -1329,9 +1352,223 @@ let signal_coverage ~sm_name env members =
       (walk_state ~inherited:SSet.empty)
       (collect_sm_states members)
 
+(* --- 14. Liveness analysis --- *)
+
+(** Build a transition graph over flat state names. Returns: adjacency list
+    (state -> set of successor states), plus a map of state name -> loc for
+    diagnostics. *)
+let build_state_graph members =
+  let choice_map = build_choice_map members in
+  let graph : SSet.t SMap.t ref = ref SMap.empty in
+  let locs : Ast.loc SMap.t ref = ref SMap.empty in
+  let add_edge from_st to_st =
+    let prev =
+      match SMap.find_opt from_st !graph with Some s -> s | None -> SSet.empty
+    in
+    graph := SMap.add from_st (SSet.add to_st prev) !graph
+  in
+  let rec resolve_choice visited name =
+    if SSet.mem name visited then SSet.empty
+    else
+      let visited = SSet.add name visited in
+      match Hashtbl.find_opt choice_map name with
+      | None -> SSet.singleton name
+      | Some (c : Ast.def_choice) ->
+          List.fold_left
+            (fun acc cm ->
+              let te =
+                match cm with
+                | Ast.Choice_if (_, te) -> te
+                | Ast.Choice_else te -> te
+              in
+              SSet.union acc
+                (resolve_choice visited (target_name te.data.trans_target)))
+            SSet.empty c.choice_members
+  in
+  let visit_transition from_state (tr : Ast.spec_state_transition) =
+    match tr.st_action with
+    | Ast.Transition te ->
+        let targets =
+          resolve_choice SSet.empty (target_name te.data.trans_target)
+        in
+        SSet.iter (add_edge from_state) targets
+    | Ast.Do _ -> ()
+  in
+  let visit_initial from_state (te : Ast.transition_expr) =
+    let targets = resolve_choice SSet.empty (target_name te.trans_target) in
+    SSet.iter (add_edge from_state) targets
+  in
+  let rec collect_states ~prefix members =
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Sm_def_state st -> visit_state ~prefix st
+        | _ -> ())
+      members
+  and visit_state ~prefix (st : Ast.def_state) =
+    let name =
+      match prefix with
+      | "" -> st.state_name.data
+      | p -> p ^ "." ^ st.state_name.data
+    in
+    locs := SMap.add name st.state_name.loc !locs;
+    if not (state_has_substates st) then (
+      (* Ensure node exists in graph even with no edges *)
+      if not (SMap.mem name !graph) then
+        graph := SMap.add name SSet.empty !graph;
+      List.iter
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.State_transition tr -> visit_transition name tr
+          | _ -> ())
+        st.state_members)
+    else (
+      (* For parent states, record initial transition edges *)
+      List.iter
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.State_initial te -> visit_initial name te.data
+          | _ -> ())
+        st.state_members;
+      List.iter
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.State_def_state sub -> visit_state ~prefix:name sub
+          | _ -> ())
+        st.state_members)
+  in
+  collect_states ~prefix:"" members;
+  (!graph, !locs)
+
+(** Tarjan's SCC algorithm. Returns list of SCCs (each is a set of state names).
+*)
+let tarjan_scc graph =
+  let index = ref 0 in
+  let stack = ref [] in
+  let on_stack = Hashtbl.create 16 in
+  let indices = Hashtbl.create 16 in
+  let lowlinks = Hashtbl.create 16 in
+  let sccs = ref [] in
+  let rec strongconnect v =
+    Hashtbl.replace indices v !index;
+    Hashtbl.replace lowlinks v !index;
+    incr index;
+    stack := v :: !stack;
+    Hashtbl.replace on_stack v true;
+    let succs =
+      match SMap.find_opt v graph with Some s -> s | None -> SSet.empty
+    in
+    SSet.iter
+      (fun w ->
+        if not (Hashtbl.mem indices w) then (
+          strongconnect w;
+          let lw = Hashtbl.find lowlinks w in
+          let lv = Hashtbl.find lowlinks v in
+          if lw < lv then Hashtbl.replace lowlinks v lw)
+        else if Hashtbl.mem on_stack w then
+          let iw = Hashtbl.find indices w in
+          let lv = Hashtbl.find lowlinks v in
+          if iw < lv then Hashtbl.replace lowlinks v iw)
+      succs;
+    if Hashtbl.find lowlinks v = Hashtbl.find indices v then (
+      let scc = ref SSet.empty in
+      let continue = ref true in
+      while !continue do
+        match !stack with
+        | w :: rest ->
+            stack := rest;
+            Hashtbl.remove on_stack w;
+            scc := SSet.add w !scc;
+            if w = v then continue := false
+        | [] -> continue := false
+      done;
+      sccs := !scc :: !sccs)
+  in
+  SMap.iter
+    (fun v _ -> if not (Hashtbl.mem indices v) then strongconnect v)
+    graph;
+  !sccs
+
+(** Check liveness: warn about states trapped in cycles with no exit to a
+    terminal state. *)
+let liveness ~sm_name members =
+  let graph, locs = build_state_graph members in
+  let n_states = SMap.cardinal graph in
+  if n_states <= 1 then []
+  else
+    (* A terminal state has no outgoing transitions (sink). *)
+    let terminals =
+      SMap.fold
+        (fun name succs acc ->
+          if SSet.is_empty succs then SSet.add name acc else acc)
+        graph SSet.empty
+    in
+    (* Backward reachability from terminals: find all states that can
+       reach a terminal. *)
+    let can_terminate = Hashtbl.create 16 in
+    let queue = Queue.create () in
+    SSet.iter
+      (fun t ->
+        Hashtbl.replace can_terminate t true;
+        Queue.push t queue)
+      terminals;
+    let reverse_graph =
+      SMap.fold
+        (fun src succs acc ->
+          SSet.fold
+            (fun dst acc ->
+              let prev =
+                match SMap.find_opt dst acc with
+                | Some s -> s
+                | None -> SSet.empty
+              in
+              SMap.add dst (SSet.add src prev) acc)
+            succs acc)
+        graph SMap.empty
+    in
+    while not (Queue.is_empty queue) do
+      let node = Queue.pop queue in
+      let preds =
+        match SMap.find_opt node reverse_graph with
+        | Some s -> s
+        | None -> SSet.empty
+      in
+      SSet.iter
+        (fun p ->
+          if not (Hashtbl.mem can_terminate p) then (
+            Hashtbl.replace can_terminate p true;
+            Queue.push p queue))
+        preds
+    done;
+    (* Find SCCs where no member can reach a terminal. *)
+    let sccs = tarjan_scc graph in
+    List.concat_map
+      (fun scc ->
+        if SSet.cardinal scc < 2 then []
+        else
+          let any_can_terminate =
+            SSet.exists (fun s -> Hashtbl.mem can_terminate s) scc
+          in
+          if any_can_terminate then []
+          else
+            let states = SSet.elements scc in
+            let repr = List.hd states in
+            let loc =
+              match SMap.find_opt repr locs with
+              | Some l -> l
+              | None -> Ast.dummy_loc
+            in
+            [
+              warning ~sm_name loc
+                (Fmt.str "states {%s} form a cycle with no exit"
+                   (String.concat ", "
+                      (List.map (fun s -> "'" ^ s ^ "'") states)));
+            ])
+      sccs
+
 (* --- Main entry points --- *)
 
-let state_machine (sm : Ast.def_state_machine) =
+let state_machine config (sm : Ast.def_state_machine) =
   let sm_name = sm.sm_name.data in
   match sm.sm_members with
   | None -> []
@@ -1377,10 +1614,13 @@ let state_machine (sm : Ast.def_state_machine) =
             members
       in
       let typed = typed_element_checks ~sm_name env members in
-      let coverage = signal_coverage ~sm_name env members in
+      let coverage =
+        if config.coverage then signal_coverage ~sm_name env members else []
+      in
+      let live = if config.liveness then liveness ~sm_name members else [] in
       dup_names @ state_dup_names @ initial @ state_initial @ undef
       @ dup_signals @ reachability @ cycles @ undef_types @ undef_consts
-      @ defaults @ formats @ scope @ typed @ coverage
+      @ defaults @ formats @ scope @ typed @ coverage @ live
 
 let rec collect_state_machines members =
   List.concat_map
@@ -1391,6 +1631,6 @@ let rec collect_state_machines members =
       | _ -> [])
     members
 
-let run tu =
+let run config tu =
   let sms = collect_state_machines tu.Ast.tu_members in
-  List.concat_map state_machine sms
+  List.concat_map (state_machine config) sms
