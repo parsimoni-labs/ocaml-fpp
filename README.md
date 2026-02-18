@@ -34,32 +34,79 @@ machines, topologies, ports, and more).
 ### `ofpp check`
 
 ```
-ofpp check [--verbose] Components/**/*.fpp
+ofpp check [--verbose] [--skip ANALYSIS] Components/**/*.fpp
 ```
 
 Parse one or more FPP files and report syntax or semantic errors with
-`file:line:col` locations. Runs 12 static analysis checks on state machines:
+`file:line:col` locations.
 
-1. **Name redefinition detection** -- duplicate state/choice/action/guard/signal/constant names
-2. **Initial transition validation** -- exactly one initial transition per SM and per parent state
-3. **Undefined reference detection** -- undefined actions, choices, guards, signals, states, constants
-4. **Duplicate signal transitions** -- at most one transition per signal per state
-5. **Reachability analysis** -- every state and choice must be reachable from the initial node
-6. **Choice cycle detection** -- no cycles in the choice-only subgraph (deadlock prevention)
-7. **Undefined type references** -- type names used but not defined
-8. **Undefined constant references** -- constant names used but not defined
-9. **Default value validation** -- type-compatible default values
-10. **Format string validation** -- format specifiers match element types
-11. **Initial transition scope** -- initial transitions target local states/choices
-12. **Typed element checking** -- type compatibility for signals, actions, and guards
+#### Core checks (always enabled)
 
-ofpp also performs **signal coverage analysis** (novel to ofpp, not in the
-upstream compiler): at each leaf state, it warns about signals that are not
-handled, accounting for inherited handlers from ancestor states. This catches
-gaps like an `error` signal missing from a RESET state.
+These detect semantic errors that must be fixed. They match the upstream
+`fpp-check` behaviour and are validated against 101 upstream state machine
+test files.
+
+1. **Name redefinition** -- duplicate state, choice, action, guard, signal,
+   constant, and type names
+2. **Initial transition validation** -- exactly one initial transition per SM
+   and per parent state
+3. **Undefined reference detection** -- undefined actions, choices, guards,
+   signals, states, constants, and types, with contextual hints (e.g.
+   "a guard 'x' exists")
+4. **Duplicate signal transitions** -- at most one transition per signal per
+   state
+5. **Reachability analysis** -- every state and choice must be reachable from
+   the initial node
+6. **Choice cycle detection** -- no cycles in the choice-only subgraph
+7. **Default value validation** -- type-compatible default values (struct
+   fields, string-to-numeric, enums)
+8. **Format string validation** -- format specifiers on non-numeric types,
+   alias resolution
+9. **Initial transition scope** -- initial transitions target local
+   states/choices only
+10. **Typed element checking** -- signal, action, and guard type compatibility,
+    widening (I16 to I32, F32 to F64), choice type propagation
+
+#### Warning-level analyses (can be disabled with `--skip`)
+
+These detect suspicious patterns that may indicate bugs but are not
+necessarily errors. Each can be individually disabled.
+
+- **Signal coverage** (`--skip coverage`) -- for each leaf state, warns about
+  signals not handled directly or via inheritance from ancestors. Novel to ofpp
+  -- the upstream compiler does not perform this analysis.
+- **Liveness** (`--skip liveness`) -- detects groups of states forming a cycle
+  with no exit path to a terminal state, using Tarjan's SCC algorithm with
+  backward reachability analysis.
+- **Unused declarations** (`--skip unused`) -- reports actions, guards, and
+  signals declared but never referenced in any transition, choice, or
+  entry/exit action.
+- **Transition shadowing** (`--skip shadowing`) -- warns when a child state
+  handles a signal that an ancestor already handles. The child's handler
+  overrides the parent's, which may be intentional or accidental. Inspired by
+  SCADE and Stateflow edit-time checks.
+- **Deadlock detection** (`--skip deadlock`) -- warns about leaf states with
+  no outgoing transitions and no ancestor handler, when the state machine
+  declares at least one signal. Such states can never react to any event.
+- **Guard completeness** (`--skip completeness`) -- warns when a choice
+  definition has no `else` branch. A missing else means the choice may fail
+  to transition if no guard evaluates to true.
 
 In verbose mode, the output includes component, state machine, and topology
-counts per file.
+counts per file. Warnings are displayed in a formatted table.
+
+### `ofpp dot`
+
+```
+ofpp dot [--sm NAME] model.fpp | dot -Tpng -o sm.png
+```
+
+Render state machines as Graphviz DOT digraphs. Hierarchical states become
+cluster subgraphs, choices become diamond nodes, and signal transitions become
+labelled edges. Initial transitions are shown as dashed edges from synthetic
+start points. Entry and exit actions appear in the state node labels.
+
+This feature is not available in the upstream FPP toolchain.
 
 ## What is planned
 
@@ -67,7 +114,8 @@ The roadmap (see [TODO.md](TODO.md)) covers three directions:
 
 - **Static analysis** (`ofpp check`). Topology wiring validation (port type
   and direction compatibility, duplicate connections, async dependency cycles),
-  and component-level checks.
+  and component-level checks. Additional state machine checks: guard mutual
+  exclusivity, numeric range checking, bounded response analysis.
 - **Test generation** (`ofpp test`). Derive test cases -- GTest stubs,
   portable JSON vectors, or QCheck property-based tests -- from FPP model
   structure.
@@ -90,9 +138,10 @@ dune exec -- ofpp check test/upstream/component/*.fpp
 dune runtest
 ```
 
-This runs 817 tests: unit tests (Alcotest) covering all 12 analysis checks
-plus 4 signal coverage tests, 670 upstream file parse tests, 91 upstream
-state machine check tests, and a cram test suite for the CLI.
+This runs 841+ tests: unit tests (Alcotest) covering core error checks,
+warning-level analyses, and environment construction, plus 670 upstream file
+parse tests, 91 upstream state machine check tests, and a cram test suite for
+the CLI.
 
 ## Benchmarks
 

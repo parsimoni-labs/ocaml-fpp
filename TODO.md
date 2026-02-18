@@ -115,8 +115,10 @@ standards (DO-178C, MISRA, SCADE) and real-world incidents motivate each check.
 
 ## Visualization (`ofpp dot`)
 
-- [ ] **State machine → Graphviz/DOT** -- render state machines as visual
+- [x] **State machine → Graphviz/DOT** -- render state machines as visual
       graphs (not available in the upstream fpp toolchain)
+- [ ] **Additional output formats** -- D2, TikZ, or direct SVG for modern
+      rendering without external tools
 
 ## Test Generation (`ofpp test`)
 

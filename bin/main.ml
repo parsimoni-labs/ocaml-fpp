@@ -238,6 +238,64 @@ let check_cmd =
   in
   Cmd.v info check_term
 
+(* --- dot command --- *)
+
+let dot ~sm_name files =
+  let ok = ref true in
+  List.iter
+    (fun file ->
+      match Fpp.parse_file file with
+      | tu ->
+          let sms = Fpp.state_machines tu in
+          let sms =
+            match sm_name with
+            | None -> sms
+            | Some name ->
+                List.filter
+                  (fun (sm : Fpp.Ast.def_state_machine) ->
+                    sm.sm_name.data = name)
+                  sms
+          in
+          List.iter (fun sm -> Fpp.Dot.pp Fmt.stdout sm) sms
+      | exception Fpp.Parse_error e ->
+          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
+          ok := false)
+    files;
+  if !ok then 0 else 1
+
+let sm_name_t =
+  Arg.(
+    value
+    & opt (some string) None
+    & info [ "sm" ] ~docv:"NAME"
+        ~doc:"Only output the state machine named $(docv).")
+
+let dot_files_t =
+  Arg.(
+    non_empty & pos_all file []
+    & info [] ~docv:"FILE" ~doc:"FPP files to render.")
+
+let dot_term =
+  let dot sm_name files = dot ~sm_name files in
+  Term.(const dot $ sm_name_t $ dot_files_t)
+
+let dot_cmd =
+  let info =
+    Cmd.info "dot" ~doc:"Render state machines as Graphviz DOT graphs."
+      ~man:
+        [
+          `S "DESCRIPTION";
+          `P
+            "Parse FPP files and output Graphviz DOT digraphs for each state \
+             machine. Pipe the output to $(b,dot -Tpng) or $(b,dot -Tsvg) for \
+             visualisation.";
+          `S "EXAMPLES";
+          `P "$(iname) model.fpp | dot -Tpng -o sm.png";
+          `P "$(iname) --sm M model.fpp | dot -Tsvg -o M.svg";
+        ]
+  in
+  Cmd.v info dot_term
+
 (* --- main --- *)
 
 let cmd =
@@ -255,7 +313,7 @@ let cmd =
           `P "$(b,https://nasa.github.io/fpp/fpp-users-guide.html)";
         ]
   in
-  Cmd.group info [ check_cmd ]
+  Cmd.group info [ check_cmd; dot_cmd ]
 
 let () =
   match Cmd.eval_value cmd with
