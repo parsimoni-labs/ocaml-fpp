@@ -49,41 +49,29 @@ let resolve_target ids ~prefix (qi : Ast.qual_ident Ast.node) =
 
 (* ── Label formatting ──────────────────────────────────────────────── *)
 
-let quote_label s =
-  if String.contains s '[' || String.contains s ']' then "\"" ^ s ^ "\"" else s
+let actions_of_transition (tr : Ast.spec_state_transition) =
+  match tr.st_action with
+  | Ast.Transition te ->
+      List.map (fun (a : Ast.ident Ast.node) -> a.data) te.data.trans_actions
+  | Ast.Do acts -> List.map (fun (a : Ast.ident Ast.node) -> a.data) acts
 
-let transition_label (tr : Ast.spec_state_transition) =
-  let signal = tr.st_signal.data in
-  let guard =
-    match tr.st_guard with Some g -> " [" ^ g.data ^ "]" | None -> ""
-  in
-  let actions =
-    match tr.st_action with
-    | Ast.Transition te ->
-        let acts =
-          List.map
-            (fun (a : Ast.ident Ast.node) -> a.data)
-            te.data.trans_actions
-        in
-        if acts = [] then "" else " / " ^ String.concat ", " acts
-    | Ast.Do acts ->
-        let names = List.map (fun (a : Ast.ident Ast.node) -> a.data) acts in
-        if names = [] then "" else " / " ^ String.concat ", " names
-  in
-  quote_label (signal ^ guard ^ actions)
-
-let trans_expr_label (te : Ast.transition_expr) =
-  let acts =
-    List.map (fun (a : Ast.ident Ast.node) -> a.data) te.trans_actions
-  in
-  if acts = [] then "" else " / " ^ String.concat ", " acts
+let actions_of_trans_expr (te : Ast.transition_expr) =
+  List.map (fun (a : Ast.ident Ast.node) -> a.data) te.trans_actions
 
 (* ── Edge accumulator ─────────────────────────────────────────────── *)
 
-type edge = { src : string; dst : string; label : string }
+type edge = {
+  src : string;
+  dst : string;
+  label : string;
+  guard : string option;
+  actions : string option;
+}
 
 let edges : edge list ref = ref []
-let add_edge src dst label = edges := { src; dst; label } :: !edges
+
+let add_edge src dst ?(guard : string option) ?(actions : string option) label =
+  edges := { src; dst; label; guard; actions } :: !edges
 
 (* ── D2 preamble ──────────────────────────────────────────────────── *)
 
@@ -130,18 +118,24 @@ let emit_choice_node ppf ids ~depth ~prefix (c : Ast.def_choice) =
     (fun cm ->
       match cm with
       | Ast.Choice_if (guard_opt, te) ->
-          let guard =
+          let guard_str =
             match guard_opt with
             | Some (g : Ast.ident Ast.node) -> "[" ^ g.data ^ "]"
             | None -> "[true]"
           in
           let target = resolve_target ids ~prefix te.data.trans_target in
-          let acts = trans_expr_label te.data in
-          add_edge id target (quote_label (guard ^ acts))
+          let acts = actions_of_trans_expr te.data in
+          let actions =
+            if acts = [] then None else Some ("/ " ^ String.concat ", " acts)
+          in
+          add_edge id target ?actions ("\"" ^ guard_str ^ "\"")
       | Ast.Choice_else te ->
           let target = resolve_target ids ~prefix te.data.trans_target in
-          let acts = trans_expr_label te.data in
-          add_edge id target ("else" ^ acts))
+          let acts = actions_of_trans_expr te.data in
+          let actions =
+            if acts = [] then None else Some ("/ " ^ String.concat ", " acts)
+          in
+          add_edge id target ?actions "else")
     c.choice_members
 
 let action_names members tag =
@@ -204,13 +198,16 @@ let rec emit_composite ppf ids ~depth ~prefix (st : Ast.def_state) =
       match (Ast.unannotate ann).Ast.data with
       | Ast.State_initial te ->
           let target = resolve_target ids ~prefix:id te.data.trans_target in
-          let acts = trans_expr_label te.data in
+          let acts = actions_of_trans_expr te.data in
+          let actions =
+            if acts = [] then None else Some ("/ " ^ String.concat ", " acts)
+          in
           let init_id = id ^ ".__init__" in
           indent ppf (depth + 1);
           Fmt.pf ppf
             "__init__: \"\" { shape: circle; width: 12; height: 12; \
              style.fill: \"#1a1a2e\"; style.stroke: \"#1a1a2e\" }@.";
-          add_edge init_id target acts
+          add_edge init_id target ?actions ""
       | _ -> ())
     st.state_members;
   indent ppf depth;
@@ -235,12 +232,21 @@ and emit_state_node ppf ids ~depth ~prefix (st : Ast.def_state) =
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
       | Ast.State_transition tr -> (
-          let label = transition_label tr in
+          let signal = tr.st_signal.data in
+          let guard =
+            match tr.st_guard with
+            | Some g -> Some ("[" ^ g.data ^ "]")
+            | None -> None
+          in
+          let acts = actions_of_transition tr in
+          let actions =
+            if acts = [] then None else Some ("/ " ^ String.concat ", " acts)
+          in
           match tr.st_action with
           | Ast.Transition te ->
               let target = resolve_target ids ~prefix te.data.trans_target in
-              add_edge id target label
-          | Ast.Do _ -> add_edge id id label)
+              add_edge id target ?guard ?actions signal
+          | Ast.Do _ -> add_edge id id ?guard ?actions signal)
       | _ -> ())
     st.state_members
 
@@ -259,11 +265,14 @@ let pp ppf (sm : Ast.def_state_machine) =
           match (Ast.unannotate ann).Ast.data with
           | Ast.Sm_initial te ->
               let target = resolve_target ids ~prefix:"" te.data.trans_target in
-              let acts = trans_expr_label te.data in
+              let acts = actions_of_trans_expr te.data in
+              let actions =
+                if acts = [] then None else Some ("/ " ^ String.concat ", " acts)
+              in
               Fmt.pf ppf
                 "__init__: \"\" { shape: circle; width: 20; height: 20; \
                  style.fill: \"#1a1a2e\"; style.stroke: \"#1a1a2e\" }@.";
-              add_edge "__init__" target acts
+              add_edge "__init__" target ?actions ""
           | Ast.Sm_def_state st ->
               emit_state_node ppf ids ~depth:0 ~prefix:"" st
           | Ast.Sm_def_choice c ->
@@ -273,6 +282,17 @@ let pp ppf (sm : Ast.def_state_machine) =
       (* All edges at top level with fully qualified IDs *)
       List.iter
         (fun e ->
-          if e.label = "" then Fmt.pf ppf "%s -> %s@." e.src e.dst
-          else Fmt.pf ppf "%s -> %s: %s@." e.src e.dst e.label)
+          match (e.label, e.guard, e.actions) with
+          | "", None, None -> Fmt.pf ppf "%s -> %s@." e.src e.dst
+          | lbl, None, None -> Fmt.pf ppf "%s -> %s: %s@." e.src e.dst lbl
+          | lbl, guard, actions ->
+              if lbl = "" then Fmt.pf ppf "%s -> %s {" e.src e.dst
+              else Fmt.pf ppf "%s -> %s: %s {" e.src e.dst lbl;
+              (match guard with
+              | Some g -> Fmt.pf ppf "@.  source-arrowhead.label: %s" g
+              | None -> ());
+              (match actions with
+              | Some a -> Fmt.pf ppf "@.  target-arrowhead.label: %s" a
+              | None -> ());
+              Fmt.pf ppf "@.}@.")
         (List.rev !edges)

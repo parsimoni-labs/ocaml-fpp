@@ -110,6 +110,59 @@ let test_entry_exit_actions () =
   Alcotest.(check bool) "entry action" true (contains ~substr:"entry / a1" d2);
   Alcotest.(check bool) "exit action" true (contains ~substr:"exit / a2" d2)
 
+let test_structured_labels () =
+  let d2 =
+    render
+      {|
+    state machine M {
+      action a1
+      action a2
+      guard g
+      signal s
+      initial enter S1
+      state S1 {
+        on s if g do { a1, a2 } enter S2
+      }
+      state S2 {
+        on s do { a1 } enter S1
+        on s enter S2
+      }
+    }
+  |}
+  in
+  Alcotest.(check bool)
+    "source-arrowhead for guard" true
+    (contains ~substr:"source-arrowhead.label: [g]" d2);
+  Alcotest.(check bool)
+    "target-arrowhead for actions" true
+    (contains ~substr:"target-arrowhead.label: / a1, a2" d2);
+  Alcotest.(check bool)
+    "actions-only target-arrowhead" true
+    (contains ~substr:"target-arrowhead.label: / a1" d2);
+  Alcotest.(check bool)
+    "signal-only edge stays simple" true
+    (contains ~substr:"S2 -> S2: s\n" d2)
+
+let test_choice_with_actions () =
+  let d2 =
+    render
+      {|
+    state machine M {
+      action a1
+      guard g
+      initial enter C
+      state S
+      choice C { if g do { a1 } enter S else enter S }
+    }
+  |}
+  in
+  Alcotest.(check bool)
+    "choice target-arrowhead for actions" true
+    (contains ~substr:"target-arrowhead.label: / a1" d2);
+  Alcotest.(check bool)
+    "choice guard as label" true
+    (contains ~substr:{|: "[g]"|} d2)
+
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
@@ -120,4 +173,6 @@ let suite =
       Alcotest.test_case "choice_node" `Quick test_choice_node;
       Alcotest.test_case "hierarchical" `Quick test_hierarchical;
       Alcotest.test_case "entry_exit_actions" `Quick test_entry_exit_actions;
+      Alcotest.test_case "structured_labels" `Quick test_structured_labels;
+      Alcotest.test_case "choice_with_actions" `Quick test_choice_with_actions;
     ] )

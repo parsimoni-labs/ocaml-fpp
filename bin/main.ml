@@ -283,7 +283,8 @@ let is_image_output path =
 
 let run_d2 d2_text output_path =
   let cmd =
-    Fmt.str "d2 --layout elk - %s 2>/dev/null" (Filename.quote output_path)
+    Fmt.str "d2 --layout elk --pad 200 - %s 2>/dev/null"
+      (Filename.quote output_path)
   in
   let oc = Unix.open_process_out cmd in
   output_string oc d2_text;

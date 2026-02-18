@@ -164,6 +164,52 @@ Filter by SM name
   T: T { class: state }
   __init__ -> T
 
+Structured edge labels with guard and actions
+  $ cat > guarded.fpp <<EOF
+  > state machine M {
+  >   action a1
+  >   action a2
+  >   guard g
+  >   signal s
+  >   initial enter S1
+  >   state S1 { on s if g do { a1, a2 } enter S2 }
+  >   state S2 { on s do { a1 } enter S1 }
+  > }
+  > EOF
+  $ ofpp dot guarded.fpp
+  vars: {
+    d2-config: {
+      layout-engine: elk
+    }
+  }
+  classes: {
+    state: {
+      style.border-radius: 8
+      style.fill: "#e8f0fe"
+      style.stroke: "#4285f4"
+      style.font-color: "#1a1a2e"
+    }
+    choice: {
+      shape: diamond
+      style.fill: "#fff8e1"
+      style.stroke: "#f9ab00"
+      style.font-color: "#1a1a2e"
+    }
+  }
+  # M
+  direction: down
+  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
+  S1: S1 { class: state }
+  S2: S2 { class: state }
+  __init__ -> S1
+  S1 -> S2: s {
+    source-arrowhead.label: [g]
+    target-arrowhead.label: / a1, a2
+  }
+  S2 -> S1: s {
+    target-arrowhead.label: / a1
+  }
+
 Render to PNG via -o
   $ ofpp dot -o sm.png simple.fpp
   $ test -f sm.png && echo "PNG created"

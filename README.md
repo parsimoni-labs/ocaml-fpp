@@ -52,12 +52,12 @@ state machine Thermostat {
 
 `ofpp dot -o thermostat.svg Thermostat.fpp` renders:
 
-![Thermostat state machine](doc/thermostat.svg)
+<img src="doc/thermostat.svg" width="600">
 
 A more complex example with nested states and choices (satellite deployment
 sequence):
 
-![Deployment sequence state machine](doc/deploy.svg)
+<img src="doc/deploy.svg" width="600">
 
 ## About FPP
 
@@ -167,9 +167,10 @@ hierarchical containers -- a good fit for nested state machines. The output uses
 the ELK layout engine for correct routing of cross-container transitions.
 
 Hierarchical states become D2 containers with nested children. Choices appear as
-diamond-shaped nodes. Transitions are labelled using standard UML statechart
-notation: `signal [guard] / actions`. Initial transitions originate from small
-filled circles. Entry and exit actions appear inside state node labels.
+diamond-shaped nodes. Transitions carry the signal name on the edge, with the
+guard placed near the source state and actions near the target state for visual
+clarity. Initial transitions originate from small filled circles. Entry and exit
+actions appear inside state node labels.
 
 Without `-o`, D2 text is written to stdout. With `-o`, the output format is
 determined by the file extension: `.svg`, `.png`, and `.pdf` invoke `d2`
