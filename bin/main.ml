@@ -6,7 +6,7 @@ open Cmdliner
 
 let pp_ok ppf () = Fmt.pf ppf "%a" Fmt.(styled `Green string) "✓"
 let pp_err ppf () = Fmt.pf ppf "%a" Fmt.(styled `Red string) "✗"
-let pp_warn ppf () = Fmt.pf ppf "%a" Fmt.(styled `Yellow string) "⚠"
+let pp_warn ppf () = Fmt.pf ppf "%a" Fmt.(styled `Yellow string) "!"
 
 (* --- check command --- *)
 

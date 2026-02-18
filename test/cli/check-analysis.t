@@ -187,9 +187,9 @@ Signal coverage warnings
   > }
   > EOF
   $ ofpp check coverage.fpp
-  ⚠ coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
-  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
-  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ! coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
+  ! coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
+  ! coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
   ✓ coverage.fpp
 
 Signal coverage with inherited handlers
@@ -209,8 +209,8 @@ Signal coverage with inherited handlers
 
 Signal coverage warnings don't affect exit code
   $ ofpp check coverage.fpp; echo "exit=$?"
-  ⚠ coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
-  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
-  ⚠ coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
+  ! coverage.fpp:5:8: warning in SM 'M': signal 's2' not handled in state 'S'
+  ! coverage.fpp:6:8: warning in SM 'M': signal 's1' not handled in state 'T'
+  ! coverage.fpp:6:8: warning in SM 'M': signal 's2' not handled in state 'T'
   ✓ coverage.fpp
   exit=0
