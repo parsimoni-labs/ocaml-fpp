@@ -1,7 +1,8 @@
 (library
  (name fpp)
  (public_name fpp)
- (libraries fmt menhirLib))
+ (libraries fmt menhirLib)
+ (private_modules check_env check_core check_warn))
 
 (ocamllex lexer)
 
