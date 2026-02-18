@@ -328,7 +328,7 @@ let pp ppf (sm : Ast.def_state_machine) =
           | lbl, None, None -> Fmt.pf ppf "%s -> %s: %s@." e.src e.dst lbl
           | _ when e.src = e.dst ->
               let flat = flat_edge_label e.label e.guard e.actions in
-              Fmt.pf ppf "%s -> %s: %s@." e.src e.dst flat
+              Fmt.pf ppf "%s -> %s: \"%s\"@." e.src e.dst flat
           | _ ->
               let id = Printf.sprintf "__e%d" !eid in
               incr eid;
