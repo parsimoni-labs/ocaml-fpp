@@ -16,5 +16,5 @@ let () =
       Test_check_comp.suite;
       Test_check_topo.suite;
       Test_check.suite;
-      Test_d2.suite;
+      Test_dot.suite;
     ]

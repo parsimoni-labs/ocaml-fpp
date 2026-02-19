@@ -281,17 +281,18 @@ let is_image_output path =
   let ext = Filename.extension path in
   List.mem (String.lowercase_ascii ext) image_extensions
 
-let run_d2 d2_text output_path =
+let run_dot dot_text output_path =
+  let ext = String.lowercase_ascii (Filename.extension output_path) in
+  let fmt = match ext with ".png" -> "png" | ".pdf" -> "pdf" | _ -> "svg" in
   let cmd =
-    Fmt.str "d2 --layout elk --pad 200 - %s 2>/dev/null"
-      (Filename.quote output_path)
+    Fmt.str "dot -T%s -o %s 2>/dev/null" fmt (Filename.quote output_path)
   in
   let oc = Unix.open_process_out cmd in
-  output_string oc d2_text;
+  output_string oc dot_text;
   match Unix.close_process_out oc with
   | Unix.WEXITED 0 -> true
   | _ ->
-      Fmt.epr "%a d2 failed to render %s@." pp_err () output_path;
+      Fmt.epr "%a dot failed to render %s@." pp_err () output_path;
       false
 
 let dot ~output ~sm_name files =
@@ -315,19 +316,19 @@ let dot ~output ~sm_name files =
           List.iter
             (fun sm ->
               Buffer.clear buf;
-              Fpp.D2.pp ppf sm;
+              Fpp.Dot.pp ppf sm;
               Fmt.flush ppf ();
-              let d2_text = Buffer.contents buf in
+              let dot_text = Buffer.contents buf in
               match output with
               | Some path when is_image_output path ->
-                  if not (run_d2 d2_text path) then ok := false
+                  if not (run_dot dot_text path) then ok := false
               | Some path ->
-                  (* Write D2 text to file *)
+                  (* Write DOT text to file *)
                   let oc = open_out path in
                   Fun.protect
                     ~finally:(fun () -> close_out oc)
-                    (fun () -> output_string oc d2_text)
-              | None -> Fmt.pr "%s" d2_text)
+                    (fun () -> output_string oc dot_text)
+              | None -> Fmt.pr "%s" dot_text)
             sms
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
@@ -338,8 +339,8 @@ let dot ~output ~sm_name files =
 let output_t =
   let doc =
     "Output file. For image formats ($(b,.svg), $(b,.png), $(b,.pdf)), invokes \
-     $(b,d2) automatically. For other extensions, writes D2 text. If omitted, \
-     D2 text is written to stdout."
+     $(b,dot) automatically. For other extensions, writes DOT text. If \
+     omitted, DOT text is written to stdout."
   in
   Arg.(
     value & opt (some string) None & info [ "o"; "output" ] ~doc ~docv:"FILE")
@@ -367,14 +368,14 @@ let dot_cmd =
         [
           `S "DESCRIPTION";
           `P
-            "Parse FPP files and output state machine diagrams in D2 format. \
-             With $(b,-o), renders directly to SVG, PNG, or PDF (requires \
-             $(b,d2) to be installed).";
+            "Parse FPP files and output state machine diagrams in Graphviz DOT \
+             format. With $(b,-o), renders directly to SVG, PNG, or PDF \
+             (requires $(b,dot) to be installed).";
           `S "EXAMPLES";
-          `P "$(iname) model.fpp                    # D2 to stdout";
+          `P "$(iname) model.fpp                    # DOT to stdout";
           `P "$(iname) -o sm.svg model.fpp          # render to SVG";
           `P "$(iname) -o sm.png model.fpp          # render to PNG";
-          `P "$(iname) model.fpp | d2 - sm.svg      # manual pipe";
+          `P "$(iname) model.fpp | dot -Tsvg -o sm.svg  # manual pipe";
         ]
   in
   Cmd.v info dot_term

@@ -1,4 +1,4 @@
-(** Tests for {!Fpp.D2}: state machine to D2 rendering. *)
+(** Tests for {!Fpp.Dot}: state machine to Graphviz DOT rendering. *)
 
 let parse s =
   match Fpp.parse_string s with
@@ -11,7 +11,7 @@ let render s =
   let sms = Fpp.state_machines tu in
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
-  List.iter (fun sm -> Fpp.D2.pp ppf sm) sms;
+  List.iter (fun sm -> Fpp.Dot.pp ppf sm) sms;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
@@ -29,7 +29,7 @@ let contains ~substr s =
 (* ── Basic rendering ───────────────────────────────────────────────── *)
 
 let test_basic_sm () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -40,21 +40,23 @@ let test_basic_sm () =
   |}
   in
   Alcotest.(check bool)
-    "contains preamble" true
-    (contains ~substr:"layout-engine: elk" d2);
-  Alcotest.(check bool) "contains SM name" true (contains ~substr:"# M" d2);
-  Alcotest.(check bool) "contains state" true (contains ~substr:"S: S" d2);
+    "digraph header" true
+    (contains ~substr:{|digraph "M"|} dot);
   Alcotest.(check bool)
-    "contains init node" true
-    (contains ~substr:"__init__" d2);
-  Alcotest.(check bool) "contains edge" true (contains ~substr:"S -> S: s" d2)
+    "compound=true" true
+    (contains ~substr:"compound=true" dot);
+  Alcotest.(check bool) "state node" true (contains ~substr:{|shape=box|} dot);
+  Alcotest.(check bool) "init node" true (contains ~substr:{|"__init__"|} dot);
+  Alcotest.(check bool)
+    "self-loop edge" true
+    (contains ~substr:{|"S" -> "S"|} dot)
 
 let test_external_sm () =
-  let d2 = render {| state machine M |} in
-  Alcotest.(check string) "empty output" "" d2
+  let dot = render {| state machine M |} in
+  Alcotest.(check string) "empty output" "" dot
 
 let test_choice_node () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -66,13 +68,15 @@ let test_choice_node () =
   |}
   in
   Alcotest.(check bool)
-    "choice class" true
-    (contains ~substr:"class: choice" d2);
-  Alcotest.(check bool) "guard label" true (contains ~substr:"[g]" d2);
-  Alcotest.(check bool) "else branch" true (contains ~substr:"else" d2)
+    "choice diamond" true
+    (contains ~substr:"shape=diamond" dot);
+  Alcotest.(check bool) "guard label" true (contains ~substr:{|[g]|} dot);
+  Alcotest.(check bool)
+    "else label" true
+    (contains ~substr:{|label="else"|} dot)
 
 let test_hierarchical () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -86,12 +90,16 @@ let test_hierarchical () =
     }
   |}
   in
-  Alcotest.(check bool) "container open" true (contains ~substr:"P: P {" d2);
-  Alcotest.(check bool) "child state" true (contains ~substr:"A: A" d2);
-  Alcotest.(check bool) "nested init" true (contains ~substr:"P.__init__" d2)
+  Alcotest.(check bool)
+    "subgraph cluster" true
+    (contains ~substr:{|subgraph "cluster_P"|} dot);
+  Alcotest.(check bool) "child state" true (contains ~substr:{|"P.A"|} dot);
+  Alcotest.(check bool)
+    "nested init" true
+    (contains ~substr:{|"P.__init__"|} dot)
 
 let test_entry_exit_actions () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -107,11 +115,12 @@ let test_entry_exit_actions () =
     }
   |}
   in
-  Alcotest.(check bool) "entry action" true (contains ~substr:"entry / a1" d2);
-  Alcotest.(check bool) "exit action" true (contains ~substr:"exit / a2" d2)
+  Alcotest.(check bool) "HTML table label" true (contains ~substr:"<table" dot);
+  Alcotest.(check bool) "entry action" true (contains ~substr:"entry / a1" dot);
+  Alcotest.(check bool) "exit action" true (contains ~substr:"exit / a2" dot)
 
 let test_structured_labels () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -131,29 +140,19 @@ let test_structured_labels () =
   |}
   in
   Alcotest.(check bool)
-    "label node for guard+actions" true
-    (contains ~substr:"__e0: |md" d2);
+    "direct edge with label" true
+    (contains ~substr:{|"S1" -> "S2"|} dot);
+  Alcotest.(check bool) "guard in label" true (contains ~substr:{|[g]|} dot);
   Alcotest.(check bool)
-    "bold signal with escaped guard" true
-    (contains ~substr:{|**s** \[g\]|} d2);
+    "actions in label" true
+    (contains ~substr:"/ a1, a2" dot);
   Alcotest.(check bool)
-    "actions in label node" true
-    (contains ~substr:"/ a1, a2" d2);
-  Alcotest.(check bool)
-    "undirected edge to label node" true
-    (contains ~substr:"S1 -- __e0" d2);
-  Alcotest.(check bool)
-    "directed edge from label node" true
-    (contains ~substr:"__e0 -> S2" d2);
-  Alcotest.(check bool)
-    "actions-only label node" true
-    (contains ~substr:"__e1: |md" d2);
-  Alcotest.(check bool)
-    "signal-only edge stays simple" true
-    (contains ~substr:"S2 -> S2: s\n" d2)
+    "self-loop with label" true
+    (contains ~substr:{|"S2" -> "S2"|} dot);
+  Alcotest.(check bool) "no __e nodes" true (not (contains ~substr:"__e0" dot))
 
 let test_choice_with_actions () =
-  let d2 =
+  let dot =
     render
       {|
     state machine M {
@@ -166,22 +165,20 @@ let test_choice_with_actions () =
   |}
   in
   Alcotest.(check bool)
-    "choice label node for actions" true
-    (contains ~substr:"__e0: |md" d2);
+    "choice diamond" true
+    (contains ~substr:"shape=diamond" dot);
   Alcotest.(check bool)
-    "escaped guard in markdown" true
-    (contains ~substr:{|\[g\]|} d2);
+    "guard in edge label" true
+    (contains ~substr:{|[g]|} dot);
   Alcotest.(check bool)
-    "actions in choice label node" true
-    (contains ~substr:"/ a1" d2);
-  Alcotest.(check bool)
-    "choice else stays simple" true
-    (contains ~substr:"C -> S: else" d2)
+    "action in choice edge" true
+    (contains ~substr:"/ a1" dot);
+  Alcotest.(check bool) "no __e nodes" true (not (contains ~substr:"__e0" dot))
 
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
-  ( "d2",
+  ( "dot",
     [
       Alcotest.test_case "basic_sm" `Quick test_basic_sm;
       Alcotest.test_case "external_sm" `Quick test_external_sm;

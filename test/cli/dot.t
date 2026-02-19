@@ -1,4 +1,4 @@
-Basic state machine (D2 to stdout)
+Basic state machine (DOT to stdout)
   $ cat > simple.fpp <<EOF
   > state machine M {
   >   signal s
@@ -7,31 +7,18 @@ Basic state machine (D2 to stdout)
   > }
   > EOF
   $ ofpp dot simple.fpp
-  vars: {
-    d2-config: {
-      layout-engine: elk
-    }
+  digraph "M" {
+    compound=true;
+    rankdir=TB;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
+    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S"];
+    "__init__" -> "S";
+    "S" -> "S" [label="s"];
   }
-  classes: {
-    state: {
-      style.border-radius: 8
-      style.fill: "#e8f0fe"
-      style.stroke: "#4285f4"
-      style.font-color: "#1a1a2e"
-    }
-    choice: {
-      shape: diamond
-      style.fill: "#fff8e1"
-      style.stroke: "#f9ab00"
-      style.font-color: "#1a1a2e"
-    }
-  }
-  # M
-  direction: down
-  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  S: S { class: state }
-  __init__ -> S
-  S -> S: s
 
 Choice with guard and else
   $ cat > choice.fpp <<EOF
@@ -43,33 +30,20 @@ Choice with guard and else
   > }
   > EOF
   $ ofpp dot choice.fpp
-  vars: {
-    d2-config: {
-      layout-engine: elk
-    }
+  digraph "M" {
+    compound=true;
+    rankdir=TB;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
+    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S"];
+    "C" [shape=diamond style=filled fillcolor="#fff8e1" color="#f9ab00" label="C"];
+    "__init__" -> "C";
+    "C" -> "S" [label="[g]"];
+    "C" -> "S" [label="else"];
   }
-  classes: {
-    state: {
-      style.border-radius: 8
-      style.fill: "#e8f0fe"
-      style.stroke: "#4285f4"
-      style.font-color: "#1a1a2e"
-    }
-    choice: {
-      shape: diamond
-      style.fill: "#fff8e1"
-      style.stroke: "#f9ab00"
-      style.font-color: "#1a1a2e"
-    }
-  }
-  # M
-  direction: down
-  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  S: S { class: state }
-  C: C { class: choice }
-  __init__ -> C
-  C -> S: "[g]"
-  C -> S: else
 
 Hierarchical state machine
   $ cat > hier.fpp <<EOF
@@ -86,40 +60,29 @@ Hierarchical state machine
   > }
   > EOF
   $ ofpp dot hier.fpp
-  vars: {
-    d2-config: {
-      layout-engine: elk
+  digraph "M" {
+    compound=true;
+    rankdir=TB;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
+    subgraph "cluster_P" {
+      label="P";
+      style="rounded,filled";
+      fillcolor="#f8f9fa";
+      color="#5f6368";
+      fontname="Helvetica";
+      "P.A" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="A"];
+      "P.B" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="B"];
+      "P.__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
     }
+    "__init__" -> "P";
+    "P.A" -> "P.B" [label="s2"];
+    "P.__init__" -> "P.A";
+    "P" -> "P" [label="s1"];
   }
-  classes: {
-    state: {
-      style.border-radius: 8
-      style.fill: "#e8f0fe"
-      style.stroke: "#4285f4"
-      style.font-color: "#1a1a2e"
-    }
-    choice: {
-      shape: diamond
-      style.fill: "#fff8e1"
-      style.stroke: "#f9ab00"
-      style.font-color: "#1a1a2e"
-    }
-  }
-  # M
-  direction: down
-  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  P: P {
-    style.border-radius: 8
-    style.fill: "#f8f9fa"
-    style.stroke: "#5f6368"
-    A: A { class: state }
-    B: B { class: state }
-    __init__: "" { shape: circle; width: 12; height: 12; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  }
-  __init__ -> P
-  P.A -> P.B: s2
-  P.__init__ -> P.A
-  P -> P: s1
 
 External state machine (no body) produces no output
   $ cat > ext.fpp <<EOF
@@ -139,30 +102,17 @@ Filter by SM name
   > }
   > EOF
   $ ofpp dot --sm B multi.fpp
-  vars: {
-    d2-config: {
-      layout-engine: elk
-    }
+  digraph "B" {
+    compound=true;
+    rankdir=TB;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
+    "T" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="T"];
+    "__init__" -> "T";
   }
-  classes: {
-    state: {
-      style.border-radius: 8
-      style.fill: "#e8f0fe"
-      style.stroke: "#4285f4"
-      style.font-color: "#1a1a2e"
-    }
-    choice: {
-      shape: diamond
-      style.fill: "#fff8e1"
-      style.stroke: "#f9ab00"
-      style.font-color: "#1a1a2e"
-    }
-  }
-  # B
-  direction: down
-  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  T: T { class: state }
-  __init__ -> T
 
 Structured edge labels with guard and actions
   $ cat > guarded.fpp <<EOF
@@ -177,43 +127,20 @@ Structured edge labels with guard and actions
   > }
   > EOF
   $ ofpp dot guarded.fpp
-  vars: {
-    d2-config: {
-      layout-engine: elk
-    }
+  digraph "M" {
+    compound=true;
+    rankdir=TB;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
+    "S1" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S1"];
+    "S2" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S2"];
+    "__init__" -> "S1";
+    "S1" -> "S2" [label="s [g]\n/ a1, a2"];
+    "S2" -> "S1" [label="s\n/ a1"];
   }
-  classes: {
-    state: {
-      style.border-radius: 8
-      style.fill: "#e8f0fe"
-      style.stroke: "#4285f4"
-      style.font-color: "#1a1a2e"
-    }
-    choice: {
-      shape: diamond
-      style.fill: "#fff8e1"
-      style.stroke: "#f9ab00"
-      style.font-color: "#1a1a2e"
-    }
-  }
-  # M
-  direction: down
-  __init__: "" { shape: circle; width: 20; height: 20; style.fill: "#1a1a2e"; style.stroke: "#1a1a2e" }
-  S1: S1 { class: state }
-  S2: S2 { class: state }
-  __init__ -> S1
-  __e0: |md
-    **s** \[g\]
-    / a1, a2
-  | { shape: text }
-  S1 -- __e0
-  __e0 -> S2
-  __e1: |md
-    **s**
-    / a1
-  | { shape: text }
-  S2 -- __e1
-  __e1 -> S1
 
 Render to PNG via -o
   $ ofpp dot -o sm.png simple.fpp
@@ -225,10 +152,10 @@ Render to SVG via -o
   $ test -f sm.svg && echo "SVG created"
   SVG created
 
-D2 output compiles for all upstream state machines
+DOT output compiles for all upstream state machines
   $ for f in "$TESTDIR"/../upstream/state_machine/*.fpp; do
-  >   d2out=$(ofpp dot "$f" 2>/dev/null)
-  >   if [ -n "$d2out" ]; then
-  >     echo "$d2out" | d2 - /dev/null 2>/dev/null || echo "FAIL: $(basename $f)"
+  >   dotout=$(ofpp dot "$f" 2>/dev/null)
+  >   if [ -n "$dotout" ]; then
+  >     echo "$dotout" | dot -Tsvg -o /dev/null 2>/dev/null || echo "FAIL: $(basename $f)"
   >   fi
   > done

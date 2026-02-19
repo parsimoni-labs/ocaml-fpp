@@ -5,7 +5,7 @@
 
 module Ast = Ast
 module Check = Check
-module D2 = D2
+module Dot = Dot
 
 (** {1 Parse Errors} *)
 

@@ -2,15 +2,13 @@
 
 let entries =
   [
-    ("thermostat", "Thermostat", "Normal: guarded transitions with actions");
-    ("deploy", "Deploy Sequence", "Normal: nested states with choices");
-    ("fan_out", "Fan-Out", "Stress: one state fans out to many targets");
-    ("self_loops", "Self-Loops", "Weird: multiple self-transitions on one state");
-    ( "choice_chain",
-      "Choice Chain",
-      "Weird: cascading choices before reaching a state" );
-    ("deep_nesting", "Deep Nesting", "Weird: three levels of nested states");
-    ("spaghetti", "Spaghetti", "Weird: every state connects to every other");
+    ("thermostat", "Thermostat", "Guarded transitions with actions");
+    ("deploy", "Deploy Sequence", "Nested states with choices");
+    ("fan_out", "Fan-Out", "One state fans out to many targets");
+    ("self_loops", "Self-Loops", "Multiple self-transitions on one state");
+    ("choice_chain", "Choice Chain", "Cascading choices before reaching a state");
+    ("deep_nesting", "Deep Nesting", "Three levels of nested states");
+    ("spaghetti", "Spaghetti", "Every state connects to every other");
   ]
 
 let read_file path =
@@ -40,7 +38,7 @@ let () =
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ofpp D2 Gallery</title>
+<title>ofpp Gallery</title>
 <link rel="stylesheet"
   href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
@@ -77,7 +75,7 @@ hljs.registerLanguage('fpp', function(hljs) {
   .entry-body { display: grid; grid-template-columns: 1fr 1fr; }
   .entry-code { border-right: 1px solid #eee; overflow: auto; max-height: 600px; }
   .entry-code pre { margin: 0; padding: 1rem; font-size: 0.85rem; }
-  .entry-svg { display: flex; align-items: center; justify-content: center;
+  .entry-svg { display: flex; align-items: flex-start; justify-content: center;
                padding: 1rem; overflow: auto; max-height: 600px; background: #fafafa; }
   .entry-svg svg { max-width: 100%; height: auto; cursor: zoom-in; }
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
@@ -92,8 +90,8 @@ hljs.registerLanguage('fpp', function(hljs) {
 </style>
 </head>
 <body>
-<h1>ofpp D2 Gallery</h1>
-<p class="subtitle">State machine diagrams rendered with label nodes. FPP source on the left, SVG on the right.</p>
+<h1>ofpp dot</h1>
+<p class="subtitle">State machine diagrams rendered from FPP. Source on the left, SVG on the right.</p>
 |};
   List.iter
     (fun (name, title, desc) ->
@@ -107,7 +105,7 @@ hljs.registerLanguage('fpp', function(hljs) {
         if Sys.file_exists svg_path then read_file svg_path
         else "<p>SVG not found</p>"
       in
-      Printf.printf
+      Fmt.pr
         {|<div class="entry">
 <div class="entry-header">
   <h2>%s</h2>
