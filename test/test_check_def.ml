@@ -18,7 +18,7 @@ let test_array_with_default () =
 let test_array_negative_size () =
   expect_error ~substr:"must be positive" {| array A = [-1] U32 |}
 
-let test_array_format_on_non_numeric () =
+let test_array_format_non_numeric () =
   expect_error ~substr:"format specifier on non-numeric"
     {| array A = [3] string format "{}" |}
 
@@ -70,7 +70,7 @@ let test_struct_with_default () =
 
 (* ── Struct fail cases ───────────────────────────────────────────────── *)
 
-let test_struct_format_on_non_numeric () =
+let test_struct_format_non_numeric () =
   expect_error ~substr:"format specifier on non-numeric"
     {| struct S { x: string format "{}" } |}
 
@@ -111,7 +111,7 @@ let suite =
       Alcotest.test_case "array_with_default" `Quick test_array_with_default;
       Alcotest.test_case "array_negative_size" `Quick test_array_negative_size;
       Alcotest.test_case "array_format_on_non_numeric" `Quick
-        test_array_format_on_non_numeric;
+        test_array_format_non_numeric;
       Alcotest.test_case "array_default_count_mismatch" `Quick
         test_array_default_count_mismatch;
       Alcotest.test_case "array_string_default" `Quick test_array_string_default;
@@ -125,7 +125,7 @@ let suite =
       Alcotest.test_case "struct_valid" `Quick test_struct_valid;
       Alcotest.test_case "struct_with_default" `Quick test_struct_with_default;
       Alcotest.test_case "struct_format_on_non_numeric" `Quick
-        test_struct_format_on_non_numeric;
+        test_struct_format_non_numeric;
       Alcotest.test_case "struct_unknown_default_member" `Quick
         test_struct_unknown_default_member;
       Alcotest.test_case "type_alias_valid" `Quick test_type_alias_valid;

@@ -37,7 +37,7 @@ let test_passive_cannot_have_cpu () =
       cpu 0
   |}
 
-let test_passive_cannot_have_queue_size () =
+let test_passive_no_queue_size () =
   expect_error ~substr:"cannot have queue size"
     {|
     passive component C { }
@@ -45,7 +45,7 @@ let test_passive_cannot_have_queue_size () =
       queue size 10
   |}
 
-let test_passive_cannot_have_stack_size () =
+let test_passive_no_stack_size () =
   expect_error ~substr:"cannot have stack size"
     {|
     passive component C { }
@@ -111,9 +111,9 @@ let suite =
       Alcotest.test_case "passive_cannot_have_cpu" `Quick
         test_passive_cannot_have_cpu;
       Alcotest.test_case "passive_cannot_have_queue_size" `Quick
-        test_passive_cannot_have_queue_size;
+        test_passive_no_queue_size;
       Alcotest.test_case "passive_cannot_have_stack_size" `Quick
-        test_passive_cannot_have_stack_size;
+        test_passive_no_stack_size;
       Alcotest.test_case "passive_cannot_have_priority" `Quick
         test_passive_cannot_have_priority;
       Alcotest.test_case "negative_base_id" `Quick test_negative_base_id;
