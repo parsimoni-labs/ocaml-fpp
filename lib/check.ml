@@ -36,6 +36,10 @@ let analysis_of_string = function
 let analyses =
   [ "coverage"; "liveness"; "unused"; "shadowing"; "deadlock"; "completeness" ]
 
+(* ── Error helpers ──────────────────────────────────────────────────── *)
+
+let err_unknown_analysis name = Error (Fmt.str "unknown analysis '%s'" name)
+
 (* ── Severity levels ──────────────────────────────────────────────── *)
 
 type level = Off | Warning | Error
@@ -70,7 +74,7 @@ let parse_one s =
           match sign with
           | `Enable -> Ok [ Enable a ]
           | `Disable -> Ok [ Disable a ])
-      | None -> Error (Fmt.str "unknown analysis '%s'" name)
+      | None -> err_unknown_analysis name
 
 let parse_spec s =
   let parts = String.split_on_char ',' s in
@@ -230,5 +234,7 @@ let rec collect_state_machines members =
     members
 
 let run config tu =
+  let tu_diags = Check_tu.run tu.Ast.tu_members in
   let sms = collect_state_machines tu.Ast.tu_members in
-  List.concat_map (state_machine config) sms
+  let sm_diags = List.concat_map (state_machine config) sms in
+  tu_diags @ sm_diags

@@ -29,8 +29,23 @@ val pp_diagnostic : diagnostic Fmt.t
 val error : sm_name:string -> Ast.loc -> string -> diagnostic
 (** [error ~sm_name loc msg] is an error diagnostic. *)
 
+val errorf :
+  sm_name:string ->
+  Ast.loc ->
+  ('a, Format.formatter, unit, diagnostic) format4 ->
+  'a
+(** [errorf ~sm_name loc fmt ...] is [error ~sm_name loc (Fmt.str fmt ...)]. *)
+
 val warning : sm_name:string -> Ast.loc -> string -> diagnostic
 (** [warning ~sm_name loc msg] is a warning diagnostic. *)
+
+val warningf :
+  sm_name:string ->
+  Ast.loc ->
+  ('a, Format.formatter, unit, diagnostic) format4 ->
+  'a
+(** [warningf ~sm_name loc fmt ...] is [warning ~sm_name loc (Fmt.str fmt ...)].
+*)
 
 (** {1:env Name environment}
 

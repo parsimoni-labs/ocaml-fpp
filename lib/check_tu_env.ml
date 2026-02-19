@@ -252,24 +252,33 @@ let check_symbol_as_topology ~scope tu_env (qi : Ast.qual_ident Ast.node) =
           (Fmt.str "undefined topology '%s'" (Ast.qual_ident_to_string qi.data));
       ]
 
+let is_builtin_port (qi : Ast.qual_ident) =
+  match qi with Ast.Unqualified id -> id.data = "serial" | _ -> false
+
 let check_symbol_as_port ~scope tu_env (qi : Ast.qual_ident Ast.node) =
-  match resolve_symbol tu_env qi.data with
-  | Some (Sk_port, _) -> []
-  | Some (Sk_module, _) ->
-      [
-        error ~sm_name:scope qi.loc
-          (Fmt.str "'%s' is a module, not a port"
-             (Ast.qual_ident_to_string qi.data));
-      ]
-  | Some (kind, _) ->
-      [
-        error ~sm_name:scope qi.loc
-          (Fmt.str "'%s' is %s %s, not a port"
-             (Ast.qual_ident_to_string qi.data)
-             (article kind)
-             (string_of_symbol_kind kind));
-      ]
-  | None -> []
+  if is_builtin_port qi.data then []
+  else
+    match resolve_symbol tu_env qi.data with
+    | Some (Sk_port, _) -> []
+    | Some (Sk_module, _) ->
+        [
+          error ~sm_name:scope qi.loc
+            (Fmt.str "'%s' is a module, not a port"
+               (Ast.qual_ident_to_string qi.data));
+        ]
+    | Some (kind, _) ->
+        [
+          error ~sm_name:scope qi.loc
+            (Fmt.str "'%s' is %s %s, not a port"
+               (Ast.qual_ident_to_string qi.data)
+               (article kind)
+               (string_of_symbol_kind kind));
+        ]
+    | None ->
+        [
+          error ~sm_name:scope qi.loc
+            (Fmt.str "undefined port '%s'" (Ast.qual_ident_to_string qi.data));
+        ]
 
 let check_symbol_as_state_machine ~scope tu_env (qi : Ast.qual_ident Ast.node) =
   match resolve_symbol tu_env qi.data with

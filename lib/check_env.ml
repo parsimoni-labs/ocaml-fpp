@@ -16,7 +16,9 @@ let pp_diagnostic ppf d =
     d.sm_name d.msg
 
 let error ~sm_name loc msg = { severity = `Error; loc; sm_name; msg }
+let errorf ~sm_name loc fmt = Fmt.kstr (error ~sm_name loc) fmt
 let warning ~sm_name loc msg = { severity = `Warning; loc; sm_name; msg }
+let warningf ~sm_name loc fmt = Fmt.kstr (warning ~sm_name loc) fmt
 
 (* ── Environment ────────────────────────────────────────────────────── *)
 

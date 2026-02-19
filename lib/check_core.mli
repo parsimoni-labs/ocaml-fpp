@@ -30,3 +30,9 @@ val run :
 (** [run ~sm_name ~sm_loc env members] runs all core checks on the state machine
     body [members] within the name environment [env]. Returns a list of error
     diagnostics, ordered by check category. *)
+
+val is_builtin_type : string -> bool
+(** [is_builtin_type name] is [true] if [name] is a built-in FPP type. *)
+
+val expr_ident_refs : Ast.expr Ast.node -> Ast.ident Ast.node list
+(** [expr_ident_refs e] collects all identifier references in expression [e]. *)

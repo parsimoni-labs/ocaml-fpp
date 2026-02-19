@@ -48,7 +48,7 @@ Mix of valid and invalid files
 
 Verbose output with a component
   $ cat > comp.fpp <<EOF
-  > active component Led { }
+  > passive component Led { }
   > EOF
   $ ofpp check -v comp.fpp
   ✓ comp.fpp (1 component, 0 state machines, 0 topologies)

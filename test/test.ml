@@ -8,6 +8,13 @@ let () =
       Test_check_env.suite;
       Test_check_core.suite;
       Test_check_warn.suite;
+      Test_check_tu_env.suite;
+      Test_check_tu.suite;
+      Test_check_redef.suite;
+      Test_check_sym.suite;
+      Test_check_def.suite;
+      Test_check_comp.suite;
+      Test_check_topo.suite;
       Test_check.suite;
       Test_d2.suite;
     ]

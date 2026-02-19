@@ -2,7 +2,17 @@
  (name fpp)
  (public_name fpp)
  (libraries fmt menhirLib)
- (private_modules check_env check_core check_warn))
+ (private_modules
+  check_env
+  check_core
+  check_warn
+  check_tu
+  check_tu_env
+  check_redef
+  check_sym
+  check_def
+  check_comp
+  check_topo))
 
 (ocamllex lexer)
 

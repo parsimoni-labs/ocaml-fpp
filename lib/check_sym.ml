@@ -9,23 +9,63 @@ open Check_tu_env
 
 (* ── Symbol kind checks ───────────────────────────────────────────── *)
 
-let check_as_type_with_root ~scope tu_env root_env qi =
-  match check_symbol_as_type ~scope tu_env qi with
-  | [] -> []
-  | _ when tu_env != root_env -> check_symbol_as_type ~scope root_env qi
-  | diags -> diags
+let article kind =
+  match (string_of_symbol_kind kind).[0] with
+  | 'a' | 'e' | 'i' | 'o' | 'u' -> "an"
+  | _ -> "a"
 
-let check_as_constant_with_root ~scope tu_env root_env qi =
-  match check_symbol_as_constant ~scope tu_env qi with
-  | [] -> []
-  | _ when tu_env != root_env -> check_symbol_as_constant ~scope root_env qi
-  | diags -> diags
+let resolve_in ~tu_env ~root_env (qi : Ast.qual_ident Ast.node) =
+  match resolve_symbol tu_env qi.data with
+  | Some _ as r -> r
+  | None -> resolve_symbol root_env qi.data
 
-let check_as_component_with_root ~scope tu_env root_env qi =
-  match check_symbol_as_component ~scope tu_env qi with
-  | [] -> []
-  | _ when tu_env != root_env -> check_symbol_as_component ~scope root_env qi
-  | diags -> diags
+let check_as_type_with_root ~scope tu_env root_env
+    (qi : Ast.qual_ident Ast.node) =
+  match resolve_in ~tu_env ~root_env qi with
+  | Some (Sk_type, _) -> []
+  | Some (kind, _) ->
+      [
+        error ~sm_name:scope qi.loc
+          (Fmt.str "'%s' is %s %s, not a type"
+             (Ast.qual_ident_to_string qi.data)
+             (article kind)
+             (string_of_symbol_kind kind));
+      ]
+  | None -> []
+
+let check_as_constant_with_root ~scope tu_env root_env
+    (qi : Ast.qual_ident Ast.node) =
+  match resolve_in ~tu_env ~root_env qi with
+  | Some (Sk_constant, _) -> []
+  | Some (Sk_type, _) ->
+      [
+        error ~sm_name:scope qi.loc
+          (Fmt.str "'%s' is a type, not a constant"
+             (Ast.qual_ident_to_string qi.data));
+      ]
+  | Some (kind, _) ->
+      [
+        error ~sm_name:scope qi.loc
+          (Fmt.str "'%s' is %s %s, not a constant"
+             (Ast.qual_ident_to_string qi.data)
+             (article kind)
+             (string_of_symbol_kind kind));
+      ]
+  | None -> []
+
+let check_as_component_with_root ~scope tu_env root_env
+    (qi : Ast.qual_ident Ast.node) =
+  match resolve_in ~tu_env ~root_env qi with
+  | Some (Sk_component, _) -> []
+  | Some (kind, _) ->
+      [
+        error ~sm_name:scope qi.loc
+          (Fmt.str "'%s' is %s %s, not a component"
+             (Ast.qual_ident_to_string qi.data)
+             (article kind)
+             (string_of_symbol_kind kind));
+      ]
+  | None -> []
 
 let check_type_name_with_root ~scope tu_env root_env
     (tn : Ast.type_name Ast.node) =
