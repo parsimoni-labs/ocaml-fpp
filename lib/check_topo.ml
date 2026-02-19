@@ -427,6 +427,257 @@ let check_connection_patterns ~scope tu_env members =
       | _ -> [])
     members
 
+(* ── Direct connection validation ─────────────────────────────────── *)
+
+let find_component_port (comp : Ast.def_component) port_name =
+  List.find_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_port_instance (Port_general g)
+        when g.gen_name.data = port_name ->
+          Some g
+      | _ -> None)
+    comp.comp_members
+
+let resolve_port_type_def tu_env (qi : Ast.qual_ident) =
+  let ids = Ast.qual_ident_to_list qi in
+  let rec walk env = function
+    | [] -> None
+    | [ id ] -> SMap.find_opt id.Ast.data env.port_defs
+    | id :: rest -> (
+        match SMap.find_opt id.Ast.data env.modules with
+        | Some sub -> walk sub rest
+        | None -> None)
+  in
+  walk tu_env ids
+
+let port_has_return tu_env (qi : Ast.qual_ident) =
+  match resolve_port_type_def tu_env qi with
+  | Some def -> Option.is_some def.port_return
+  | None -> false
+
+let is_matched_port (comp : Ast.def_component) port_name =
+  List.exists
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_port_matching pm ->
+          pm.match_port1.data = port_name || pm.match_port2.data = port_name
+      | _ -> false)
+    comp.comp_members
+
+let check_direct_connection ~scope tu_env (conn : Ast.connection) =
+  let from_pid = conn.conn_from_port.data in
+  let to_pid = conn.conn_to_port.data in
+  let from_inst = Ast.qual_ident_to_string from_pid.pid_component.data in
+  let to_inst = Ast.qual_ident_to_string to_pid.pid_component.data in
+  let from_port_name = from_pid.pid_port.data in
+  let to_port_name = to_pid.pid_port.data in
+  match
+    ( resolve_instance_comp tu_env from_inst,
+      resolve_instance_comp tu_env to_inst )
+  with
+  | Some from_comp, Some to_comp -> (
+      match
+        ( find_component_port from_comp from_port_name,
+          find_component_port to_comp to_port_name )
+      with
+      | Some from_port, Some to_port ->
+          let is_serial qi = Ast.qual_ident_to_string qi = "serial" in
+          let type_diags =
+            match (from_port.gen_port, to_port.gen_port) with
+            | Some ft, Some tt ->
+                let f_serial = is_serial ft.data in
+                let t_serial = is_serial tt.data in
+                if f_serial && t_serial then []
+                else if f_serial then
+                  if port_has_return tu_env tt.data then
+                    [
+                      errorf ~sm_name:scope conn.conn_from_port.loc
+                        "serial port '%s.%s' cannot connect to typed port \
+                         '%s.%s' with return type"
+                        from_inst from_port_name to_inst to_port_name;
+                    ]
+                  else []
+                else if t_serial then
+                  if port_has_return tu_env ft.data then
+                    [
+                      errorf ~sm_name:scope conn.conn_from_port.loc
+                        "typed port '%s.%s' with return type cannot connect to \
+                         serial port '%s.%s'"
+                        from_inst from_port_name to_inst to_port_name;
+                    ]
+                  else []
+                else
+                  let ftn = Ast.qual_ident_to_string ft.data in
+                  let ttn = Ast.qual_ident_to_string tt.data in
+                  if ftn <> ttn then
+                    [
+                      errorf ~sm_name:scope conn.conn_from_port.loc
+                        "port type mismatch: '%s.%s' has type %s but '%s.%s' \
+                         has type %s"
+                        from_inst from_port_name ftn to_inst to_port_name ttn;
+                    ]
+                  else []
+            | Some ft, None ->
+                if port_has_return tu_env ft.data then
+                  [
+                    errorf ~sm_name:scope conn.conn_from_port.loc
+                      "typed port '%s.%s' with return type cannot connect to \
+                       serial port '%s.%s'"
+                      from_inst from_port_name to_inst to_port_name;
+                  ]
+                else []
+            | None, Some tt ->
+                if port_has_return tu_env tt.data then
+                  [
+                    errorf ~sm_name:scope conn.conn_to_port.loc
+                      "serial port '%s.%s' cannot connect to typed port \
+                       '%s.%s' with return type"
+                      from_inst from_port_name to_inst to_port_name;
+                  ]
+                else []
+            | None, None -> []
+          in
+          let unmatched_diag =
+            if conn.conn_unmatched then
+              if not (is_matched_port from_comp from_port_name) then
+                [
+                  errorf ~sm_name:scope conn.conn_from_port.loc
+                    "'unmatched' used on port '%s.%s' which is not in a port \
+                     matching"
+                    from_inst from_port_name;
+                ]
+              else []
+            else []
+          in
+          type_diags @ unmatched_diag
+      | _ -> [])
+  | _ -> []
+
+let check_port_index ~scope tu_env (idx : Ast.expr Ast.node) label =
+  let v, diags = eval_expr ~scope tu_env idx in
+  let neg =
+    match v with
+    | Val_int n when n < 0 ->
+        [
+          errorf ~sm_name:scope idx.loc "negative port number %d in %s" n label;
+        ]
+    | _ -> []
+  in
+  diags @ neg
+
+let get_port_size tu_env (comp : Ast.def_component) port_name =
+  match find_component_port comp port_name with
+  | Some g -> (
+      match g.gen_size with
+      | Some sz -> (
+          let v, _ = eval_expr ~scope:"" tu_env sz in
+          match v with Val_int n -> Some n | _ -> None)
+      | None -> Some 1)
+  | None -> None
+
+let check_direct_connections ~scope tu_env members =
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+          let per_conn_diags =
+            List.concat_map
+              (fun conn_ann ->
+                let conn : Ast.connection =
+                  (Ast.unannotate conn_ann).Ast.data
+                in
+                let type_diags = check_direct_connection ~scope tu_env conn in
+                let idx_diags =
+                  (match conn.conn_from_index with
+                    | Some idx -> check_port_index ~scope tu_env idx "source"
+                    | None -> [])
+                  @
+                  match conn.conn_to_index with
+                  | Some idx -> check_port_index ~scope tu_env idx "target"
+                  | None -> []
+                in
+                type_diags @ idx_diags)
+              d.graph_connections
+          in
+          (* Check for duplicate connections with same explicit port index *)
+          let output_diags =
+            let seen = Hashtbl.create 16 in
+            List.concat_map
+              (fun conn_ann ->
+                let conn : Ast.connection =
+                  (Ast.unannotate conn_ann).Ast.data
+                in
+                match conn.conn_from_index with
+                | Some ie -> (
+                    let from_pid = conn.conn_from_port.data in
+                    let inst =
+                      Ast.qual_ident_to_string from_pid.pid_component.data
+                    in
+                    let port = from_pid.pid_port.data in
+                    let v, _ = eval_expr ~scope tu_env ie in
+                    match v with
+                    | Val_int n -> (
+                        let key = Fmt.str "%s.%s[%d]" inst port n in
+                        match Hashtbl.find_opt seen key with
+                        | Some prev_loc ->
+                            Hashtbl.replace seen key conn.conn_from_port.loc;
+                            [
+                              errorf ~sm_name:scope conn.conn_from_port.loc
+                                "duplicate output connection on %s.%s[%d] \
+                                 (first at %s:%d:%d)"
+                                inst port n prev_loc.Ast.file prev_loc.line
+                                prev_loc.col;
+                            ]
+                        | None ->
+                            Hashtbl.replace seen key conn.conn_from_port.loc;
+                            [])
+                    | _ -> [])
+                | None -> [])
+              d.graph_connections
+          in
+          (* Check total connections vs port size *)
+          let port_count_diags =
+            let counts = Hashtbl.create 16 in
+            List.iter
+              (fun conn_ann ->
+                let conn : Ast.connection =
+                  (Ast.unannotate conn_ann).Ast.data
+                in
+                let from_pid = conn.conn_from_port.data in
+                let inst =
+                  Ast.qual_ident_to_string from_pid.pid_component.data
+                in
+                let port = from_pid.pid_port.data in
+                let key = inst ^ "." ^ port in
+                let loc = conn.conn_from_port.loc in
+                let prev =
+                  Option.value ~default:(0, loc) (Hashtbl.find_opt counts key)
+                in
+                Hashtbl.replace counts key (fst prev + 1, loc))
+              d.graph_connections;
+            Hashtbl.fold
+              (fun key (count, loc) acc ->
+                match String.split_on_char '.' key with
+                | [ inst; port ] -> (
+                    match resolve_instance_comp tu_env inst with
+                    | Some comp -> (
+                        match get_port_size tu_env comp port with
+                        | Some sz when count > sz ->
+                            errorf ~sm_name:scope loc
+                              "too many connections on output port %s.%s (%d \
+                               connections, port size %d)"
+                              inst port count sz
+                            :: acc
+                        | _ -> acc)
+                    | None -> acc)
+                | _ -> acc)
+              counts []
+          in
+          per_conn_diags @ output_diags @ port_count_diags
+      | _ -> [])
+    members
+
 (* ── Topology instance collection ─────────────────────────────────── *)
 
 let collect_topo_instances members =
@@ -493,6 +744,316 @@ let check_connection_instance_refs ~scope topo_instances members =
       | _ -> [])
     members
 
+(* ── Telemetry packet validation ──────────────────────────────────── *)
+
+let check_duplicate_packet_set_names ~scope members =
+  let seen = Hashtbl.create 4 in
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_tlm_packet_set ps -> (
+          let name = ps.packet_set_name.data in
+          match Hashtbl.find_opt seen name with
+          | Some prev_loc ->
+              [
+                errorf ~sm_name:scope ps.packet_set_name.loc
+                  "duplicate telemetry packet set '%s' (first at %s:%d:%d)" name
+                  prev_loc.Ast.file prev_loc.line prev_loc.col;
+              ]
+          | None ->
+              Hashtbl.replace seen name ps.packet_set_name.loc;
+              [])
+      | _ -> [])
+    members
+
+let split_channel_ref (qi : Ast.qual_ident Ast.node) =
+  match qi.data with
+  | Ast.Qualified (q, name) ->
+      Some (Ast.qual_ident_to_string q.data, name.data, q.loc)
+  | Ast.Unqualified _ -> None
+
+let component_has_tlm_channel (comp : Ast.def_component) channel_name =
+  List.exists
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_tlm_channel c -> c.tlm_name.data = channel_name
+      | _ -> false)
+    comp.comp_members
+
+let collect_component_tlm_channels (comp : Ast.def_component) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_tlm_channel c -> Some c.tlm_name.data
+      | _ -> None)
+    comp.comp_members
+
+let check_channel_ref ~scope tu_env topo_instances
+    (qi : Ast.qual_ident Ast.node) =
+  match split_channel_ref qi with
+  | None -> []
+  | Some (inst_name, channel_name, inst_loc) ->
+      let in_topo =
+        if not (Hashtbl.mem topo_instances inst_name) then
+          [
+            errorf ~sm_name:scope inst_loc "instance '%s' not in topology"
+              inst_name;
+          ]
+        else []
+      in
+      let channel_ok =
+        match resolve_instance_comp tu_env inst_name with
+        | None -> []
+        | Some comp ->
+            if not (component_has_tlm_channel comp channel_name) then
+              [
+                errorf ~sm_name:scope qi.loc
+                  "instance '%s' has no telemetry channel '%s'" inst_name
+                  channel_name;
+              ]
+            else []
+      in
+      in_topo @ channel_ok
+
+let check_tlm_packet_set ~scope tu_env topo_instances
+    (ps : Ast.spec_tlm_packet_set) =
+  let dup_names =
+    let seen = Hashtbl.create 8 in
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt -> (
+            let name = pkt.packet_name.data in
+            match Hashtbl.find_opt seen name with
+            | Some prev_loc ->
+                [
+                  errorf ~sm_name:scope pkt.packet_name.loc
+                    "duplicate packet name '%s' (first at %s:%d:%d)" name
+                    prev_loc.Ast.file prev_loc.line prev_loc.col;
+                ]
+            | None ->
+                Hashtbl.replace seen name pkt.packet_name.loc;
+                [])
+        | _ -> [])
+      ps.packet_set_members
+  in
+  let id_diags =
+    let seen_ids = Hashtbl.create 8 in
+    let next_implicit = ref 0 in
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt -> (
+            match pkt.packet_id with
+            | Some id_expr ->
+                let nonneg =
+                  check_nonneg_id ~scope tu_env id_expr "packet ID"
+                in
+                let v, _ = eval_expr ~scope tu_env id_expr in
+                let dup =
+                  match v with
+                  | Val_int n -> (
+                      next_implicit := n + 1;
+                      match Hashtbl.find_opt seen_ids n with
+                      | Some prev_loc ->
+                          [
+                            errorf ~sm_name:scope id_expr.loc
+                              "duplicate packet ID %d (first at %s:%d:%d)" n
+                              prev_loc.Ast.file prev_loc.line prev_loc.col;
+                          ]
+                      | None ->
+                          Hashtbl.replace seen_ids n id_expr.loc;
+                          [])
+                  | _ -> []
+                in
+                nonneg @ dup
+            | None -> (
+                let implicit_id = !next_implicit in
+                let loc = pkt.packet_name.loc in
+                next_implicit := implicit_id + 1;
+                match Hashtbl.find_opt seen_ids implicit_id with
+                | Some prev_loc ->
+                    Hashtbl.replace seen_ids implicit_id loc;
+                    [
+                      errorf ~sm_name:scope loc
+                        "duplicate packet ID %d (implicit, first at %s:%d:%d)"
+                        implicit_id prev_loc.Ast.file prev_loc.line prev_loc.col;
+                    ]
+                | None ->
+                    Hashtbl.replace seen_ids implicit_id loc;
+                    []))
+        | _ -> [])
+      ps.packet_set_members
+  in
+  let group_diags =
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt -> (
+            match pkt.packet_group with
+            | Some g ->
+                let nonneg =
+                  check_nonneg_id ~scope tu_env g "packet group level"
+                in
+                let v, _ = eval_expr ~scope tu_env g in
+                let range =
+                  match v with
+                  | Val_int n when n > 0xFFFF_FFFF ->
+                      [
+                        errorf ~sm_name:scope g.loc
+                          "packet group level %d out of range" n;
+                      ]
+                  | _ -> []
+                in
+                nonneg @ range
+            | None -> [])
+        | _ -> [])
+      ps.packet_set_members
+  in
+  let channel_diags =
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt ->
+            List.concat_map
+              (check_channel_ref ~scope tu_env topo_instances)
+              pkt.packet_channels
+        | _ -> [])
+      ps.packet_set_members
+  in
+  let omit_diags =
+    List.concat_map
+      (check_channel_ref ~scope tu_env topo_instances)
+      ps.packet_set_omit
+  in
+  let used_and_omitted =
+    let used = Hashtbl.create 16 in
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt ->
+            List.iter
+              (fun qi ->
+                let key = Ast.qual_ident_to_string qi.Ast.data in
+                Hashtbl.replace used key qi.loc)
+              pkt.packet_channels
+        | _ -> ())
+      ps.packet_set_members;
+    List.concat_map
+      (fun qi ->
+        let key = Ast.qual_ident_to_string qi.Ast.data in
+        match Hashtbl.find_opt used key with
+        | Some _ ->
+            [
+              errorf ~sm_name:scope qi.loc
+                "channel '%s' is both used and omitted" key;
+            ]
+        | None -> [])
+      ps.packet_set_omit
+  in
+  let neither_used_nor_omitted =
+    let used = Hashtbl.create 16 in
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Tlm_packet pkt ->
+            List.iter
+              (fun qi ->
+                Hashtbl.replace used (Ast.qual_ident_to_string qi.Ast.data) ())
+              pkt.packet_channels
+        | _ -> ())
+      ps.packet_set_members;
+    let omitted = Hashtbl.create 16 in
+    List.iter
+      (fun qi ->
+        Hashtbl.replace omitted (Ast.qual_ident_to_string qi.Ast.data) ())
+      ps.packet_set_omit;
+    Hashtbl.fold
+      (fun inst_name inst_loc acc ->
+        match resolve_instance_comp tu_env inst_name with
+        | None -> acc
+        | Some comp ->
+            let channels = collect_component_tlm_channels comp in
+            List.fold_left
+              (fun acc ch ->
+                let key = inst_name ^ "." ^ ch in
+                if (not (Hashtbl.mem used key)) && not (Hashtbl.mem omitted key)
+                then
+                  errorf ~sm_name:scope inst_loc
+                    "channel '%s' is neither used nor omitted" key
+                  :: acc
+                else acc)
+              acc channels)
+      topo_instances []
+  in
+  dup_names @ id_diags @ group_diags @ channel_diags @ omit_diags
+  @ used_and_omitted @ neither_used_nor_omitted
+
+let check_tlm_packet_sets ~scope tu_env topo_instances members =
+  check_duplicate_packet_set_names ~scope members
+  @ List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Topo_spec_tlm_packet_set ps ->
+            check_tlm_packet_set ~scope tu_env topo_instances ps
+        | _ -> [])
+      members
+
+(* ── Unconnected internal port check ──────────────────────────────── *)
+
+let collect_connected_ports members =
+  let tbl = Hashtbl.create 16 in
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+          List.iter
+            (fun conn_ann ->
+              let conn : Ast.connection = (Ast.unannotate conn_ann).Ast.data in
+              let from_pid = conn.conn_from_port.data in
+              let to_pid = conn.conn_to_port.data in
+              let fk =
+                Ast.qual_ident_to_string from_pid.pid_component.data
+                ^ "." ^ from_pid.pid_port.data
+              in
+              let tk =
+                Ast.qual_ident_to_string to_pid.pid_component.data
+                ^ "." ^ to_pid.pid_port.data
+              in
+              Hashtbl.replace tbl fk ();
+              Hashtbl.replace tbl tk ())
+            d.graph_connections
+      | _ -> ())
+    members;
+  tbl
+
+let collect_internal_ports (comp : Ast.def_component) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_internal_port ip -> Some ip.internal_name.data
+      | _ -> None)
+    comp.comp_members
+
+let check_unconnected_internal_ports ~scope tu_env topo_instances members =
+  let connected = collect_connected_ports members in
+  Hashtbl.fold
+    (fun inst_name inst_loc acc ->
+      match resolve_instance_comp tu_env inst_name with
+      | None -> acc
+      | Some comp ->
+          let internals = collect_internal_ports comp in
+          List.fold_left
+            (fun acc port_name ->
+              let key = inst_name ^ "." ^ port_name in
+              if not (Hashtbl.mem connected key) then
+                errorf ~sm_name:scope inst_loc
+                  "internal port '%s.%s' is not connected" inst_name port_name
+                :: acc
+              else acc)
+            acc internals)
+    topo_instances []
+
 let check_topology ~scope tu_env (topo : Ast.def_topology) =
   let topo_instances = collect_topo_instances topo.topo_members in
   check_member_refs ~scope tu_env topo.topo_members
@@ -501,6 +1062,10 @@ let check_topology ~scope tu_env (topo : Ast.def_topology) =
   @ check_duplicate_topo_imports ~scope topo.topo_members
   @ check_connection_instance_refs ~scope topo_instances topo.topo_members
   @ check_connection_patterns ~scope tu_env topo.topo_members
+  @ check_direct_connections ~scope tu_env topo.topo_members
+  @ check_tlm_packet_sets ~scope tu_env topo_instances topo.topo_members
+  @ check_unconnected_internal_ports ~scope tu_env topo_instances
+      topo.topo_members
 
 (* ── Entry point ───────────────────────────────────────────────────── *)
 

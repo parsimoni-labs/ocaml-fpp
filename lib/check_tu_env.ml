@@ -399,7 +399,12 @@ let rec eval_expr ~scope tu_env (e : Ast.expr Ast.node) =
   | Ast.Expr_literal (Ast.Lit_int s) -> (
       match int_of_string_opt s with
       | Some n -> (Val_int n, [])
-      | None -> (Val_unknown, []))
+      | None ->
+          ( Val_unknown,
+            [
+              error ~sm_name:scope e.loc
+                (Fmt.str "integer literal '%s' out of range" s);
+            ] ))
   | Ast.Expr_literal (Ast.Lit_float s) -> (
       match float_of_string_opt s with
       | Some f -> (Val_float f, [])

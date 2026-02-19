@@ -742,6 +742,17 @@ let check_special_port_spec ~scope tu_env (comp : Ast.def_component)
               (string_of_special_port_kind s.special_kind));
        ]
      else [])
+  (* Check input kind required but missing *)
+  @ (if
+       Option.is_none s.special_input_kind
+       && special_port_allows_input_kind s.special_kind
+     then
+       [
+         error ~sm_name:scope s.special_name.loc
+           (Fmt.str "%s port requires an input kind (sync, async, or guarded)"
+              (string_of_special_port_kind s.special_kind));
+       ]
+     else [])
   (* Check required Fw port type exists *)
   @
   match fw_port_for_special_kind s.special_kind with

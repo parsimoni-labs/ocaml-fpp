@@ -64,6 +64,7 @@ let extra_pass =
     "state_machine/choice_i16_i32.fpp";
     "state_machine/choice_u32_none.fpp";
     "state_machine/external_state_machine.fpp";
+    "tlm_packets/instances.fpp";
   ]
 
 let is_ok_file ~dir name =
