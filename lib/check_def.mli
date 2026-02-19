@@ -12,3 +12,8 @@ val run :
   Check_env.diagnostic list
 (** [run ~scope env members] validates all type and constant definitions within
     [members]. *)
+
+val is_type_displayable :
+  Ast.module_member Ast.node Ast.annotated list -> Ast.type_name -> bool
+(** [is_type_displayable members tn] is [true] if [tn] is a displayable type.
+    Abstract types are not displayable. *)

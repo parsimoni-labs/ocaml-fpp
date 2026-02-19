@@ -65,6 +65,7 @@ let extra_pass =
     "state_machine/choice_u32_none.fpp";
     "state_machine/external_state_machine.fpp";
     "tlm_packets/instances.fpp";
+    "array/large_size.fpp";
   ]
 
 let is_ok_file ~dir name =

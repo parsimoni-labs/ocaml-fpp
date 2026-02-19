@@ -99,8 +99,13 @@ type formal_param_list = formal_param node annotated list
 
 (** {1:defs Definitions} *)
 
-type def_abs_type = { abs_name : ident node }
-type def_alias_type = { alias_name : ident node; alias_type : type_name node }
+type def_abs_type = { abs_name : ident node; abs_dictionary : bool }
+
+type def_alias_type = {
+  alias_name : ident node;
+  alias_type : type_name node;
+  alias_dictionary : bool;
+}
 
 type def_array = {
   array_name : ident node;
@@ -108,6 +113,7 @@ type def_array = {
   array_elt_type : type_name node;
   array_default : expr node option;
   array_format : string node option;
+  array_dictionary : bool;
 }
 
 type def_enum_constant = {
@@ -120,6 +126,7 @@ type def_enum = {
   enum_type : type_name node option;
   enum_constants : def_enum_constant node annotated list;
   enum_default : expr node option;
+  enum_dictionary : bool;
 }
 
 type struct_type_member = {
@@ -133,9 +140,14 @@ type def_struct = {
   struct_name : ident node;
   struct_members : struct_type_member node annotated list;
   struct_default : expr node option;
+  struct_dictionary : bool;
 }
 
-type def_constant = { const_name : ident node; const_value : expr node }
+type def_constant = {
+  const_name : ident node;
+  const_value : expr node;
+  const_dictionary : bool;
+}
 
 (** {1:ports Port Definitions} *)
 

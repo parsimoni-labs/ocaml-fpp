@@ -269,6 +269,47 @@ let check_param_port_reqs ~scope (comp : Ast.def_component) =
     in
     missing Param_get "param get" @ missing Param_set "param set"
 
+let check_event_port_reqs ~scope (comp : Ast.def_component) =
+  if has_events comp && not (has_special_port Event comp) then
+    [
+      error ~sm_name:scope comp.comp_name.loc
+        (Fmt.str "component '%s' has events but no event port"
+           comp.comp_name.data);
+    ]
+  else []
+
+let check_telemetry_port_reqs ~scope (comp : Ast.def_component) =
+  if has_telemetry comp && not (has_special_port Telemetry comp) then
+    [
+      error ~sm_name:scope comp.comp_name.loc
+        (Fmt.str "component '%s' has telemetry but no telemetry port"
+           comp.comp_name.data);
+    ]
+  else []
+
+let check_container_port_reqs ~scope (comp : Ast.def_component) =
+  let missing kind port_name =
+    if has_containers comp && not (has_special_port kind comp) then
+      [
+        error ~sm_name:scope comp.comp_name.loc
+          (Fmt.str "component '%s' has containers but no %s port"
+             comp.comp_name.data port_name);
+      ]
+    else []
+  in
+  missing Product_recv "product recv"
+  @ missing Product_request "product request"
+  @ missing Product_send "product send"
+
+let check_record_port_reqs ~scope (comp : Ast.def_component) =
+  if has_records comp && not (has_containers comp) then
+    [
+      error ~sm_name:scope comp.comp_name.loc
+        (Fmt.str "component '%s' has records but no containers"
+           comp.comp_name.data);
+    ]
+  else []
+
 let check_port_requirements ~scope tu_env (comp : Ast.def_component) =
   let async_diags =
     match comp.comp_kind with
@@ -288,50 +329,11 @@ let check_port_requirements ~scope tu_env (comp : Ast.def_component) =
   in
   async_diags
   @ check_command_port_reqs ~scope comp
-  @ (if has_events comp && not (has_special_port Event comp) then
-       [
-         error ~sm_name:scope comp.comp_name.loc
-           (Fmt.str "component '%s' has events but no event port"
-              comp.comp_name.data);
-       ]
-     else [])
+  @ check_event_port_reqs ~scope comp
   @ check_param_port_reqs ~scope comp
-  @ (if has_telemetry comp && not (has_special_port Telemetry comp) then
-       [
-         error ~sm_name:scope comp.comp_name.loc
-           (Fmt.str "component '%s' has telemetry but no telemetry port"
-              comp.comp_name.data);
-       ]
-     else [])
-  @ (if has_containers comp && not (has_special_port Product_recv comp) then
-       [
-         error ~sm_name:scope comp.comp_name.loc
-           (Fmt.str "component '%s' has containers but no product recv port"
-              comp.comp_name.data);
-       ]
-     else [])
-  @ (if has_containers comp && not (has_special_port Product_request comp) then
-       [
-         error ~sm_name:scope comp.comp_name.loc
-           (Fmt.str "component '%s' has containers but no product request port"
-              comp.comp_name.data);
-       ]
-     else [])
-  @ (if has_containers comp && not (has_special_port Product_send comp) then
-       [
-         error ~sm_name:scope comp.comp_name.loc
-           (Fmt.str "component '%s' has containers but no product send port"
-              comp.comp_name.data);
-       ]
-     else [])
-  @
-  if has_records comp && not (has_containers comp) then
-    [
-      error ~sm_name:scope comp.comp_name.loc
-        (Fmt.str "component '%s' has records but no containers"
-           comp.comp_name.data);
-    ]
-  else []
+  @ check_telemetry_port_reqs ~scope comp
+  @ check_container_port_reqs ~scope comp
+  @ check_record_port_reqs ~scope comp
 
 (* ── Per-member spec checks ───────────────────────────────────────── *)
 
@@ -695,35 +697,32 @@ let special_port_allows_input_kind = function
   | Product_request | Product_send | Telemetry | Text_event | Time_get ->
       false
 
+let check_non_async_special ~scope (s : Ast.port_instance_special) =
+  (match s.special_priority with
+    | Some e ->
+        [
+          error ~sm_name:scope e.loc
+            "priority not allowed on non-async special port";
+        ]
+    | None -> [])
+  @
+  match s.special_queue_full with
+  | Some qf ->
+      [
+        error ~sm_name:scope qf.loc
+          "queue full not allowed on non-async special port";
+      ]
+  | None -> []
+
 let check_special_port_spec ~scope tu_env (comp : Ast.def_component)
     (s : Ast.port_instance_special) =
   let is_async =
     match s.special_input_kind with Some Async -> true | _ -> false
   in
-  (* Check priority/queue_full on non-async *)
-  (if not is_async then
-     match s.special_priority with
-     | Some e ->
-         [
-           error ~sm_name:scope e.loc
-             "priority not allowed on non-async special port";
-         ]
-     | None -> []
-   else [])
-  @ (if not is_async then
-       match s.special_queue_full with
-       | Some qf ->
-           [
-             error ~sm_name:scope qf.loc
-               "queue full not allowed on non-async special port";
-           ]
-       | None -> []
-     else [])
-  (* Check priority is numeric when present *)
+  (if not is_async then check_non_async_special ~scope s else [])
   @ (match s.special_priority with
     | Some e -> check_numeric_expr ~scope tu_env e "special port priority"
     | None -> [])
-  (* Check async special port in passive component *)
   @ (if is_async && comp.comp_kind = Passive then
        [
          error ~sm_name:scope s.special_name.loc
@@ -731,7 +730,6 @@ let check_special_port_spec ~scope tu_env (comp : Ast.def_component)
               s.special_name.data);
        ]
      else [])
-  (* Check input kind not specified on ports that don't allow it *)
   @ (if
        Option.is_some s.special_input_kind
        && not (special_port_allows_input_kind s.special_kind)
@@ -742,7 +740,6 @@ let check_special_port_spec ~scope tu_env (comp : Ast.def_component)
               (string_of_special_port_kind s.special_kind));
        ]
      else [])
-  (* Check input kind required but missing *)
   @ (if
        Option.is_none s.special_input_kind
        && special_port_allows_input_kind s.special_kind
@@ -753,7 +750,6 @@ let check_special_port_spec ~scope tu_env (comp : Ast.def_component)
               (string_of_special_port_kind s.special_kind));
        ]
      else [])
-  (* Check required Fw port type exists *)
   @
   match fw_port_for_special_kind s.special_kind with
   | Some fw_name ->
@@ -1039,6 +1035,51 @@ let check_import_constraints ~scope tu_env (comp : Ast.def_component) =
 
 (* ── Port matching checks ─────────────────────────────────────────── *)
 
+let check_single_port_match ~scope port_names port_sizes
+    (pm : Ast.spec_port_matching) =
+  let p1 = pm.match_port1 in
+  let p2 = pm.match_port2 in
+  let same =
+    if p1.data = p2.data then
+      [
+        error ~sm_name:scope p2.loc
+          (Fmt.str "port matching: '%s' matched with itself" p1.data);
+      ]
+    else []
+  in
+  let undef1 =
+    if not (Hashtbl.mem port_names p1.data) then
+      [
+        error ~sm_name:scope p1.loc
+          (Fmt.str "port matching: '%s' is not a port instance" p1.data);
+      ]
+    else []
+  in
+  let undef2 =
+    if not (Hashtbl.mem port_names p2.data) then
+      [
+        error ~sm_name:scope p2.loc
+          (Fmt.str "port matching: '%s' is not a port instance" p2.data);
+      ]
+    else []
+  in
+  let size_mismatch =
+    if Hashtbl.mem port_names p1.data && Hashtbl.mem port_names p2.data then
+      match
+        ( Hashtbl.find_opt port_sizes p1.data,
+          Hashtbl.find_opt port_sizes p2.data )
+      with
+      | Some (Some s1), Some (Some s2) when s1 <> s2 ->
+          [
+            error ~sm_name:scope p2.loc
+              (Fmt.str "port matching: '%s' has size %d but '%s' has size %d"
+                 p1.data s1 p2.data s2);
+          ]
+      | _ -> []
+    else []
+  in
+  same @ undef1 @ undef2 @ size_mismatch
+
 let check_port_matching ~scope tu_env (comp : Ast.def_component) =
   let port_names = Hashtbl.create 8 in
   let port_sizes = Hashtbl.create 8 in
@@ -1061,56 +1102,70 @@ let check_port_matching ~scope tu_env (comp : Ast.def_component) =
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
       | Ast.Comp_spec_port_matching pm ->
-          let p1 = pm.match_port1 in
-          let p2 = pm.match_port2 in
-          let same =
-            if p1.data = p2.data then
-              [
-                error ~sm_name:scope p2.loc
-                  (Fmt.str "port matching: '%s' matched with itself" p1.data);
-              ]
-            else []
-          in
-          let undef1 =
-            if not (Hashtbl.mem port_names p1.data) then
-              [
-                error ~sm_name:scope p1.loc
-                  (Fmt.str "port matching: '%s' is not a port instance" p1.data);
-              ]
-            else []
-          in
-          let undef2 =
-            if not (Hashtbl.mem port_names p2.data) then
-              [
-                error ~sm_name:scope p2.loc
-                  (Fmt.str "port matching: '%s' is not a port instance" p2.data);
-              ]
-            else []
-          in
-          let size_mismatch =
-            if Hashtbl.mem port_names p1.data && Hashtbl.mem port_names p2.data
-            then
-              match
-                ( Hashtbl.find_opt port_sizes p1.data,
-                  Hashtbl.find_opt port_sizes p2.data )
-              with
-              | Some (Some s1), Some (Some s2) when s1 <> s2 ->
-                  [
-                    error ~sm_name:scope p2.loc
-                      (Fmt.str
-                         "port matching: '%s' has size %d but '%s' has size %d"
-                         p1.data s1 p2.data s2);
-                  ]
-              | _ -> []
-            else []
-          in
-          same @ undef1 @ undef2 @ size_mismatch
+          check_single_port_match ~scope port_names port_sizes pm
+      | _ -> [])
+    comp.comp_members
+
+(* ── Displayability checks for component members ─────────────────── *)
+
+let is_displayable_in_comp ~tu_members (comp : Ast.def_component)
+    (tn : Ast.type_name) =
+  match tn with
+  | Ast.Type_bool | Ast.Type_int _ | Ast.Type_float _ | Ast.Type_string _ ->
+      true
+  | Ast.Type_qual qi ->
+      let name = Ast.qual_ident_to_string qi.data in
+      let is_comp_abstract =
+        List.exists
+          (fun ann ->
+            match (Ast.unannotate ann).Ast.data with
+            | Ast.Comp_def_abs_type t -> t.abs_name.data = name
+            | _ -> false)
+          comp.comp_members
+      in
+      if is_comp_abstract then false
+      else Check_def.is_type_displayable tu_members tn
+
+let check_displayable_members ~scope ~tu_members (comp : Ast.def_component) =
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_command cmd ->
+          List.concat_map
+            (fun ann ->
+              let fp : Ast.formal_param = (Ast.unannotate ann).Ast.data in
+              if not (is_displayable_in_comp ~tu_members comp fp.fp_type.data)
+              then
+                [
+                  error ~sm_name:scope fp.fp_name.loc
+                    (Fmt.str "command parameter '%s' type is not displayable"
+                       fp.fp_name.data);
+                ]
+              else [])
+            cmd.cmd_params
+      | Ast.Comp_spec_record r ->
+          if not (is_displayable_in_comp ~tu_members comp r.record_type.data)
+          then
+            [
+              error ~sm_name:scope r.record_name.loc
+                (Fmt.str "product record '%s' type is not displayable"
+                   r.record_name.data);
+            ]
+          else []
+      | Ast.Comp_spec_tlm_channel t ->
+          if not (is_displayable_in_comp ~tu_members comp t.tlm_type.data) then
+            [
+              error ~sm_name:scope t.tlm_name.loc
+                (Fmt.str "telemetry channel '%s' type is not displayable"
+                   t.tlm_name.data);
+            ]
+          else []
       | _ -> [])
     comp.comp_members
 
 (* ── Component definition check ───────────────────────────────────── *)
 
-let check_component ~scope tu_env (comp : Ast.def_component) =
+let check_component ~scope ~tu_members tu_env (comp : Ast.def_component) =
   let comp_types, comp_constants = build_comp_types comp in
   check_port_requirements ~scope tu_env comp
   @ List.concat_map
@@ -1122,6 +1177,7 @@ let check_component ~scope tu_env (comp : Ast.def_component) =
   @ check_duplicate_special_ports ~scope comp.comp_members
   @ check_import_constraints ~scope tu_env comp
   @ check_port_matching ~scope tu_env comp
+  @ check_displayable_members ~scope ~tu_members comp
 
 (* ── Port definition checks ───────────────────────────────────────── *)
 
@@ -1246,7 +1302,7 @@ let run ~scope tu_env members =
         match (Ast.unannotate ann).Ast.data with
         | Ast.Mod_def_component c ->
             let s = scope ^ "." ^ c.comp_name.data in
-            check_component ~scope:s tu_env c
+            check_component ~scope:s ~tu_members:members tu_env c
         | Ast.Mod_def_module m ->
             let s = scope ^ "." ^ m.module_name.data in
             walk ~scope:s m.module_members

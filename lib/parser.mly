@@ -515,8 +515,8 @@ state_machine_member:
   | c = def_constant { node $startpos (Sm_def_constant c) }
   | e = def_enum { node $startpos (Sm_def_enum e) }
   | s = def_struct { node $startpos (Sm_def_struct s) }
-  | TYPE n = ident { node $startpos (Sm_def_abs_type { abs_name = n }) }
-  | TYPE n = ident EQUALS t = type_name_node { node $startpos (Sm_def_alias_type { alias_name = n; alias_type = t }) }
+  | TYPE n = ident { node $startpos (Sm_def_abs_type { abs_name = n; abs_dictionary = false }) }
+  | TYPE n = ident EQUALS t = type_name_node { node $startpos (Sm_def_alias_type { alias_name = n; alias_type = t; alias_dictionary = false }) }
 
 (* State machine definition *)
 def_state_machine:
@@ -541,7 +541,8 @@ def_array:
       array_size = sz;
       array_elt_type = t;
       array_default = def;
-      array_format = fmt } }
+      array_format = fmt;
+      array_dictionary = false } }
 
 format_clause_opt:
   | %prec PREC_BELOW { None }
@@ -569,7 +570,8 @@ def_struct:
   def = option(default_clause)
   { { struct_name = n;
       struct_members = ms;
-      struct_default = def } }
+      struct_default = def;
+      struct_dictionary = false } }
 
 def_enum_constant:
   n = ident v = option(preceded(EQUALS, expr_node))
@@ -591,11 +593,12 @@ def_enum:
   { { enum_name = n;
       enum_type = t;
       enum_constants = cs;
-      enum_default = def } }
+      enum_default = def;
+      enum_dictionary = false } }
 
 def_constant:
   CONSTANT n = ident EQUALS e = expr_node
-  { { const_name = n; const_value = e } }
+  { { const_name = n; const_value = e; const_dictionary = false } }
 
 (* ========== Component Definition ========== *)
 
@@ -678,8 +681,8 @@ comp_member:
   | s = def_state_machine { node $startpos (Comp_def_state_machine s) }
   | i = spec_state_machine_instance { node $startpos (Comp_spec_sm_instance i) }
   | m = spec_port_matching { node $startpos (Comp_spec_port_matching m) }
-  | TYPE n = ident { node $startpos (Comp_def_abs_type { abs_name = n }) }
-  | TYPE n = ident EQUALS t = type_name_node { node $startpos (Comp_def_alias_type { alias_name = n; alias_type = t }) }
+  | TYPE n = ident { node $startpos (Comp_def_abs_type { abs_name = n; abs_dictionary = false }) }
+  | TYPE n = ident EQUALS t = type_name_node { node $startpos (Comp_def_alias_type { alias_name = n; alias_type = t; alias_dictionary = false }) }
   | a = def_array { node $startpos (Comp_def_array a) }
   | s = def_struct { node $startpos (Comp_def_struct s) }
   | e = def_enum { node $startpos (Comp_def_enum e) }
@@ -849,12 +852,12 @@ module_member:
   | t = def_topology { node $startpos (Mod_def_topology t) }
   | i = def_component_instance { node $startpos (Mod_def_component_instance i) }
   | p = port_def { p }
-  | option(DICTIONARY) TYPE n = ident { node $startpos (Mod_def_abs_type { abs_name = n }) }
-  | option(DICTIONARY) TYPE n = ident EQUALS t = type_name_node { node $startpos (Mod_def_alias_type { alias_name = n; alias_type = t }) }
-  | option(DICTIONARY) a = def_array { node $startpos (Mod_def_array a) }
-  | option(DICTIONARY) s = def_struct { node $startpos (Mod_def_struct s) }
-  | option(DICTIONARY) e = def_enum { node $startpos (Mod_def_enum e) }
-  | option(DICTIONARY) c = def_constant { node $startpos (Mod_def_constant c) }
+  | d = option(DICTIONARY) TYPE n = ident { node $startpos (Mod_def_abs_type { abs_name = n; abs_dictionary = Option.is_some d }) }
+  | d = option(DICTIONARY) TYPE n = ident EQUALS t = type_name_node { node $startpos (Mod_def_alias_type { alias_name = n; alias_type = t; alias_dictionary = Option.is_some d }) }
+  | d = option(DICTIONARY) a = def_array { node $startpos (Mod_def_array { a with array_dictionary = Option.is_some d }) }
+  | d = option(DICTIONARY) s = def_struct { node $startpos (Mod_def_struct { s with struct_dictionary = Option.is_some d }) }
+  | d = option(DICTIONARY) e = def_enum { node $startpos (Mod_def_enum { e with enum_dictionary = Option.is_some d }) }
+  | d = option(DICTIONARY) c = def_constant { node $startpos (Mod_def_constant { c with const_dictionary = Option.is_some d }) }
   | s = def_state_machine { node $startpos (Mod_def_state_machine s) }
   | l = spec_loc { node $startpos (Mod_spec_loc l) }
   | INCLUDE s = STRING { node $startpos (Mod_spec_include (node $startpos s)) }

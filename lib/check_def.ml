@@ -178,7 +178,75 @@ let rec check_undef_constants ~scope ~root_env tu_env members =
       | _ -> [])
     members
 
+(* ── Dictionary annotation checks ─────────────────────────────────── *)
+
+let def_is_dictionary name members =
+  List.exists
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_abs_type t -> t.abs_name.data = name && t.abs_dictionary
+      | Ast.Mod_def_alias_type t ->
+          t.alias_name.data = name && t.alias_dictionary
+      | Ast.Mod_def_array a -> a.array_name.data = name && a.array_dictionary
+      | Ast.Mod_def_struct s -> s.struct_name.data = name && s.struct_dictionary
+      | Ast.Mod_def_enum e -> e.enum_name.data = name && e.enum_dictionary
+      | Ast.Mod_def_constant c -> c.const_name.data = name && c.const_dictionary
+      | _ -> false)
+    members
+
+let rec is_type_displayable members (tn : Ast.type_name) =
+  match tn with
+  | Ast.Type_bool | Ast.Type_int _ | Ast.Type_float _ | Ast.Type_string _ ->
+      true
+  | Ast.Type_qual qi ->
+      let name = Ast.qual_ident_to_string qi.data in
+      is_named_type_displayable members name
+
+and is_named_type_displayable members name =
+  let def = ref None in
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_abs_type t when t.abs_name.data = name ->
+          def := Some `Abstract
+      | Ast.Mod_def_alias_type t when t.alias_name.data = name ->
+          def := Some (`Alias t.alias_type.data)
+      | Ast.Mod_def_array a when a.array_name.data = name ->
+          def := Some (`Array a.array_elt_type.data)
+      | Ast.Mod_def_struct s when s.struct_name.data = name ->
+          def :=
+            Some
+              (`Struct
+                 (List.map
+                    (fun ann ->
+                      let m : Ast.struct_type_member =
+                        (Ast.unannotate ann).Ast.data
+                      in
+                      m.struct_mem_type.data)
+                    s.struct_members))
+      | _ -> ())
+    members;
+  match !def with
+  | None -> true
+  | Some `Abstract -> false
+  | Some (`Alias tn) -> is_type_displayable members tn
+  | Some (`Array tn) -> is_type_displayable members tn
+  | Some (`Struct tns) -> List.for_all (is_type_displayable members) tns
+
 (* ── spec_loc validation ───────────────────────────────────────────── *)
+
+let check_path ~scope (sl : Ast.spec_loc) =
+  let path = sl.loc_path.data in
+  let source_file = sl.loc_path.loc.file in
+  let source_base = Filename.basename source_file in
+  let declared_base = Filename.basename path in
+  if source_base <> declared_base && declared_base <> "" then
+    [
+      error ~sm_name:scope sl.loc_path.loc
+        (Fmt.str "location path '%s' does not match source file '%s'" path
+           source_base);
+    ]
+  else []
 
 let rec check_spec_locs ~scope members =
   List.concat_map
@@ -186,40 +254,45 @@ let rec check_spec_locs ~scope members =
       let n = Ast.unannotate ann in
       match n.Ast.data with
       | Ast.Mod_spec_loc sl -> (
-          let path = sl.loc_path.data in
+          let name = Ast.qual_ident_to_string sl.loc_name.data in
           match sl.loc_kind with
           | Ast.Loc_dictionary_type ->
-              [
-                error ~sm_name:scope sl.loc_path.loc
-                  (Fmt.str
-                     "dictionary type location specifier is not supported for \
-                      '%s'"
-                     (Ast.qual_ident_to_string sl.loc_name.data));
-              ]
-          | _ ->
-              (* Check if the declared path matches the source file *)
-              let source_file = sl.loc_path.loc.file in
-              let source_base = Filename.basename source_file in
-              let declared_base = Filename.basename path in
-              if source_base <> declared_base && declared_base <> "" then
+              if not (def_is_dictionary name members) then
                 [
-                  error ~sm_name:scope sl.loc_path.loc
+                  error ~sm_name:scope sl.loc_name.loc
                     (Fmt.str
-                       "location path '%s' does not match source file '%s'" path
-                       source_base);
+                       "locate dictionary type '%s' does not match a \
+                        dictionary definition"
+                       name);
                 ]
-              else [])
+              else check_path ~scope sl
+          | Ast.Loc_type ->
+              if def_is_dictionary name members then
+                [
+                  error ~sm_name:scope sl.loc_name.loc
+                    (Fmt.str
+                       "type '%s' is a dictionary type; use 'locate dictionary \
+                        type'"
+                       name);
+                ]
+              else check_path ~scope sl
+          | Ast.Loc_constant ->
+              if def_is_dictionary name members then
+                [
+                  error ~sm_name:scope sl.loc_name.loc
+                    (Fmt.str
+                       "constant '%s' is a dictionary constant; use 'locate \
+                        dictionary constant'"
+                       name);
+                ]
+              else check_path ~scope sl
+          | _ -> check_path ~scope sl)
       | Ast.Mod_def_module m ->
           check_spec_locs
             ~scope:(scope ^ "." ^ m.module_name.data)
             m.module_members
       | _ -> [])
     members
-
-(* ── Dictionary annotation checks ─────────────────────────────────── *)
-
-(* The dictionary keyword is discarded by the parser (option(DICTIONARY)),
-   so dictionary annotation checks are handled via spec_loc instead. *)
 
 (* ── Array definition checks ──────────────────────────────────────── *)
 
@@ -582,6 +655,38 @@ let check_type_def ~scope tu_env members =
       | _ -> [])
     members
 
+(* ── Array enum default check ─────────────────────────────────────── *)
+
+let is_enum_type members (tn : Ast.type_name) =
+  match tn with
+  | Ast.Type_qual qi ->
+      let name = Ast.qual_ident_to_string qi.data in
+      List.exists
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Mod_def_enum e -> e.enum_name.data = name
+          | _ -> false)
+        members
+  | _ -> false
+
+let check_enum_array_default ~scope members (a : Ast.def_array) =
+  if not (is_enum_type members a.array_elt_type.data) then []
+  else
+    match a.array_default with
+    | None -> []
+    | Some def -> (
+        match def.data with
+        | Ast.Expr_literal (Ast.Lit_int _)
+        | Ast.Expr_literal (Ast.Lit_float _)
+        | Ast.Expr_literal (Ast.Lit_bool _) ->
+            [
+              error ~sm_name:scope def.loc
+                (Fmt.str
+                   "array '%s' default must use an enum constant, not a literal"
+                   a.array_name.data);
+            ]
+        | _ -> [])
+
 (* ── TU-level definition checks ──────────────────────────────────── *)
 
 let rec check_definitions ~scope tu_env members =
@@ -589,7 +694,9 @@ let rec check_definitions ~scope tu_env members =
     (fun ann ->
       let n = Ast.unannotate ann in
       match n.Ast.data with
-      | Ast.Mod_def_array a -> check_array_def ~scope tu_env a
+      | Ast.Mod_def_array a ->
+          check_array_def ~scope tu_env a
+          @ check_enum_array_default ~scope members a
       | Ast.Mod_def_enum e -> check_enum_def ~scope tu_env e
       | Ast.Mod_def_struct s -> check_struct_def ~scope tu_env s
       | Ast.Mod_def_module m ->
@@ -604,13 +711,67 @@ let rec check_definitions ~scope tu_env members =
       | _ -> [])
     members
 
+(* ── Dictionary displayability checks ─────────────────────────────── *)
+
+let rec check_displayable_defs ~scope members =
+  List.concat_map
+    (fun ann ->
+      let n = Ast.unannotate ann in
+      match n.Ast.data with
+      | Ast.Mod_def_array a when a.array_dictionary ->
+          if not (is_type_displayable members a.array_elt_type.data) then
+            [
+              error ~sm_name:scope a.array_name.loc
+                (Fmt.str "dictionary array '%s' element type is not displayable"
+                   a.array_name.data);
+            ]
+          else []
+      | Ast.Mod_def_struct s when s.struct_dictionary ->
+          List.concat_map
+            (fun ann ->
+              let m : Ast.struct_type_member = (Ast.unannotate ann).Ast.data in
+              if not (is_type_displayable members m.struct_mem_type.data) then
+                [
+                  error ~sm_name:scope m.struct_mem_name.loc
+                    (Fmt.str
+                       "dictionary struct '%s' member '%s' type is not \
+                        displayable"
+                       s.struct_name.data m.struct_mem_name.data);
+                ]
+              else [])
+            s.struct_members
+      | Ast.Mod_def_alias_type t when t.alias_dictionary ->
+          if not (is_type_displayable members t.alias_type.data) then
+            [
+              error ~sm_name:scope t.alias_name.loc
+                (Fmt.str "dictionary type '%s' aliases a non-displayable type"
+                   t.alias_name.data);
+            ]
+          else []
+      | Ast.Mod_def_constant c when c.const_dictionary -> (
+          match c.const_value.data with
+          | Ast.Expr_struct _ ->
+              [
+                error ~sm_name:scope c.const_name.loc
+                  (Fmt.str
+                     "dictionary constant '%s' has a non-displayable value"
+                     c.const_name.data);
+              ]
+          | _ -> [])
+      | Ast.Mod_def_module m ->
+          check_displayable_defs
+            ~scope:(scope ^ "." ^ m.module_name.data)
+            m.module_members
+      | _ -> [])
+    members
+
 (* ── Entry point ───────────────────────────────────────────────────── *)
 
 let run ~scope tu_env members =
   let exprs = check_constant_exprs ~scope tu_env members in
   let undef = check_undef_constants ~scope ~root_env:tu_env tu_env members in
   let spec_locs = check_spec_locs ~scope members in
-  let _dict = [] in
   let defs = check_definitions ~scope tu_env members in
   let type_defs = check_type_def ~scope tu_env members in
-  exprs @ undef @ spec_locs @ defs @ type_defs
+  let displayable = check_displayable_defs ~scope members in
+  exprs @ undef @ spec_locs @ defs @ type_defs @ displayable
