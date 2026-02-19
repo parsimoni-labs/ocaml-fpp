@@ -172,12 +172,38 @@ let check_instance_id_conflicts ~scope tu_env members =
 
 (* ── Topology checks ──────────────────────────────────────────────── *)
 
-let check_member_refs ~scope tu_env members =
+let check_instance_with_root ~scope tu_env root_env
+    (qi : Ast.qual_ident Ast.node) =
+  match resolve_symbol tu_env qi.data with
+  | Some (Sk_instance, _) -> []
+  | Some _ ->
+      (* Found in local env but wrong kind *)
+      check_symbol_as_instance ~scope tu_env qi
+  | None -> (
+      (* Fallback to root env *)
+      match resolve_symbol root_env qi.data with
+      | Some (Sk_instance, _) -> []
+      | Some (kind, _) ->
+          let a =
+            match (string_of_symbol_kind kind).[0] with
+            | 'a' | 'e' | 'i' | 'o' | 'u' -> "an"
+            | _ -> "a"
+          in
+          [
+            error ~sm_name:scope qi.loc
+              (Fmt.str "'%s' is %s %s, not a component instance"
+                 (Ast.qual_ident_to_string qi.data)
+                 a
+                 (string_of_symbol_kind kind));
+          ]
+      | None -> [])
+
+let check_member_refs ~scope ~root_env tu_env members =
   List.concat_map
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
       | Ast.Topo_spec_comp_instance ci ->
-          check_symbol_as_instance ~scope tu_env ci.ci_instance
+          check_instance_with_root ~scope tu_env root_env ci.ci_instance
       | Ast.Topo_spec_top_import qi -> check_symbol_as_topology ~scope tu_env qi
       | _ -> [])
     members
@@ -1039,9 +1065,9 @@ let check_unconnected_internal_ports ~scope tu_env topo_instances members =
             acc internals)
     topo_instances []
 
-let check_topology ~scope tu_env (topo : Ast.def_topology) =
+let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   let topo_instances = collect_topo_instances topo.topo_members in
-  check_member_refs ~scope tu_env topo.topo_members
+  check_member_refs ~scope ~root_env tu_env topo.topo_members
   @ check_duplicate_topo_instances ~scope topo.topo_members
   @ check_duplicate_patterns ~scope topo.topo_members
   @ check_duplicate_topo_imports ~scope topo.topo_members
@@ -1077,13 +1103,13 @@ let run ~scope tu_env members =
   in
   let id_conflicts = check_instance_id_conflicts ~scope tu_env members in
   let topologies =
-    let rec walk ~scope env members =
+    let rec walk ~scope ~root_env env members =
       List.concat_map
         (fun ann ->
           match (Ast.unannotate ann).Ast.data with
           | Ast.Mod_def_topology t ->
               let s = scope ^ "." ^ t.topo_name.data in
-              check_topology ~scope:s env t
+              check_topology ~scope:s ~root_env env t
           | Ast.Mod_def_module m ->
               let s = scope ^ "." ^ m.module_name.data in
               let sub =
@@ -1091,10 +1117,10 @@ let run ~scope tu_env members =
                 | Some e -> e
                 | None -> env
               in
-              walk ~scope:s sub m.module_members
+              walk ~scope:s ~root_env sub m.module_members
           | _ -> [])
         members
     in
-    walk ~scope tu_env members
+    walk ~scope ~root_env:tu_env tu_env members
   in
   instances @ id_conflicts @ topologies

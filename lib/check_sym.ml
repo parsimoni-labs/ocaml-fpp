@@ -134,6 +134,15 @@ and check_expr_symbol_kinds ~scope ~root_env tu_env (e : Ast.expr Ast.node) =
 
 (* ── Dependency cycle detection ────────────────────────────────────── *)
 
+let rec expr_to_qual_name (e : Ast.expr Ast.node) =
+  match e.data with
+  | Ast.Expr_ident id -> Some id.data
+  | Ast.Expr_dot (inner, field) -> (
+      match expr_to_qual_name inner with
+      | Some prefix -> Some (prefix ^ "." ^ field.data)
+      | None -> None)
+  | _ -> None
+
 let rec expr_refs (e : Ast.expr Ast.node) =
   match e.data with
   | Ast.Expr_ident id -> [ id.data ]
@@ -146,36 +155,38 @@ let rec expr_refs (e : Ast.expr Ast.node) =
       List.concat_map
         (fun (m : Ast.struct_member Ast.node) -> expr_refs m.data.sm_value)
         ms
-  | Ast.Expr_dot (e, _) -> expr_refs e
+  | Ast.Expr_dot _ -> (
+      match expr_to_qual_name e with Some name -> [ name ] | None -> [])
   | Ast.Expr_subscript (e1, e2) -> expr_refs e1 @ expr_refs e2
 
 let type_name_ref (tn : Ast.type_name Ast.node) =
   match tn.data with
-  | Ast.Type_qual qi -> (
-      match qi.data with Ast.Unqualified id -> Some id.data | _ -> None)
+  | Ast.Type_qual qi -> Some (Ast.qual_ident_to_string qi.data)
   | _ -> None
 
-let register_def_deps graph locs (n : Ast.module_member Ast.node) =
+let register_def_deps ~prefix graph locs (n : Ast.module_member Ast.node) =
+  let qname s = if prefix = "" then s else prefix ^ "." ^ s in
   match n.Ast.data with
   | Ast.Mod_def_constant c ->
-      Hashtbl.replace locs c.const_name.data c.const_name.loc;
-      Hashtbl.replace graph c.const_name.data (expr_refs c.const_value)
+      let name = qname c.const_name.data in
+      Hashtbl.replace locs name c.const_name.loc;
+      Hashtbl.replace graph name (expr_refs c.const_value)
   | Ast.Mod_def_alias_type t ->
-      let name = t.alias_name.data in
+      let name = qname t.alias_name.data in
       Hashtbl.replace locs name t.alias_name.loc;
       let deps =
         match type_name_ref t.alias_type with Some r -> [ r ] | None -> []
       in
       Hashtbl.replace graph name deps
   | Ast.Mod_def_array a ->
-      let name = a.array_name.data in
+      let name = qname a.array_name.data in
       Hashtbl.replace locs name a.array_name.loc;
       let deps =
         match type_name_ref a.array_elt_type with Some r -> [ r ] | None -> []
       in
       Hashtbl.replace graph name deps
   | Ast.Mod_def_struct s ->
-      let name = s.struct_name.data in
+      let name = qname s.struct_name.data in
       Hashtbl.replace locs name s.struct_name.loc;
       let deps =
         List.filter_map
@@ -186,7 +197,7 @@ let register_def_deps graph locs (n : Ast.module_member Ast.node) =
       in
       Hashtbl.replace graph name deps
   | Ast.Mod_def_enum e ->
-      let name = e.enum_name.data in
+      let name = qname e.enum_name.data in
       Hashtbl.replace locs name e.enum_name.loc;
       let type_deps =
         match e.enum_type with
@@ -206,16 +217,21 @@ let register_def_deps graph locs (n : Ast.module_member Ast.node) =
 let build_dep_graph members =
   let graph = Hashtbl.create 32 in
   let locs = Hashtbl.create 32 in
-  let rec walk members =
+  let rec walk ~prefix members =
     List.iter
       (fun ann ->
         let n = Ast.unannotate ann in
         match n.Ast.data with
-        | Ast.Mod_def_module m -> walk m.module_members
-        | _ -> register_def_deps graph locs n)
+        | Ast.Mod_def_module m ->
+            let p =
+              if prefix = "" then m.module_name.data
+              else prefix ^ "." ^ m.module_name.data
+            in
+            walk ~prefix:p m.module_members
+        | _ -> register_def_deps ~prefix graph locs n)
       members
   in
-  walk members;
+  walk ~prefix:"" members;
   (graph, locs)
 
 let check_cycles ~scope members =

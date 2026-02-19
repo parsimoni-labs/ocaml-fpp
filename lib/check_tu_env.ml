@@ -585,10 +585,34 @@ let check_nonneg_id ~scope tu_env (e : Ast.expr Ast.node) what =
         ]
   | _ -> diags
 
+let check_array_mixed_elements ~scope tu_env (es : Ast.expr Ast.node list) loc =
+  let has_struct = ref false in
+  let has_array = ref false in
+  List.iter
+    (fun e ->
+      let v, _ = eval_expr ~scope tu_env e in
+      match v with
+      | Val_struct _ -> has_struct := true
+      | Val_array _ -> has_array := true
+      | _ -> ())
+    es;
+  if !has_struct && !has_array then
+    [
+      error ~sm_name:scope loc
+        "array expression mixes struct and array elements";
+    ]
+  else []
+
 let check_array_expr ~scope tu_env (e : Ast.expr Ast.node) =
   match e.data with
   | Ast.Expr_array [] -> [ error ~sm_name:scope e.loc "empty array expression" ]
-  | Ast.Expr_array _ | Ast.Expr_struct _ ->
+  | Ast.Expr_array es ->
+      let v_diags =
+        let _, diags = eval_expr ~scope tu_env e in
+        diags
+      in
+      v_diags @ check_array_mixed_elements ~scope tu_env es e.loc
+  | Ast.Expr_struct _ ->
       let _, diags = eval_expr ~scope tu_env e in
       diags
   | _ ->

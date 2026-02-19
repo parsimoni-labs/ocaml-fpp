@@ -310,6 +310,21 @@ let check_record_port_reqs ~scope (comp : Ast.def_component) =
     ]
   else []
 
+let check_product_recv_port_reqs ~scope (comp : Ast.def_component) =
+  if not (has_special_port Product_recv comp) then []
+  else
+    let missing kind port_name =
+      if not (has_special_port kind comp) then
+        [
+          error ~sm_name:scope comp.comp_name.loc
+            (Fmt.str "component '%s' has product recv but no %s port"
+               comp.comp_name.data port_name);
+        ]
+      else []
+    in
+    missing Product_request "product request"
+    @ missing Product_send "product send"
+
 let check_port_requirements ~scope tu_env (comp : Ast.def_component) =
   let async_diags =
     match comp.comp_kind with
@@ -334,6 +349,7 @@ let check_port_requirements ~scope tu_env (comp : Ast.def_component) =
   @ check_telemetry_port_reqs ~scope comp
   @ check_container_port_reqs ~scope comp
   @ check_record_port_reqs ~scope comp
+  @ check_product_recv_port_reqs ~scope comp
 
 (* ── Per-member spec checks ───────────────────────────────────────── *)
 
