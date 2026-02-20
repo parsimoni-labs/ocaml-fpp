@@ -193,6 +193,9 @@ ofpp dot --sm Controller model.fpp        # select one SM
 Rendering to image formats requires [d2](https://d2lang.com) to be installed.
 D2 is a single Go binary available on Linux, macOS, and Windows.
 
+A [gallery](doc/gallery/index.html) of rendered diagrams is available for
+browsing, showing both the FPP source and the resulting SVG side by side.
+
 ## What is planned
 
 The roadmap (see [TODO.md](TODO.md)) covers three directions.
