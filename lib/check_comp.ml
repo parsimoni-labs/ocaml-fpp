@@ -770,6 +770,32 @@ let check_constant_def ~scope tu_env comp_types comp_constants
       else [])
     ids
 
+let check_sm_instance ~scope tu_env (comp : Ast.def_component)
+    (smi : Ast.spec_state_machine_instance) =
+  let sm_name = Ast.qual_ident_to_string smi.smi_machine.data in
+  let is_comp_local =
+    List.exists
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Comp_def_state_machine sm -> sm.sm_name.data = sm_name
+        | _ -> false)
+      comp.comp_members
+  in
+  (if is_comp_local then []
+   else check_symbol_as_state_machine ~scope tu_env smi.smi_machine)
+  @ (match smi.smi_priority with
+    | Some e ->
+        check_numeric_expr ~scope tu_env e "state machine instance priority"
+    | None -> [])
+  @
+  if comp.comp_kind = Passive then
+    [
+      error ~sm_name:scope smi.smi_name.loc
+        (Fmt.str "state machine instance '%s' not allowed in passive component"
+           smi.smi_name.data);
+    ]
+  else []
+
 (* ── Per-member dispatch ──────────────────────────────────────────── *)
 
 let check_member ~scope tu_env (comp : Ast.def_component) comp_types
@@ -824,31 +850,7 @@ let check_member ~scope tu_env (comp : Ast.def_component) comp_types
       match r.record_id with
       | Some e -> check_nonneg_id ~scope tu_env e "record ID"
       | None -> [])
-  | Ast.Comp_spec_sm_instance smi ->
-      let sm_name = Ast.qual_ident_to_string smi.smi_machine.data in
-      let is_comp_local =
-        List.exists
-          (fun ann ->
-            match (Ast.unannotate ann).Ast.data with
-            | Ast.Comp_def_state_machine sm -> sm.sm_name.data = sm_name
-            | _ -> false)
-          comp.comp_members
-      in
-      (if is_comp_local then []
-       else check_symbol_as_state_machine ~scope tu_env smi.smi_machine)
-      @ (match smi.smi_priority with
-        | Some e ->
-            check_numeric_expr ~scope tu_env e "state machine instance priority"
-        | None -> [])
-      @
-      if comp.comp_kind = Passive then
-        [
-          error ~sm_name:scope smi.smi_name.loc
-            (Fmt.str
-               "state machine instance '%s' not allowed in passive component"
-               smi.smi_name.data);
-        ]
-      else []
+  | Ast.Comp_spec_sm_instance smi -> check_sm_instance ~scope tu_env comp smi
   | Ast.Comp_def_array a ->
       check_array_def ~scope tu_env comp_types comp_constants a
   | Ast.Comp_def_enum e ->

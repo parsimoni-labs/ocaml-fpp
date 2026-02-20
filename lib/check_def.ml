@@ -294,6 +294,75 @@ let rec check_spec_locs ~scope members =
       | _ -> [])
     members
 
+(* ── Shared validation helpers ────────────────────────────────────── *)
+
+let check_type_string_size ~scope tu_env (type_node : Ast.type_name Ast.node) =
+  match type_node.data with
+  | Ast.Type_string (Some sz) -> (
+      let v, d = eval_expr ~scope tu_env sz in
+      d
+      @
+      match v with
+      | Val_int n when n < 0 ->
+          [ error ~sm_name:scope sz.loc "string size must be non-negative" ]
+      | Val_int n when n > 0x7FFFFFFF ->
+          [ error ~sm_name:scope sz.loc "string size too large" ]
+      | Val_string _ ->
+          [
+            error ~sm_name:scope sz.loc
+              "string size must be a numeric expression";
+          ]
+      | _ -> [])
+  | _ -> []
+
+let check_format_against_type ~scope tu_env fmt_opt type_node desc =
+  match fmt_opt with
+  | None -> []
+  | Some (fmt : string Ast.node) -> (
+      check_format_string ~scope fmt.loc fmt.data 1
+      @
+      let spec = extract_format_spec fmt.data in
+      match spec with
+      | Fmt_integer ->
+          if
+            (not (is_integer_type type_node.Ast.data))
+            && not (is_integer_type_resolved tu_env type_node)
+          then
+            [
+              error ~sm_name:scope fmt.loc
+                (Fmt.str "format specifier requires integer type for %s" desc);
+            ]
+          else []
+      | Fmt_float prec -> (
+          (if
+             (not (is_float_type type_node.data))
+             && not (is_float_type_resolved tu_env type_node)
+           then
+             [
+               error ~sm_name:scope fmt.loc
+                 (Fmt.str "format specifier requires floating-point type for %s"
+                    desc);
+             ]
+           else [])
+          @
+          match prec with
+          | Some n when n > 100 ->
+              [
+                error ~sm_name:scope fmt.loc
+                  (Fmt.str "precision value %d is out of range" n);
+              ]
+          | _ -> [])
+      | Fmt_default ->
+          if
+            (not (is_numeric_type type_node.data))
+            && not (is_numeric_resolved_tu tu_env type_node)
+          then
+            [
+              error ~sm_name:scope fmt.loc
+                (Fmt.str "format specifier on non-numeric %s" desc);
+            ]
+          else [])
+
 (* ── Array definition checks ──────────────────────────────────────── *)
 
 let check_array_default ~scope tu_env (a : Ast.def_array) size_val =
@@ -338,7 +407,6 @@ let check_array_default ~scope tu_env (a : Ast.def_array) size_val =
 let check_array_def ~scope tu_env (a : Ast.def_array) =
   let diags = ref [] in
   let add ds = diags := List.rev_append ds !diags in
-  (* Size must be positive *)
   let v, d = eval_expr ~scope tu_env a.array_size in
   add d;
   (match v with
@@ -351,68 +419,10 @@ let check_array_def ~scope tu_env (a : Ast.def_array) =
   | Val_int n when n > 0x7FFFFFFF ->
       add [ error ~sm_name:scope a.array_size.loc "array size too large" ]
   | _ -> ());
-  (* Element type string size *)
-  (match a.array_elt_type.data with
-  | Ast.Type_string (Some sz) -> (
-      let v, d = eval_expr ~scope tu_env sz in
-      add d;
-      match v with
-      | Val_int n when n < 0 ->
-          add [ error ~sm_name:scope sz.loc "string size must be non-negative" ]
-      | Val_int n when n > 0x7FFFFFFF ->
-          add [ error ~sm_name:scope sz.loc "string size too large" ]
-      | Val_string _ ->
-          add
-            [
-              error ~sm_name:scope sz.loc
-                "string size must be a numeric expression";
-            ]
-      | _ -> ())
-  | _ -> ());
-  (* Format validation *)
-  (match a.array_format with
-  | Some fmt -> (
-      add (check_format_string ~scope fmt.loc fmt.data 1);
-      let spec = extract_format_spec fmt.data in
-      match spec with
-      | Fmt_integer ->
-          if not (is_integer_type a.array_elt_type.data) then
-            if not (is_integer_type_resolved tu_env a.array_elt_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str "format specifier requires integer type for '%s'"
-                       a.array_name.data);
-                ]
-      | Fmt_float prec -> (
-          if not (is_float_type a.array_elt_type.data) then
-            if not (is_float_type_resolved tu_env a.array_elt_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str
-                       "format specifier requires floating-point type for '%s'"
-                       a.array_name.data);
-                ];
-          match prec with
-          | Some n when n > 100 ->
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str "precision value %d is out of range" n);
-                ]
-          | _ -> ())
-      | Fmt_default ->
-          if not (is_numeric_type a.array_elt_type.data) then
-            if not (is_numeric_resolved_tu tu_env a.array_elt_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str "format specifier on non-numeric array '%s'"
-                       a.array_name.data);
-                ])
-  | None -> ());
-  (* Default type and size validation *)
+  add (check_type_string_size ~scope tu_env a.array_elt_type);
+  add
+    (check_format_against_type ~scope tu_env a.array_format a.array_elt_type
+       (Fmt.str "array '%s'" a.array_name.data));
   add (check_array_default ~scope tu_env a v);
   List.rev !diags
 
@@ -562,93 +572,32 @@ let check_enum_def ~scope tu_env (e : Ast.def_enum) =
 
 (* ── Struct definition checks ────────────────────────────────────── *)
 
-let check_struct_member ~scope tu_env (m : Ast.struct_type_member) =
-  let diags = ref [] in
-  let add ds = diags := List.rev_append ds !diags in
-  (* Member string size *)
-  (match m.struct_mem_type.data with
-  | Ast.Type_string (Some sz) -> (
-      let v, d = eval_expr ~scope tu_env sz in
-      add d;
-      match v with
-      | Val_int n when n < 0 ->
-          add [ error ~sm_name:scope sz.loc "string size must be non-negative" ]
-      | Val_int n when n > 0x7FFFFFFF ->
-          add [ error ~sm_name:scope sz.loc "string size too large" ]
-      | Val_string _ ->
-          add
-            [
-              error ~sm_name:scope sz.loc
-                "string size must be a numeric expression";
-            ]
-      | _ -> ())
-  | _ -> ());
-  (* Member array size *)
-  (match m.struct_mem_size with
+let check_struct_mem_size ~scope tu_env (m : Ast.struct_type_member) =
+  match m.struct_mem_size with
+  | None -> []
   | Some sz -> (
       let v, d = eval_expr ~scope tu_env sz in
-      add d;
+      d
+      @
       match v with
       | Val_int n when n <= 0 ->
-          add
-            [
-              error ~sm_name:scope sz.loc
-                (Fmt.str "struct member array size must be positive (got %d)" n);
-            ]
+          [
+            error ~sm_name:scope sz.loc
+              (Fmt.str "struct member array size must be positive (got %d)" n);
+          ]
       | Val_string _ ->
-          add
-            [
-              error ~sm_name:scope sz.loc
-                "struct member array size must be a numeric expression";
-            ]
-      | _ -> ())
-  | None -> ());
-  (* Format validation *)
-  (match m.struct_mem_format with
-  | Some fmt -> (
-      add (check_format_string ~scope fmt.loc fmt.data 1);
-      let spec = extract_format_spec fmt.data in
-      match spec with
-      | Fmt_integer ->
-          if not (is_integer_type m.struct_mem_type.data) then
-            if not (is_integer_type_resolved tu_env m.struct_mem_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str
-                       "format specifier requires integer type for member '%s'"
-                       m.struct_mem_name.data);
-                ]
-      | Fmt_float prec -> (
-          if not (is_float_type m.struct_mem_type.data) then
-            if not (is_float_type_resolved tu_env m.struct_mem_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str
-                       "format specifier requires floating-point type for \
-                        member '%s'"
-                       m.struct_mem_name.data);
-                ];
-          match prec with
-          | Some n when n > 100 ->
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str "precision value %d is out of range" n);
-                ]
-          | _ -> ())
-      | Fmt_default ->
-          if not (is_numeric_type m.struct_mem_type.data) then
-            if not (is_numeric_resolved_tu tu_env m.struct_mem_type) then
-              add
-                [
-                  error ~sm_name:scope fmt.loc
-                    (Fmt.str "format specifier on non-numeric member '%s'"
-                       m.struct_mem_name.data);
-                ])
-  | None -> ());
-  List.rev !diags
+          [
+            error ~sm_name:scope sz.loc
+              "struct member array size must be a numeric expression";
+          ]
+      | _ -> [])
+
+let check_struct_member ~scope tu_env (m : Ast.struct_type_member) =
+  check_type_string_size ~scope tu_env m.struct_mem_type
+  @ check_struct_mem_size ~scope tu_env m
+  @ check_format_against_type ~scope tu_env m.struct_mem_format
+      m.struct_mem_type
+      (Fmt.str "member '%s'" m.struct_mem_name.data)
 
 let check_struct_def ~scope tu_env (s : Ast.def_struct) =
   let member_diags =
