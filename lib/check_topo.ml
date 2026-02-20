@@ -1169,47 +1169,6 @@ let check_matched_port_numbering ~scope tu_env topo_instances members =
             acc pairs)
     topo_instances []
 
-let collect_private_instances (topo : Ast.def_topology) =
-  List.filter_map
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Topo_spec_comp_instance ci when ci.ci_visibility = `Private ->
-          Some (Ast.qual_ident_to_string ci.ci_instance.data)
-      | _ -> None)
-    topo.topo_members
-
-let check_import_visibility ~scope tu_env members =
-  let imported_private = Hashtbl.create 8 in
-  List.iter
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Topo_spec_top_import qi -> (
-          let name = Ast.qual_ident_to_string qi.data in
-          let topo_def = SMap.find_opt name tu_env.topologies in
-          match topo_def with
-          | Some t ->
-              List.iter
-                (fun inst -> Hashtbl.replace imported_private inst name)
-                (collect_private_instances t)
-          | None -> ())
-      | _ -> ())
-    members;
-  List.concat_map
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Topo_spec_comp_instance ci -> (
-          let name = Ast.qual_ident_to_string ci.ci_instance.data in
-          match Hashtbl.find_opt imported_private name with
-          | Some from_topo ->
-              [
-                errorf ~sm_name:scope ci.ci_instance.loc
-                  "instance '%s' is private in imported topology '%s'" name
-                  from_topo;
-              ]
-          | None -> [])
-      | _ -> [])
-    members
-
 let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   let topo_instances = collect_topo_instances topo.topo_members in
   check_member_refs ~scope ~root_env tu_env topo.topo_members
@@ -1223,7 +1182,6 @@ let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   @ check_unconnected_internal_ports ~scope tu_env topo_instances
       topo.topo_members
   @ check_matched_port_numbering ~scope tu_env topo_instances topo.topo_members
-  @ check_import_visibility ~scope tu_env topo.topo_members
 
 (* ── Entry point ───────────────────────────────────────────────────── *)
 

@@ -68,6 +68,7 @@ let extra_pass =
     "array/large_size.fpp";
     "top_import/basic.fpp";
     "port_instance/async_input_active.fpp";
+    "top_import/instance_private_public.fpp";
   ]
 
 let is_ok_file ~dir name =
