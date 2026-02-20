@@ -16,7 +16,7 @@ corresponding ofpp module (if implemented).
 | 8 | Check framework definitions | — | not applicable |
 | 9 | Evaluate implied enum constants | — | not started |
 | 11 | Finalise type definitions | — | not started |
-| 17 | Check topology definitions | `Check_topo` | partial (instances, imports, patterns) |
+| 17 | Check topology definitions | `Check_topo` | partial (instances, imports, patterns, connections) |
 | 19 | Check dictionary definitions | — | not started |
 | 20 | Construct dictionary map | — | not started |
 

@@ -163,6 +163,8 @@ promoted to errors with `-e`.
 | Transition shadowing | `shadowing` | `sha` | Warns when a child state handles a signal that an ancestor already handles. |
 | Deadlock detection | `deadlock` | `dea` | Warns about leaf states with no outgoing transitions and no ancestor handler. |
 | Guard completeness | `completeness` | `com` | Warns when a choice has no `else` branch. |
+| Unconnected ports | `unconnected` | `unc` | Warns when a general input port has no incoming connection (direct or pattern-generated) in a topology. Inspired by AUTOSAR, Capella I_20, and Simulink Model Advisor. |
+| Synchronous cycles | `sync_cycle` | `syn` | Detects cycles where every connection targets a synchronous input port, indicating potential deadlock via unbounded recursion. Analogous to Simulink's algebraic loop detection. |
 
 ### Warning and error specs
 
@@ -230,11 +232,10 @@ browsing, showing both the FPP source and the resulting SVG side by side.
 
 The roadmap (see [TODO.md](TODO.md)) covers three directions.
 
-**Static analysis** extends `ofpp check` to the remaining topology wiring
-checks -- port type and direction matching, port number bounds, duplicate output
-connections, internal port prohibition -- and deeper safety analyses for state
-machines: guard mutual exclusivity, numeric range checking, and bounded response
-analysis.
+**Static analysis** extends `ofpp check` with the remaining upstream topology
+checks (port direction validation, internal port prohibition) and deeper safety
+analyses for state machines: guard mutual exclusivity, numeric range checking,
+and bounded response analysis.
 
 **Test generation** (`ofpp test`) will derive test cases from FPP model
 structure: GTest stubs for C++ projects, portable JSON vectors for any test
