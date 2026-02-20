@@ -45,42 +45,6 @@ Reference pages:
 
 ### State Machine Analysis
 
-Based on the upstream test suite at [`nasa/fpp/.../test/state_machine/`](https://github.com/nasa/fpp/tree/main/compiler/tools/fpp-check/test/state_machine):
-
-#### Core checks (always enabled, 101 upstream tests pass)
-
-- [x] **Name redefinition** -- duplicate actions, guards, signals, states,
-      choices, constants, types
-- [x] **Initial transition validation** -- missing, multiple, scope
-      correctness (parent/child)
-- [x] **Undefined references** -- actions, guards, signals, states, choices,
-      constants, types; with contextual hints ("a guard 'x' exists")
-- [x] **Duplicate signal transitions** -- same signal handled twice in one
-      state
-- [x] **Reachability** -- unreachable states and choices
-- [x] **Choice cycle detection** -- infinite choice-to-choice loops
-- [x] **Type checking** -- signal/action/guard type compatibility, widening
-      (I16→I32, F32→F64), choice type propagation
-- [x] **Default value validation** -- struct extra fields, string-to-numeric
-      conversion, enum defaults
-- [x] **Format string validation** -- format specifiers on non-numeric types,
-      alias resolution
-
-#### Warning-level analyses (can be disabled with `--skip`)
-
-- [x] **Signal coverage** -- signals not handled in leaf states (accounting
-      for inheritance from parent states)
-- [x] **Liveness** -- cycle detection via Tarjan SCC + backward reachability
-      from terminal states
-- [x] **Unused declarations** -- actions, guards, signals declared but never
-      referenced
-- [x] **Transition shadowing** -- child state handles a signal that an
-      ancestor already handles (may be intentional override or accidental)
-- [x] **Deadlock detection** -- leaf states with no outgoing transitions
-      (direct or inherited) when signals are defined
-- [x] **Guard completeness** -- choices without else branches (may fail to
-      transition if no guard evaluates to true)
-
 #### Future: safety and certification checks
 
 Prioritised by safety impact and implementation feasibility. References to
@@ -150,25 +114,7 @@ FPP state machines are deliberately simpler than full UML statecharts (no
 parallel regions, no during actions, no event broadcast, no backtracking), so
 many tool-specific checks do not apply.
 
-##### Already implemented in ofpp
-
-Checks present in at least one major tool that ofpp already covers:
-
-- Unreachable states/junctions --
-  [Stateflow](https://www.mathworks.com/help/stateflow/ug/stateflow-edit-time-checks.html),
-  [Yakindu](https://en.wikipedia.org/wiki/YAKINDU_Statechart_Tools),
-  [Majzik & Pataricza](https://www.academia.edu/14748792/Completeness_and_consistency_analysis_of_UML_statechart_specifications)
-- Dead ends / trap states -- Yakindu, Majzik & Pataricza
-- Missing default (initial) transition -- Stateflow
-- Transition shadowing -- Stateflow, Yakindu
-- Unused declarations -- Yakindu (unused variable/event), Stateflow (unused
-  function)
-- Guard completeness (no unconditional escape from choice) -- Stateflow
-  (junction escape), Yakindu (exit point default trigger)
-- Undefined references -- Yakindu (unknown event)
-- Liveness / cycle detection -- ofpp (Tarjan SCC)
-
-##### Already in TODO (above)
+##### Planned (see above)
 
 - Guard mutual exclusivity -- SCADE Design Verifier (determinism proof),
   Majzik & Pataricza (non-deterministic / conflicting transitions)
@@ -205,28 +151,8 @@ against it, following the same pattern used for state machine checks.
 
 - [ ] **Port direction validation** -- connections must go from output to input
       (11 tests in `connection_direct/`)
-- [x] **Port type matching** -- connected ports must have compatible types;
-      serial ports act as a wildcard but cannot connect to ports with return
-      types
-- [x] **Port/instance existence** -- connection endpoints must reference
-      defined port instances in defined component instances
-- [x] **Instance membership** -- component instances referenced in connections
-      must be members of the topology
-- [x] **Port number bounds** -- explicit array indices must be within declared
-      port size
-- [x] **Duplicate output connections** -- no two connections at the same output
-      port index (11 tests in `port_numbering/`)
 - [ ] **Internal port prohibition** -- internal ports cannot appear in topology
       connections
-- [x] **Connection pattern validation** -- command, event, health, param,
-      telemetry, text\_event, and time patterns require specific special ports
-      on source and target instances (31 tests in `connection_pattern/`)
-- [x] **Matched port numbering** -- paired port arrays must have consistent
-      indices, no missing partners, no implicit duplicates (7 tests in
-      `port_matching/`)
-- [x] **Duplicate instance/import/pattern** -- uniqueness of instances,
-      imported topologies, and pattern kinds within a topology (6 tests in
-      `top_import/`)
 
 #### Tier 2: novel checks (not in upstream, high practical value)
 
@@ -254,22 +180,6 @@ represent the highest-value additions beyond what `fpp-check` provides.
       (0..N-1); gaps suggest missing connections
 - [ ] **Pattern completeness** -- when a connection pattern is used, verify
       all eligible component instances participate
-
-### Component Validation
-
-Based on upstream test suites: `component/` (21 tests),
-`component_instance_def/` (19 tests), `component_instance_spec/` (3 tests),
-`port_instance/` (31 tests).
-
-- [x] **Active/queued async requirement** -- active and queued components must
-      have at least one async input port
-- [x] **State machine instance placement** -- SM instances require async queue
-      (not allowed in passive components)
-- [x] **Port instance validation** -- async input restrictions (no return
-      values, no ref params on passive components), priority and queue-full
-      policy validation (31 upstream tests)
-- [x] **Special port requirements** -- command ports require matching product
-      recv ports; duplicate special ports rejected
 
 ### Upstream Check Coverage
 
@@ -301,9 +211,6 @@ coverage by category:
 
 ## Visualization (`ofpp dot`)
 
-- [x] **State machine → DOT** -- render state machines as Graphviz DOT
-      digraphs with subgraph clusters, HTML table labels, and bold signal
-      names. Auto-invokes `dot` for SVG/PNG/PDF via `-o` flag
 - [ ] **Topology → DOT** -- render topologies as connection diagrams showing
       component instances, port wiring, and connection patterns
 
