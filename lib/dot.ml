@@ -175,7 +175,7 @@ let html_state_label name extras =
   Buffer.add_string buf
     {|<<table border="0" cellborder="0" cellspacing="0" cellpadding="4">|};
   Buffer.add_string buf (Fmt.str {|<tr><td>%s</td></tr>|} (escape_html name));
-  Buffer.add_string buf {|<HR/>|};
+  Buffer.add_string buf {|<tr><td height="2"></td></tr><HR/>|};
   List.iter
     (fun line ->
       Buffer.add_string buf
