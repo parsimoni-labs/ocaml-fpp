@@ -93,30 +93,61 @@ Parse one or more FPP files and report syntax or semantic errors with
 machine, and topology counts per file; warnings are displayed in a formatted
 table. Exit code is 0 when all files pass, 1 otherwise.
 
-### Core checks
+The checker is validated against 446 upstream test files from the NASA
+`fpp-check` test suite across 27 categories. The error-level checks below
+replicate the upstream `fpp-check` behaviour; the warning-level analyses are
+novel to ofpp.
 
-These detect semantic errors that must be fixed. They match the upstream
-`fpp-check` behaviour and are validated against 101 upstream state machine test
-files.
+### Translation unit checks
 
-The checker verifies **name uniqueness** across states, choices, actions,
-guards, signals, constants, and types -- a duplicate definition is always an
-error. Every state machine and every parent state must have exactly one
-**initial transition**, and that transition must target a local state or choice
-(**scope validation**). All references to actions, guards, signals, states,
-choices, constants, and types are resolved; **undefined references** produce
-errors with contextual hints (e.g. "a guard 'x' exists, did you mean that?").
-At most one transition per signal per state is allowed (**duplicate signal
-detection**).
+**Duplicate definition detection** at every scope level: modules, components,
+enums, structs, arrays, ports, topologies, state machines, and their inner
+members. **Symbol kind validation** ensures qualified identifiers reference the
+correct kind (e.g. a type expression must resolve to a type, not a constant).
+**Dependency cycle detection** rejects circular definitions using DFS.
+**Constant expression evaluation** resolves arithmetic expressions, enum
+values, and cross-module references. **Expression type validation** checks
+array sizes, enum/struct/array default values, and format string specifiers
+against member types.
 
-Beyond naming, the checker performs **reachability analysis** to ensure every
-state and choice is reachable from the initial node, and **choice cycle
-detection** to reject infinite choice-to-choice loops. **Type checking** covers
-signal, action, and guard type compatibility with automatic widening (I16 to
-I32, F32 to F64) and choice type propagation. **Default value validation**
-catches type-incompatible defaults in struct fields, string-to-numeric
-conversions, and enum defaults. **Format string validation** rejects format
-specifiers on non-numeric types and resolves type aliases.
+### Component checks
+
+**Active/queued async requirement** -- active and queued components must have at
+least one async input port (including state machine instances). **Port instance
+validation** -- async input ports must not have return types; priority and
+queue-full policies are validated. **Special port requirements** -- duplicate
+special ports are rejected. **Port and interface definition validation** --
+parameter types, return types, and interface member references are resolved.
+
+### Topology checks
+
+**Component instance validation** -- queue size is required for active/queued
+instances; base identifier bounds are checked. **Instance ID conflict
+detection** -- range-based overlap checking across all instances in a topology,
+including public instances from imported topologies. **Connection pattern
+validation** -- command, event, health, parameter, telemetry, text event, and
+time patterns require specific special ports. **Matched port numbering** --
+explicit indices on matched port pairs must be consistent; implicit duplicates
+from matching are detected. **Undefined instance and state machine references**
+are reported with scope-aware resolution across modules.
+
+### State machine checks
+
+**Name uniqueness** across states, choices, actions, guards, signals,
+constants, and types. **Initial transition validation** -- every state machine
+and every parent state must have exactly one initial transition targeting a
+local state or choice. **Undefined references** produce errors with contextual
+hints (e.g. "a guard 'x' exists, did you mean that?"). **Duplicate signal
+detection** -- at most one transition per signal per state.
+
+**Reachability analysis** ensures every state and choice is reachable from the
+initial node. **Choice cycle detection** rejects infinite choice-to-choice
+loops. **Type checking** covers signal, action, and guard type compatibility
+with automatic widening (I16 to I32, F32 to F64) and choice type propagation.
+**Default value validation** catches type-incompatible defaults in struct
+fields, string-to-numeric conversions, and enum defaults. **Format string
+validation** rejects format specifiers on non-numeric types and resolves type
+aliases.
 
 ### Warning-level analyses
 
@@ -161,20 +192,19 @@ ofpp check --error=cov,dea --warning=-sha m.fpp  # promote coverage+deadlock, di
 ofpp dot [-o FILE] [--sm NAME] FILE...
 ```
 
-Render state machines as [D2](https://d2lang.com) diagrams. D2 is a modern
-diagramming language with clean default styling and native support for
-hierarchical containers -- a good fit for nested state machines. The output uses
-the ELK layout engine for correct routing of cross-container transitions.
+Render state machines as [Graphviz](https://graphviz.org) DOT diagrams.
+Graphviz DOT gives first-class edge labels, self-loop support, `subgraph
+cluster_*` containers, and HTML table labels for structured state annotations.
 
-Hierarchical states become D2 containers with nested children. Choices appear as
-diamond-shaped nodes. Transitions carry the signal name on the edge, with the
-guard placed near the source state and actions near the target state for visual
-clarity. Initial transitions originate from small filled circles. Entry and exit
-actions appear inside state node labels.
+Hierarchical states become subgraph clusters with nested children. Choices
+appear as diamond-shaped nodes. Transitions carry the signal name on the edge,
+with the guard placed near the source state and actions near the target state
+for visual clarity. Initial transitions originate from small filled circles.
+Entry and exit actions appear inside HTML table labels within state nodes.
 
-Without `-o`, D2 text is written to stdout. With `-o`, the output format is
-determined by the file extension: `.svg`, `.png`, and `.pdf` invoke `d2`
-automatically to render an image; any other extension writes D2 text to the
+Without `-o`, DOT text is written to stdout. With `-o`, the output format is
+determined by the file extension: `.svg`, `.png`, and `.pdf` invoke `dot`
+automatically to render an image; any other extension writes DOT text to the
 file. The `--sm` flag selects a single state machine by name when a file
 contains multiple definitions.
 
@@ -183,15 +213,15 @@ This feature is not available in the upstream FPP toolchain.
 ### Examples
 
 ```
-ofpp dot model.fpp                        # D2 text to stdout
-ofpp dot -o diagram.svg model.fpp         # render to SVG
-ofpp dot -o diagram.png model.fpp         # render to PNG
-ofpp dot model.fpp | d2 - diagram.svg     # manual pipe to d2
-ofpp dot --sm Controller model.fpp        # select one SM
+ofpp dot model.fpp                            # DOT text to stdout
+ofpp dot -o diagram.svg model.fpp             # render to SVG
+ofpp dot -o diagram.png model.fpp             # render to PNG
+ofpp dot model.fpp | dot -Tsvg -o diagram.svg # manual pipe to dot
+ofpp dot --sm Controller model.fpp            # select one SM
 ```
 
-Rendering to image formats requires [d2](https://d2lang.com) to be installed.
-D2 is a single Go binary available on Linux, macOS, and Windows.
+Rendering to image formats requires
+[Graphviz](https://graphviz.org/download/) to be installed.
 
 A [gallery](doc/gallery/index.html) of rendered diagrams is available for
 browsing, showing both the FPP source and the resulting SVG side by side.
@@ -200,10 +230,10 @@ browsing, showing both the FPP source and the resulting SVG side by side.
 
 The roadmap (see [TODO.md](TODO.md)) covers three directions.
 
-**Static analysis** extends `ofpp check` to topology wiring validation -- port
-type and direction compatibility, duplicate connections, async dependency
-cycles -- and to component-level checks. Additional state machine analyses
-include guard mutual exclusivity, numeric range checking, and bounded response
+**Static analysis** extends `ofpp check` to the remaining topology wiring
+checks -- port type and direction matching, port number bounds, duplicate output
+connections, internal port prohibition -- and deeper safety analyses for state
+machines: guard mutual exclusivity, numeric range checking, and bounded response
 analysis.
 
 **Test generation** (`ofpp test`) will derive test cases from FPP model
@@ -229,10 +259,10 @@ dune exec -- ofpp check test/upstream/component/*.fpp
 dune runtest
 ```
 
-This runs 850+ tests: unit tests (Alcotest) covering core error checks,
-warning-level analyses, D2 rendering, and environment construction, plus 670
-upstream file parse tests, 91 upstream state machine check tests, and a cram
-test suite for the CLI.
+This runs 1387 tests: unit tests (Alcotest) covering core error checks,
+warning-level analyses, DOT rendering, and environment construction, plus 670
+upstream file parse tests, 446 upstream semantic check tests across 27
+categories, and a cram test suite for the CLI.
 
 ## Benchmarks
 
