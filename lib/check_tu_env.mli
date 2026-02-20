@@ -41,6 +41,10 @@ val build_tu_env : Ast.module_member Ast.node Ast.annotated list -> tu_env
 (** [build_tu_env members] walks all module members and builds a symbol
     environment recording every definition with its kind and location. *)
 
+val overlay_env : parent:tu_env -> child:tu_env -> tu_env
+(** [overlay_env ~parent ~child] merges [child]'s bindings on top of [parent],
+    so that unqualified lookups find module-local names first. *)
+
 (** {1:resolve Symbol resolution} *)
 
 val resolve_symbol : tu_env -> Ast.qual_ident -> (symbol_kind * Ast.loc) option
@@ -152,8 +156,27 @@ val is_integer_type_resolved : tu_env -> Ast.type_name Ast.node -> bool
 (** [is_integer_type_resolved env tn] is [true] if [tn] resolves to an integer
     type, following type aliases. *)
 
+val is_float_type : Ast.type_name -> bool
+(** [is_float_type tn] is [true] if [tn] is a floating-point type. *)
+
+val is_float_type_resolved : tu_env -> Ast.type_name Ast.node -> bool
+(** [is_float_type_resolved env tn] is [true] if [tn] resolves to a
+    floating-point type, following type aliases. *)
+
 val count_format_repls : string -> int
-(** [count_format_repls s] counts the number of ['{}'] placeholders in [s]. *)
+(** [count_format_repls s] counts the number of replacement fields in [s]. *)
+
+type format_spec_kind =
+  | Fmt_default
+  | Fmt_integer
+  | Fmt_float of int option
+      (** Format specifier kind: default (['{}'] — any numeric), integer (['d'],
+          ['x'], ['o']), or float (['e'], ['f'], ['g'], optionally with
+          precision). *)
+
+val extract_format_spec : string -> format_spec_kind
+(** [extract_format_spec fmt] returns the kind of the first format specifier
+    found in [fmt]. *)
 
 val check_format_string :
   scope:string -> Ast.loc -> string -> int -> Check_env.diagnostic list

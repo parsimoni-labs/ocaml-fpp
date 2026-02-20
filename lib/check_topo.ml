@@ -34,8 +34,6 @@ let check_kind_props ~scope (i : Ast.def_component_instance)
   match kind with
   | Active ->
       check_inst_requires ~scope i "active" i.inst_queue_size "queue size"
-      @ check_inst_requires ~scope i "active" i.inst_stack_size "stack size"
-      @ check_inst_requires ~scope i "active" i.inst_priority "priority"
   | Queued ->
       check_inst_requires ~scope i "queued" i.inst_queue_size "queue size"
       @ check_inst_forbids ~scope i "queued" i.inst_stack_size "stack size"
@@ -57,7 +55,7 @@ let check_base_id ~scope tu_env (i : Ast.def_component_instance) =
             (Fmt.str "component instance '%s' has negative base ID %d"
                i.inst_name.data n);
         ]
-    | Val_int n when n > 0x7FFF_FFFF ->
+    | Val_int n when n > 0xFFFF_FFFF ->
         [
           error ~sm_name:scope i.inst_base_id.loc
             (Fmt.str
@@ -135,6 +133,20 @@ let check_component_instance ~scope tu_env (i : Ast.def_component_instance) =
 
 (* ── Instance ID conflict checks ───────────────────────────────────── *)
 
+let instance_id_count tu_env (i : Ast.def_component_instance) =
+  match component tu_env i.inst_component with
+  | None -> 0
+  | Some comp ->
+      List.fold_left
+        (fun n ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Comp_spec_command _ | Ast.Comp_spec_event _
+          | Ast.Comp_spec_tlm_channel _ | Ast.Comp_spec_param _
+          | Ast.Comp_spec_container _ | Ast.Comp_spec_record _ ->
+              n + 1
+          | _ -> n)
+        0 comp.comp_members
+
 let check_instance_id_conflicts ~scope tu_env members =
   let instances =
     List.filter_map
@@ -145,29 +157,57 @@ let check_instance_id_conflicts ~scope tu_env members =
               let v, _ = eval_expr ~scope tu_env i.inst_base_id in
               match v with Val_int n -> Some n | _ -> None
             in
-            Some (i, base_id)
+            let n_ids = instance_id_count tu_env i in
+            Some (i, base_id, n_ids)
         | _ -> None)
       members
   in
-  let seen = Hashtbl.create 16 in
+  let prev = ref [] in
   List.concat_map
-    (fun ((i : Ast.def_component_instance), base_opt) ->
-      match base_opt with
-      | Some base -> (
-          match Hashtbl.find_opt seen base with
-          | Some prev_loc ->
-              Hashtbl.replace seen base i.inst_name.loc;
-              [
-                errorf ~sm_name:scope i.inst_name.loc
-                  "component instance '%s' base ID 0x%X conflicts (first at \
-                   %s:%d:%d)"
-                  i.inst_name.data base prev_loc.Ast.file prev_loc.line
-                  prev_loc.col;
-              ]
-          | None ->
-              Hashtbl.replace seen base i.inst_name.loc;
-              [])
-      | None -> [])
+    (fun ((i : Ast.def_component_instance), base_opt, n_ids) ->
+      let diags =
+        match base_opt with
+        | Some bi ->
+            (* Check if i's base falls in any previous instance's range *)
+            let d1 =
+              List.filter_map
+                (fun ((jj : Ast.def_component_instance), bj, n_j) ->
+                  if n_j > 0 && bi >= bj && bi < bj + n_j then
+                    Some
+                      (errorf ~sm_name:scope i.inst_name.loc
+                         "component instance '%s' base ID 0x%X conflicts with \
+                          '%s' (at %s:%d:%d)"
+                         i.inst_name.data bi jj.inst_name.data
+                         jj.inst_name.loc.Ast.file jj.inst_name.loc.line
+                         jj.inst_name.loc.col)
+                  else None)
+                !prev
+            in
+            (* Check if any previous instance's base falls in i's range *)
+            let d2 =
+              if n_ids > 0 && d1 = [] then
+                List.filter_map
+                  (fun ((jj : Ast.def_component_instance), bj, _) ->
+                    if bj >= bi && bj < bi + n_ids then
+                      Some
+                        (errorf ~sm_name:scope i.inst_name.loc
+                           "component instance '%s' ID range [0x%X, 0x%X] \
+                            conflicts with '%s' (at %s:%d:%d)"
+                           i.inst_name.data bi
+                           (bi + n_ids - 1)
+                           jj.inst_name.data jj.inst_name.loc.Ast.file
+                           jj.inst_name.loc.line jj.inst_name.loc.col)
+                    else None)
+                  !prev
+              else []
+            in
+            d1 @ d2
+        | None -> []
+      in
+      (match base_opt with
+      | Some bi -> prev := (i, bi, n_ids) :: !prev
+      | None -> ());
+      diags)
     instances
 
 (* ── Topology checks ──────────────────────────────────────────────── *)
@@ -691,7 +731,7 @@ let check_direct_connections ~scope tu_env members =
 
 (* ── Topology instance collection ─────────────────────────────────── *)
 
-let collect_topo_instances members =
+let collect_topo_instances tu_env members =
   let tbl = Hashtbl.create 8 in
   List.iter
     (fun ann ->
@@ -699,6 +739,23 @@ let collect_topo_instances members =
       | Ast.Topo_spec_comp_instance ci ->
           let name = Ast.qual_ident_to_string ci.ci_instance.data in
           Hashtbl.replace tbl name ci.ci_instance.loc
+      | Ast.Topo_spec_top_import qi -> (
+          let topo_name = Ast.qual_ident_to_string qi.data in
+          match SMap.find_opt topo_name tu_env.topologies with
+          | Some imported ->
+              List.iter
+                (fun iann ->
+                  match (Ast.unannotate iann).Ast.data with
+                  | Ast.Topo_spec_comp_instance ici
+                    when ici.ci_visibility = `Public ->
+                      let name =
+                        Ast.qual_ident_to_string ici.ci_instance.data
+                      in
+                      if not (Hashtbl.mem tbl name) then
+                        Hashtbl.replace tbl name ici.ci_instance.loc
+                  | _ -> ())
+                imported.topo_members
+          | None -> ())
       | _ -> ())
     members;
   tbl
@@ -1015,61 +1072,6 @@ let check_tlm_packet_sets ~scope tu_env topo_instances members =
         | _ -> [])
       members
 
-(* ── Unconnected internal port check ──────────────────────────────── *)
-
-let collect_connected_ports members =
-  let tbl = Hashtbl.create 16 in
-  List.iter
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
-          List.iter
-            (fun conn_ann ->
-              let conn : Ast.connection = (Ast.unannotate conn_ann).Ast.data in
-              let from_pid = conn.conn_from_port.data in
-              let to_pid = conn.conn_to_port.data in
-              let fk =
-                Ast.qual_ident_to_string from_pid.pid_component.data
-                ^ "." ^ from_pid.pid_port.data
-              in
-              let tk =
-                Ast.qual_ident_to_string to_pid.pid_component.data
-                ^ "." ^ to_pid.pid_port.data
-              in
-              Hashtbl.replace tbl fk ();
-              Hashtbl.replace tbl tk ())
-            d.graph_connections
-      | _ -> ())
-    members;
-  tbl
-
-let collect_internal_ports (comp : Ast.def_component) =
-  List.filter_map
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Comp_spec_internal_port ip -> Some ip.internal_name.data
-      | _ -> None)
-    comp.comp_members
-
-let check_unconnected_internal_ports ~scope tu_env topo_instances members =
-  let connected = collect_connected_ports members in
-  Hashtbl.fold
-    (fun inst_name inst_loc acc ->
-      match resolve_instance_comp tu_env inst_name with
-      | None -> acc
-      | Some comp ->
-          let internals = collect_internal_ports comp in
-          List.fold_left
-            (fun acc port_name ->
-              let key = inst_name ^ "." ^ port_name in
-              if not (Hashtbl.mem connected key) then
-                errorf ~sm_name:scope inst_loc
-                  "internal port '%s.%s' is not connected" inst_name port_name
-                :: acc
-              else acc)
-            acc internals)
-    topo_instances []
-
 let matched_pairs (comp : Ast.def_component) =
   List.filter_map
     (fun ann ->
@@ -1132,6 +1134,104 @@ let collect_port_indices ~scope tu_env connections inst_name port_name =
         else acc)
     [] connections
 
+let collect_explicit_matched_indices ~scope tu_env connections inst_name
+    port_name =
+  List.filter_map
+    (fun (conn : Ast.connection) ->
+      if conn.conn_unmatched then None
+      else
+        let from_pid = conn.conn_from_port.data in
+        let to_pid = conn.conn_to_port.data in
+        let from_inst = Ast.qual_ident_to_string from_pid.pid_component.data in
+        let to_inst = Ast.qual_ident_to_string to_pid.pid_component.data in
+        if from_inst = inst_name && from_pid.pid_port.data = port_name then
+          match conn.conn_from_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> Some n
+              | _ -> None)
+          | None -> None
+        else if to_inst = inst_name && to_pid.pid_port.data = port_name then
+          match conn.conn_to_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> Some n
+              | _ -> None)
+          | None -> None
+        else None)
+    connections
+
+let collect_unmatched_indices ~scope tu_env connections inst_name port_name =
+  List.filter_map
+    (fun (conn : Ast.connection) ->
+      if not conn.conn_unmatched then None
+      else
+        let from_pid = conn.conn_from_port.data in
+        let to_pid = conn.conn_to_port.data in
+        let from_inst = Ast.qual_ident_to_string from_pid.pid_component.data in
+        let to_inst = Ast.qual_ident_to_string to_pid.pid_component.data in
+        if from_inst = inst_name && from_pid.pid_port.data = port_name then
+          match conn.conn_from_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> Some n
+              | _ -> None)
+          | None -> None
+        else if to_inst = inst_name && to_pid.pid_port.data = port_name then
+          match conn.conn_to_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> Some n
+              | _ -> None)
+          | None -> None
+        else None)
+    connections
+
+let check_implicit_duplicate_at_matched ~scope tu_env connections inst_name
+    inst_loc port1 port2 =
+  (* Explicit indices on port2's matched connections imply port1 at the same
+     indices via matching. Check if unmatched connections on port1 conflict. *)
+  let implied_on_port1 =
+    collect_explicit_matched_indices ~scope tu_env connections inst_name port2
+  in
+  let unmatched_on_port1 =
+    collect_unmatched_indices ~scope tu_env connections inst_name port1
+  in
+  let implied_set = Hashtbl.create 4 in
+  List.iter (fun idx -> Hashtbl.replace implied_set idx true) implied_on_port1;
+  let d1 =
+    List.filter_map
+      (fun idx ->
+        if Hashtbl.mem implied_set idx then
+          Some
+            (errorf ~sm_name:scope inst_loc
+               "implicit duplicate connection at matched port %s.%s[%d]"
+               inst_name port1 idx)
+        else None)
+      unmatched_on_port1
+  in
+  (* Reverse: explicit on port1 implies port2, check unmatched on port2 *)
+  let implied_on_port2 =
+    collect_explicit_matched_indices ~scope tu_env connections inst_name port1
+  in
+  let unmatched_on_port2 =
+    collect_unmatched_indices ~scope tu_env connections inst_name port2
+  in
+  let implied_set2 = Hashtbl.create 4 in
+  List.iter (fun idx -> Hashtbl.replace implied_set2 idx true) implied_on_port2;
+  let d2 =
+    List.filter_map
+      (fun idx ->
+        if Hashtbl.mem implied_set2 idx then
+          Some
+            (errorf ~sm_name:scope inst_loc
+               "implicit duplicate connection at matched port %s.%s[%d]"
+               inst_name port2 idx)
+        else None)
+      unmatched_on_port2
+  in
+  d1 @ d2
+
 let check_matched_port_numbering ~scope tu_env topo_instances members =
   let connections = collect_all_direct_connections members in
   Hashtbl.fold
@@ -1165,12 +1265,15 @@ let check_matched_port_numbering ~scope tu_env topo_instances members =
                      numbers"
                     inst_name port1 inst_name port2
                   :: acc
-                else acc)
+                else
+                  acc
+                  @ check_implicit_duplicate_at_matched ~scope tu_env
+                      connections inst_name inst_loc port1 port2)
             acc pairs)
     topo_instances []
 
 let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
-  let topo_instances = collect_topo_instances topo.topo_members in
+  let topo_instances = collect_topo_instances tu_env topo.topo_members in
   check_member_refs ~scope ~root_env tu_env topo.topo_members
   @ check_duplicate_topo_instances ~scope topo.topo_members
   @ check_duplicate_patterns ~scope topo.topo_members
@@ -1179,8 +1282,6 @@ let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   @ check_connection_patterns ~scope tu_env topo.topo_members
   @ check_direct_connections ~scope tu_env topo.topo_members
   @ check_tlm_packet_sets ~scope tu_env topo_instances topo.topo_members
-  @ check_unconnected_internal_ports ~scope tu_env topo_instances
-      topo.topo_members
   @ check_matched_port_numbering ~scope tu_env topo_instances topo.topo_members
 
 (* ── Entry point ───────────────────────────────────────────────────── *)

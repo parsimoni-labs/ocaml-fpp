@@ -144,6 +144,22 @@ let rec build_tu_env members =
       | Ast.Mod_spec_loc _ | Ast.Mod_spec_include _ -> env)
     empty_tu_env members
 
+let overlay_env ~parent ~child =
+  let u _ _ c = Some c in
+  {
+    symbols = SMap.union u parent.symbols child.symbols;
+    modules = SMap.union u parent.modules child.modules;
+    components = SMap.union u parent.components child.components;
+    port_defs = SMap.union u parent.port_defs child.port_defs;
+    interfaces = SMap.union u parent.interfaces child.interfaces;
+    topologies = SMap.union u parent.topologies child.topologies;
+    instances = SMap.union u parent.instances child.instances;
+    state_machines = SMap.union u parent.state_machines child.state_machines;
+    constants = SMap.union u parent.constants child.constants;
+    types = SMap.union u parent.types child.types;
+    alias_targets = SMap.union u parent.alias_targets child.alias_targets;
+  }
+
 (* ── Symbol resolution ─────────────────────────────────────────────── *)
 
 let resolve_symbol tu_env (qi : Ast.qual_ident) =
@@ -297,7 +313,12 @@ let check_symbol_as_state_machine ~scope tu_env (qi : Ast.qual_ident Ast.node) =
              (article kind)
              (string_of_symbol_kind kind));
       ]
-  | None -> []
+  | None ->
+      [
+        error ~sm_name:scope qi.loc
+          (Fmt.str "undefined state machine '%s'"
+             (Ast.qual_ident_to_string qi.data));
+      ]
 
 let check_symbol_as_instance ~scope tu_env (qi : Ast.qual_ident Ast.node) =
   match resolve_symbol tu_env qi.data with
@@ -676,17 +697,81 @@ let is_integer_type_resolved tu_env (tn : Ast.type_name Ast.node) =
   in
   resolve SSet.empty tn.data
 
+let is_float_type (tn : Ast.type_name) =
+  match tn with Ast.Type_float _ -> true | _ -> false
+
+let is_float_type_resolved tu_env (tn : Ast.type_name Ast.node) =
+  let rec resolve visited (t : Ast.type_name) =
+    match t with
+    | Ast.Type_float _ -> true
+    | Ast.Type_qual qi -> (
+        let name =
+          match qi.data with
+          | Ast.Unqualified id -> id.data
+          | _ -> Ast.qual_ident_to_string qi.data
+        in
+        if SSet.mem name visited then false
+        else
+          let visited = SSet.add name visited in
+          match SMap.find_opt name tu_env.alias_targets with
+          | Some target -> resolve visited target.data
+          | None -> false)
+    | _ -> false
+  in
+  resolve SSet.empty tn.data
+
 let count_format_repls s =
   let n = ref 0 in
   let i = ref 0 in
   let len = String.length s in
   while !i < len do
-    if !i + 1 < len && s.[!i] = '{' && s.[!i + 1] = '}' then (
-      incr n;
-      i := !i + 2)
+    if s.[!i] = '{' then (
+      let j = ref (!i + 1) in
+      while !j < len && s.[!j] <> '}' do
+        incr j
+      done;
+      if !j < len then (
+        incr n;
+        i := !j + 1)
+      else i := len)
     else incr i
   done;
   !n
+
+type format_spec_kind = Fmt_default | Fmt_integer | Fmt_float of int option
+
+let classify_format_spec spec =
+  let len = String.length spec in
+  if len = 0 then Fmt_default
+  else
+    let last = spec.[len - 1] in
+    match last with
+    | 'd' | 'x' | 'o' -> Fmt_integer
+    | 'e' | 'f' | 'g' ->
+        if len > 1 && spec.[0] = '.' then
+          let prec_str = String.sub spec 1 (len - 2) in
+          match int_of_string_opt prec_str with
+          | Some n -> Fmt_float (Some n)
+          | None -> Fmt_float None
+        else Fmt_float None
+    | _ -> Fmt_default
+
+let extract_format_spec fmt =
+  let len = String.length fmt in
+  let rec scan i =
+    if i >= len then Fmt_default
+    else if fmt.[i] = '{' then (
+      let j = ref (i + 1) in
+      while !j < len && fmt.[!j] <> '}' do
+        incr j
+      done;
+      if !j >= len then Fmt_default
+      else
+        let spec = String.sub fmt (i + 1) (!j - i - 1) in
+        classify_format_spec spec)
+    else scan (i + 1)
+  in
+  scan 0
 
 let check_format_string ~scope loc (fmt : string) n_expected =
   let diags = ref [] in
@@ -701,13 +786,16 @@ let check_format_string ~scope loc (fmt : string) n_expected =
   let len = String.length fmt in
   let i = ref 0 in
   while !i < len do
-    if fmt.[!i] = '{' then
-      if !i + 1 >= len then (
+    if fmt.[!i] = '{' then (
+      let j = ref (!i + 1) in
+      while !j < len && fmt.[!j] <> '}' do
+        incr j
+      done;
+      if !j >= len then (
         diags :=
           error ~sm_name:scope loc "unclosed '{' in format string" :: !diags;
         i := len)
-      else if fmt.[!i + 1] = '}' then i := !i + 2
-      else i := !i + 1
+      else i := !j + 1)
     else incr i
   done;
   List.rev !diags

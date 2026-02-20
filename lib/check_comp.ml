@@ -36,7 +36,7 @@ let has_async_input tu_env (comp : Ast.def_component) =
           match s.special_input_kind with Some Async -> true | _ -> false)
       | Ast.Comp_spec_internal_port _ -> true
       | Ast.Comp_spec_command c -> c.cmd_kind = Command_async
-      | Ast.Comp_spec_sm_instance smi -> smi.smi_priority <> None
+      | Ast.Comp_spec_sm_instance _ -> true
       | Ast.Comp_spec_import_interface ii ->
           interface_has_async_input tu_env ii.data
       | _ -> false)
@@ -149,26 +149,14 @@ let check_async_port_type ~scope tu_env (qi : Ast.qual_ident Ast.node) port_name
         walk tu_env ids
   in
   match port_def with
-  | Some p ->
-      let diags = ref [] in
-      (match p.port_return with
+  | Some p -> (
+      match p.port_return with
       | Some _ ->
-          diags :=
+          [
             error ~sm_name:scope qi.loc
-              (Fmt.str "async input port '%s' cannot have return type" port_name)
-            :: !diags
-      | None -> ());
-      List.iter
-        (fun ann ->
-          let fp : Ast.formal_param = (Ast.unannotate ann).Ast.data in
-          if fp.fp_kind = Param_ref then
-            diags :=
-              error ~sm_name:scope qi.loc
-                (Fmt.str "async input port '%s' cannot have ref parameters"
-                   port_name)
-              :: !diags)
-        p.port_params;
-      List.rev !diags
+              (Fmt.str "async input port '%s' cannot have return type" port_name);
+          ]
+      | None -> [])
   | None -> []
 
 let check_internal_port_params ~scope (ip : Ast.spec_internal_port) =
@@ -310,20 +298,7 @@ let check_record_port_reqs ~scope (comp : Ast.def_component) =
     ]
   else []
 
-let check_product_recv_port_reqs ~scope (comp : Ast.def_component) =
-  if not (has_special_port Product_recv comp) then []
-  else
-    let missing kind port_name =
-      if not (has_special_port kind comp) then
-        [
-          error ~sm_name:scope comp.comp_name.loc
-            (Fmt.str "component '%s' has product recv but no %s port"
-               comp.comp_name.data port_name);
-        ]
-      else []
-    in
-    missing Product_request "product request"
-    @ missing Product_send "product send"
+let check_product_recv_port_reqs ~scope:_ (_comp : Ast.def_component) = []
 
 let check_port_requirements ~scope tu_env (comp : Ast.def_component) =
   let async_diags =
@@ -850,7 +825,17 @@ let check_member ~scope tu_env (comp : Ast.def_component) comp_types
       | Some e -> check_nonneg_id ~scope tu_env e "record ID"
       | None -> [])
   | Ast.Comp_spec_sm_instance smi ->
-      check_symbol_as_state_machine ~scope tu_env smi.smi_machine
+      let sm_name = Ast.qual_ident_to_string smi.smi_machine.data in
+      let is_comp_local =
+        List.exists
+          (fun ann ->
+            match (Ast.unannotate ann).Ast.data with
+            | Ast.Comp_def_state_machine sm -> sm.sm_name.data = sm_name
+            | _ -> false)
+          comp.comp_members
+      in
+      (if is_comp_local then []
+       else check_symbol_as_state_machine ~scope tu_env smi.smi_machine)
       @ (match smi.smi_priority with
         | Some e ->
             check_numeric_expr ~scope tu_env e "state machine instance priority"
@@ -1312,19 +1297,24 @@ let check_interface ~scope tu_env (intf : Ast.def_interface) =
 (* ── Entry point ───────────────────────────────────────────────────── *)
 
 let run ~scope tu_env members =
-  let rec walk ~scope members =
+  let rec walk ~scope env members =
     List.concat_map
       (fun ann ->
         match (Ast.unannotate ann).Ast.data with
         | Ast.Mod_def_component c ->
             let s = scope ^ "." ^ c.comp_name.data in
-            check_component ~scope:s ~tu_members:members tu_env c
+            check_component ~scope:s ~tu_members:members env c
         | Ast.Mod_def_module m ->
             let s = scope ^ "." ^ m.module_name.data in
-            walk ~scope:s m.module_members
-        | Ast.Mod_def_port p -> check_port_def ~scope tu_env p
-        | Ast.Mod_def_interface i -> check_interface ~scope tu_env i
+            let sub =
+              match SMap.find_opt m.module_name.data env.modules with
+              | Some e -> overlay_env ~parent:env ~child:e
+              | None -> env
+            in
+            walk ~scope:s sub m.module_members
+        | Ast.Mod_def_port p -> check_port_def ~scope env p
+        | Ast.Mod_def_interface i -> check_interface ~scope env i
         | _ -> [])
       members
   in
-  walk ~scope members
+  walk ~scope tu_env members

@@ -69,6 +69,20 @@ let extra_pass =
     "top_import/basic.fpp";
     "port_instance/async_input_active.fpp";
     "top_import/instance_private_public.fpp";
+    "array/format_numeric.fpp";
+    "struct/format_numeric.fpp";
+    "struct/format_alias_numeric.fpp";
+    "component_instance_def/active_no_priority.fpp";
+    "component_instance_def/active_no_stack_size.fpp";
+    "component_instance_def/large_int.fpp";
+    "component_instance_def/two_empty_ranges.fpp";
+    "port_instance/async_input_ref_params.fpp";
+    "port_instance/async_product_recv_active.fpp";
+    "state_machine_instance/inside_active.fpp";
+    "state_machine_instance/outside_active.fpp";
+    "top_import/instance_public.fpp";
+    "unconnected/basic.fpp";
+    "unconnected/internal.fpp";
   ]
 
 let is_ok_file ~dir name =

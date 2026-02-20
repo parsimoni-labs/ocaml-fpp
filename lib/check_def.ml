@@ -371,16 +371,46 @@ let check_array_def ~scope tu_env (a : Ast.def_array) =
   | _ -> ());
   (* Format validation *)
   (match a.array_format with
-  | Some fmt ->
+  | Some fmt -> (
       add (check_format_string ~scope fmt.loc fmt.data 1);
-      if not (is_numeric_type a.array_elt_type.data) then
-        if not (is_numeric_resolved_tu tu_env a.array_elt_type) then
-          add
-            [
-              error ~sm_name:scope fmt.loc
-                (Fmt.str "format specifier on non-numeric array '%s'"
-                   a.array_name.data);
-            ]
+      let spec = extract_format_spec fmt.data in
+      match spec with
+      | Fmt_integer ->
+          if not (is_integer_type a.array_elt_type.data) then
+            if not (is_integer_type_resolved tu_env a.array_elt_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str "format specifier requires integer type for '%s'"
+                       a.array_name.data);
+                ]
+      | Fmt_float prec -> (
+          if not (is_float_type a.array_elt_type.data) then
+            if not (is_float_type_resolved tu_env a.array_elt_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str
+                       "format specifier requires floating-point type for '%s'"
+                       a.array_name.data);
+                ];
+          match prec with
+          | Some n when n > 100 ->
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str "precision value %d is out of range" n);
+                ]
+          | _ -> ())
+      | Fmt_default ->
+          if not (is_numeric_type a.array_elt_type.data) then
+            if not (is_numeric_resolved_tu tu_env a.array_elt_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str "format specifier on non-numeric array '%s'"
+                       a.array_name.data);
+                ])
   | None -> ());
   (* Default type and size validation *)
   add (check_array_default ~scope tu_env a v);
@@ -575,16 +605,48 @@ let check_struct_member ~scope tu_env (m : Ast.struct_type_member) =
   | None -> ());
   (* Format validation *)
   (match m.struct_mem_format with
-  | Some fmt ->
+  | Some fmt -> (
       add (check_format_string ~scope fmt.loc fmt.data 1);
-      if not (is_numeric_type m.struct_mem_type.data) then
-        if not (is_numeric_resolved_tu tu_env m.struct_mem_type) then
-          add
-            [
-              error ~sm_name:scope fmt.loc
-                (Fmt.str "format specifier on non-numeric member '%s'"
-                   m.struct_mem_name.data);
-            ]
+      let spec = extract_format_spec fmt.data in
+      match spec with
+      | Fmt_integer ->
+          if not (is_integer_type m.struct_mem_type.data) then
+            if not (is_integer_type_resolved tu_env m.struct_mem_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str
+                       "format specifier requires integer type for member '%s'"
+                       m.struct_mem_name.data);
+                ]
+      | Fmt_float prec -> (
+          if not (is_float_type m.struct_mem_type.data) then
+            if not (is_float_type_resolved tu_env m.struct_mem_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str
+                       "format specifier requires floating-point type for \
+                        member '%s'"
+                       m.struct_mem_name.data);
+                ];
+          match prec with
+          | Some n when n > 100 ->
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str "precision value %d is out of range" n);
+                ]
+          | _ -> ())
+      | Fmt_default ->
+          if not (is_numeric_type m.struct_mem_type.data) then
+            if not (is_numeric_resolved_tu tu_env m.struct_mem_type) then
+              add
+                [
+                  error ~sm_name:scope fmt.loc
+                    (Fmt.str "format specifier on non-numeric member '%s'"
+                       m.struct_mem_name.data);
+                ])
   | None -> ());
   List.rev !diags
 
