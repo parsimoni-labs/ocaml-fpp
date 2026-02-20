@@ -1272,21 +1272,225 @@ let check_matched_port_numbering ~scope tu_env topo_instances members =
             acc pairs)
     topo_instances []
 
-let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
+(* ── Unconnected port detection ─────────────────────────────────────── *)
+
+let collect_connected_input_ports tu_env members =
+  let connected = Hashtbl.create 32 in
+  (* Direct connections: target side *)
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+          List.iter
+            (fun conn_ann ->
+              let conn : Ast.connection = (Ast.unannotate conn_ann).Ast.data in
+              let to_pid = conn.conn_to_port.data in
+              let to_inst =
+                Ast.qual_ident_to_string to_pid.pid_component.data
+              in
+              let key = to_inst ^ "." ^ to_pid.pid_port.data in
+              Hashtbl.replace connected key true)
+            d.graph_connections
+      | Ast.Topo_spec_connection_graph (Graph_pattern p) -> (
+          (* Patterns connect special ports on targets. Mark all general input
+             ports of the appropriate type as connected for each target. *)
+          List.iter
+            (fun (qi : Ast.qual_ident Ast.node) ->
+              let tname = Ast.qual_ident_to_string qi.data in
+              match resolve_instance_comp tu_env tname with
+              | None -> ()
+              | Some tcomp ->
+                  List.iter
+                    (fun ann ->
+                      match (Ast.unannotate ann).Ast.data with
+                      | Ast.Comp_spec_port_instance (Port_general g)
+                        when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                             || g.gen_kind = Guarded_input ->
+                          let key = tname ^ "." ^ g.gen_name.data in
+                          (* Mark input ports connected by pattern based on
+                             port type matching the pattern kind *)
+                          let port_type =
+                            match g.gen_port with
+                            | Some qi -> Ast.qual_ident_to_string qi.data
+                            | None -> ""
+                          in
+                          let matches =
+                            match p.pattern_kind with
+                            | Pattern_health -> port_type = "Svc.Ping"
+                            | _ -> false
+                          in
+                          if matches then Hashtbl.replace connected key true
+                      | _ -> ())
+                    tcomp.comp_members)
+            p.pattern_targets;
+          (* Also mark the source's input ports connected by the pattern *)
+          let sname = Ast.qual_ident_to_string p.pattern_source.data in
+          match resolve_instance_comp tu_env sname with
+          | None -> ()
+          | Some scomp ->
+              List.iter
+                (fun ann ->
+                  match (Ast.unannotate ann).Ast.data with
+                  | Ast.Comp_spec_port_instance (Port_general g)
+                    when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                         || g.gen_kind = Guarded_input ->
+                      let port_type =
+                        match g.gen_port with
+                        | Some qi -> Ast.qual_ident_to_string qi.data
+                        | None -> ""
+                      in
+                      let matches =
+                        match p.pattern_kind with
+                        | Pattern_command -> port_type = "Fw.Cmd"
+                        | Pattern_health -> port_type = "Svc.Ping"
+                        | _ -> false
+                      in
+                      if matches then
+                        Hashtbl.replace connected
+                          (sname ^ "." ^ g.gen_name.data)
+                          true
+                  | _ -> ())
+                scomp.comp_members)
+      | _ -> ())
+    members;
+  connected
+
+let check_unconnected_ports ~scope tu_env topo_instances members =
+  let connected = collect_connected_input_ports tu_env members in
+  Hashtbl.fold
+    (fun inst_name inst_loc acc ->
+      match resolve_instance_comp tu_env inst_name with
+      | None -> acc
+      | Some comp ->
+          List.fold_left
+            (fun acc ann ->
+              match (Ast.unannotate ann).Ast.data with
+              | Ast.Comp_spec_port_instance (Port_general g)
+                when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                     || g.gen_kind = Guarded_input ->
+                  let key = inst_name ^ "." ^ g.gen_name.data in
+                  if not (Hashtbl.mem connected key) then
+                    warningf ~sm_name:scope inst_loc
+                      "input port '%s.%s' has no incoming connection" inst_name
+                      g.gen_name.data
+                    :: acc
+                  else acc
+              | _ -> acc)
+            acc comp.comp_members)
+    topo_instances []
+
+(* ── Synchronous cycle detection ──────────────────────────────────── *)
+
+let check_sync_cycles ~scope tu_env topo_instances members =
+  (* Build adjacency list: inst A -> inst B when a direct connection goes
+     from A's output port to B's sync input port *)
+  let adj = Hashtbl.create 16 in
+  let add_edge from_inst to_inst =
+    let prev = Option.value ~default:[] (Hashtbl.find_opt adj from_inst) in
+    if not (List.mem to_inst prev) then
+      Hashtbl.replace adj from_inst (to_inst :: prev)
+  in
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+          List.iter
+            (fun conn_ann ->
+              let conn : Ast.connection = (Ast.unannotate conn_ann).Ast.data in
+              let from_pid = conn.conn_from_port.data in
+              let to_pid = conn.conn_to_port.data in
+              let from_inst =
+                Ast.qual_ident_to_string from_pid.pid_component.data
+              in
+              let to_inst =
+                Ast.qual_ident_to_string to_pid.pid_component.data
+              in
+              let to_port_name = to_pid.pid_port.data in
+              (* Check if the target port is a sync input *)
+              match resolve_instance_comp tu_env to_inst with
+              | Some comp -> (
+                  match component_port comp to_port_name with
+                  | Some g when g.gen_kind = Sync_input ->
+                      add_edge from_inst to_inst
+                  | _ -> ())
+              | None -> ())
+            d.graph_connections
+      | _ -> ())
+    members;
+  (* DFS with grey/black colouring to detect back edges *)
+  let white = 0 and grey = 1 and black = 2 in
+  let colour = Hashtbl.create 16 in
+  let cycles = ref [] in
+  let path = ref [] in
+  let rec dfs node =
+    Hashtbl.replace colour node grey;
+    path := node :: !path;
+    let neighbours = Option.value ~default:[] (Hashtbl.find_opt adj node) in
+    List.iter
+      (fun next ->
+        match Option.value ~default:white (Hashtbl.find_opt colour next) with
+        | c when c = grey ->
+            (* Back edge found — extract the cycle from path *)
+            let cycle =
+              let rec take = function
+                | [] -> []
+                | x :: rest -> if x = next then [ x ] else x :: take rest
+              in
+              take !path
+            in
+            cycles := List.rev cycle :: !cycles
+        | c when c = white -> dfs next
+        | _ -> ())
+      neighbours;
+    path := List.tl !path;
+    Hashtbl.replace colour node black
+  in
+  Hashtbl.iter
+    (fun inst _ ->
+      if Option.value ~default:white (Hashtbl.find_opt colour inst) = white then
+        dfs inst)
+    topo_instances;
+  List.map
+    (fun cycle ->
+      let cycle_str = String.concat " -> " cycle ^ " -> " ^ List.hd cycle in
+      let loc =
+        match Hashtbl.find_opt topo_instances (List.hd cycle) with
+        | Some l -> l
+        | None -> Ast.dummy_loc
+      in
+      warning ~sm_name:scope loc ("synchronous port cycle: " ^ cycle_str))
+    !cycles
+
+(* ── Topology orchestrator ─────────────────────────────────────────── *)
+
+let check_topology ~scope ~root_env ~unconnected ~sync_cycle tu_env
+    (topo : Ast.def_topology) =
   let topo_instances = collect_topo_instances tu_env topo.topo_members in
-  check_member_refs ~scope ~root_env tu_env topo.topo_members
-  @ check_duplicate_topo_instances ~scope topo.topo_members
-  @ check_duplicate_patterns ~scope topo.topo_members
-  @ check_duplicate_topo_imports ~scope topo.topo_members
-  @ check_connection_instance_refs ~scope topo_instances topo.topo_members
-  @ check_connection_patterns ~scope tu_env topo.topo_members
-  @ check_direct_connections ~scope tu_env topo.topo_members
-  @ check_tlm_packet_sets ~scope tu_env topo_instances topo.topo_members
-  @ check_matched_port_numbering ~scope tu_env topo_instances topo.topo_members
+  let core =
+    check_member_refs ~scope ~root_env tu_env topo.topo_members
+    @ check_duplicate_topo_instances ~scope topo.topo_members
+    @ check_duplicate_patterns ~scope topo.topo_members
+    @ check_duplicate_topo_imports ~scope topo.topo_members
+    @ check_connection_instance_refs ~scope topo_instances topo.topo_members
+    @ check_connection_patterns ~scope tu_env topo.topo_members
+    @ check_direct_connections ~scope tu_env topo.topo_members
+    @ check_tlm_packet_sets ~scope tu_env topo_instances topo.topo_members
+    @ check_matched_port_numbering ~scope tu_env topo_instances
+        topo.topo_members
+  in
+  let unc =
+    Check_env.run_analysis unconnected (fun () ->
+        check_unconnected_ports ~scope tu_env topo_instances topo.topo_members)
+  in
+  let sync =
+    Check_env.run_analysis sync_cycle (fun () ->
+        check_sync_cycles ~scope tu_env topo_instances topo.topo_members)
+  in
+  core @ unc @ sync
 
 (* ── Entry point ───────────────────────────────────────────────────── *)
 
-let run ~scope tu_env members =
+let run ~scope ~unconnected ~sync_cycle tu_env members =
   let instances =
     let rec walk ~scope env members =
       List.concat_map
@@ -1315,7 +1519,7 @@ let run ~scope tu_env members =
           match (Ast.unannotate ann).Ast.data with
           | Ast.Mod_def_topology t ->
               let s = scope ^ "." ^ t.topo_name.data in
-              check_topology ~scope:s ~root_env env t
+              check_topology ~scope:s ~root_env ~unconnected ~sync_cycle env t
           | Ast.Mod_def_module m ->
               let s = scope ^ "." ^ m.module_name.data in
               let sub =

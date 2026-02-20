@@ -46,6 +46,17 @@ val warningf :
   'a
 (** [warningf ~sm_name loc fmt] is [warning ~sm_name loc (Fmt.str fmt ...)]. *)
 
+(** {1:levels Severity levels} *)
+
+type level =
+  | Off  (** Analysis disabled. *)
+  | Warning  (** Analysis reports warnings. *)
+  | Error  (** Analysis reports errors; warnings promoted to errors. *)
+
+val run_analysis : level -> (unit -> diagnostic list) -> diagnostic list
+(** [run_analysis level f] runs [f ()] if [level] is not [Off]. When [level] is
+    [Error], all diagnostics returned by [f] are promoted to errors. *)
+
 (** {1:env Name environment}
 
     The environment maps each declared name (action, guard, signal, state,

@@ -20,6 +20,17 @@ let errorf ~sm_name loc fmt = Fmt.kstr (error ~sm_name loc) fmt
 let warning ~sm_name loc msg = { severity = `Warning; loc; sm_name; msg }
 let warningf ~sm_name loc fmt = Fmt.kstr (warning ~sm_name loc) fmt
 
+(* ── Severity levels ────────────────────────────────────────────────── *)
+
+type level = Off | Warning | Error
+
+let run_analysis level f =
+  match level with
+  | Off -> []
+  | Warning -> f ()
+  | Error ->
+      f () |> List.map (fun (d : diagnostic) -> { d with severity = `Error })
+
 (* ── Environment ────────────────────────────────────────────────────── *)
 
 type env = {

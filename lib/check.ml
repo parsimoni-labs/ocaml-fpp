@@ -12,9 +12,20 @@ type analysis =
   | Shadowing
   | Deadlock
   | Completeness
+  | Unconnected
+  | Sync_cycle
 
 let all_analyses =
-  [ Coverage; Liveness; Unused; Shadowing; Deadlock; Completeness ]
+  [
+    Coverage;
+    Liveness;
+    Unused;
+    Shadowing;
+    Deadlock;
+    Completeness;
+    Unconnected;
+    Sync_cycle;
+  ]
 
 let string_of_analysis = function
   | Coverage -> "coverage"
@@ -23,6 +34,8 @@ let string_of_analysis = function
   | Shadowing -> "shadowing"
   | Deadlock -> "deadlock"
   | Completeness -> "completeness"
+  | Unconnected -> "unconnected"
+  | Sync_cycle -> "sync_cycle"
 
 let analysis_of_string = function
   | "coverage" | "cov" -> Some Coverage
@@ -31,10 +44,21 @@ let analysis_of_string = function
   | "shadowing" | "sha" -> Some Shadowing
   | "deadlock" | "dea" -> Some Deadlock
   | "completeness" | "com" -> Some Completeness
+  | "unconnected" | "unc" -> Some Unconnected
+  | "sync_cycle" | "syn" -> Some Sync_cycle
   | _ -> None
 
 let analyses =
-  [ "coverage"; "liveness"; "unused"; "shadowing"; "deadlock"; "completeness" ]
+  [
+    "coverage";
+    "liveness";
+    "unused";
+    "shadowing";
+    "deadlock";
+    "completeness";
+    "unconnected";
+    "sync_cycle";
+  ]
 
 (* ── Error helpers ──────────────────────────────────────────────────── *)
 
@@ -42,7 +66,7 @@ let err_unknown_analysis name = Error (Fmt.str "unknown analysis '%s'" name)
 
 (* ── Severity levels ──────────────────────────────────────────────── *)
 
-type level = Off | Warning | Error
+type level = Check_env.level = Off | Warning | Error
 
 (* ── Warning and error specs ──────────────────────────────────────── *)
 
@@ -96,6 +120,8 @@ type config = {
   shadowing : level;
   deadlock : level;
   completeness : level;
+  unconnected : level;
+  sync_cycle : level;
 }
 
 let default =
@@ -106,6 +132,8 @@ let default =
     shadowing = Warning;
     deadlock = Warning;
     completeness = Warning;
+    unconnected = Warning;
+    sync_cycle = Warning;
   }
 
 let set_level config analysis level =
@@ -116,6 +144,8 @@ let set_level config analysis level =
   | Shadowing -> { config with shadowing = level }
   | Deadlock -> { config with deadlock = level }
   | Completeness -> { config with completeness = level }
+  | Unconnected -> { config with unconnected = level }
+  | Sync_cycle -> { config with sync_cycle = level }
 
 let level_of config = function
   | Coverage -> config.coverage
@@ -124,6 +154,8 @@ let level_of config = function
   | Shadowing -> config.shadowing
   | Deadlock -> config.deadlock
   | Completeness -> config.completeness
+  | Unconnected -> config.unconnected
+  | Sync_cycle -> config.sync_cycle
 
 let apply_warning_spec config directives =
   List.fold_left
@@ -185,11 +217,7 @@ let pp_diagnostic = Check_env.pp_diagnostic
 (* ── Entry points ───────────────────────────────────────────────────── *)
 
 let run_analysis config analysis f =
-  match level_of config analysis with
-  | Off -> []
-  | Warning -> f ()
-  | Error ->
-      f () |> List.map (fun (d : diagnostic) -> { d with severity = `Error })
+  Check_env.run_analysis (level_of config analysis) f
 
 let state_machine config (sm : Ast.def_state_machine) =
   let sm_name = sm.sm_name.data in
@@ -234,7 +262,10 @@ let rec collect_state_machines members =
     members
 
 let run config tu =
-  let tu_diags = Check_tu.run tu.Ast.tu_members in
+  let tu_diags =
+    Check_tu.run ~unconnected:config.unconnected ~sync_cycle:config.sync_cycle
+      tu.Ast.tu_members
+  in
   let sms = collect_state_machines tu.Ast.tu_members in
   let sm_diags = List.concat_map (state_machine config) sms in
   tu_diags @ sm_diags

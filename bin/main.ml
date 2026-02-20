@@ -213,7 +213,8 @@ let warning_spec_t =
      disable. Prefix with $(b,-) to disable, $(b,+) or bare name to enable. \
      Use $(b,all) or $(b,A) for all analyses. Names: $(b,coverage) ($(b,cov)), \
      $(b,liveness) ($(b,liv)), $(b,unused) ($(b,unu)), $(b,shadowing) \
-     ($(b,sha)), $(b,deadlock) ($(b,dea)), $(b,completeness) ($(b,com))."
+     ($(b,sha)), $(b,deadlock) ($(b,dea)), $(b,completeness) ($(b,com)), \
+     $(b,unconnected) ($(b,unc)), $(b,sync_cycle) ($(b,syn))."
   in
   let open Arg in
   value & opt_all spec_conv [] & info [ "w"; "warning" ] ~doc ~docv:"SPEC"

@@ -6,8 +6,12 @@
 
 val run :
   scope:string ->
+  unconnected:Check_env.level ->
+  sync_cycle:Check_env.level ->
   Check_tu_env.tu_env ->
   Ast.module_member Ast.node Ast.annotated list ->
   Check_env.diagnostic list
-(** [run ~scope env members] validates all component instances and topologies
-    within [members]. *)
+(** [run ~scope ~unconnected ~sync_cycle env members] validates all component
+    instances and topologies within [members]. The [unconnected] and
+    [sync_cycle] parameters control the severity of the corresponding
+    warning-level analyses. *)

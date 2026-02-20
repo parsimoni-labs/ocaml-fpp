@@ -35,6 +35,13 @@ type analysis =
       (** Guard completeness: warns when a choice definition has no [else]
           branch. A missing else means the choice may fail to transition if no
           guard evaluates to true. *)
+  | Unconnected
+      (** Unconnected port detection: warns when a general input port has no
+          incoming connection (direct or pattern-generated) in a topology. *)
+  | Sync_cycle
+      (** Synchronous cycle detection: warns when a cycle exists where every
+          connection targets a synchronous input port, indicating potential
+          deadlock via unbounded recursion. *)
 
 val all_analyses : analysis list
 (** All optional analyses. *)
