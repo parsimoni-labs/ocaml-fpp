@@ -195,13 +195,8 @@ These checks exist in UML tools but target constructs FPP does not have:
 
 ### Topology Analysis
 
-The parser already has full AST support for topologies, connection graphs
-(direct and pattern-based), component instances, and port numbering. All 99
-upstream topology test files (across 7 categories) parse correctly. No semantic
-checks are implemented yet.
-
 The upstream `fpp-check` compiler performs approximately 24 topology checks.
-These fall into three tiers for ofpp implementation.
+Most Tier 1 checks are implemented; a few edge cases remain.
 
 #### Tier 1: replicate upstream checks (99 upstream test files)
 
@@ -210,26 +205,26 @@ against it, following the same pattern used for state machine checks.
 
 - [ ] **Port direction validation** -- connections must go from output to input
       (11 tests in `connection_direct/`)
-- [ ] **Port type matching** -- connected ports must have compatible types;
+- [x] **Port type matching** -- connected ports must have compatible types;
       serial ports act as a wildcard but cannot connect to ports with return
       types
-- [ ] **Port/instance existence** -- connection endpoints must reference
+- [x] **Port/instance existence** -- connection endpoints must reference
       defined port instances in defined component instances
-- [ ] **Instance membership** -- component instances referenced in connections
+- [x] **Instance membership** -- component instances referenced in connections
       must be members of the topology
-- [ ] **Port number bounds** -- explicit array indices must be within declared
+- [x] **Port number bounds** -- explicit array indices must be within declared
       port size
-- [ ] **Duplicate output connections** -- no two connections at the same output
+- [x] **Duplicate output connections** -- no two connections at the same output
       port index (11 tests in `port_numbering/`)
 - [ ] **Internal port prohibition** -- internal ports cannot appear in topology
       connections
-- [ ] **Connection pattern validation** -- command, event, health, param,
+- [x] **Connection pattern validation** -- command, event, health, param,
       telemetry, text\_event, and time patterns require specific special ports
       on source and target instances (31 tests in `connection_pattern/`)
-- [ ] **Matched port numbering** -- paired port arrays must have consistent
+- [x] **Matched port numbering** -- paired port arrays must have consistent
       indices, no missing partners, no implicit duplicates (7 tests in
       `port_matching/`)
-- [ ] **Duplicate instance/import/pattern** -- uniqueness of instances,
+- [x] **Duplicate instance/import/pattern** -- uniqueness of instances,
       imported topologies, and pattern kinds within a topology (6 tests in
       `top_import/`)
 
@@ -264,17 +259,16 @@ represent the highest-value additions beyond what `fpp-check` provides.
 
 Based on upstream test suites: `component/` (21 tests),
 `component_instance_def/` (19 tests), `component_instance_spec/` (3 tests),
-`port_instance/` (31 tests). All parse correctly; no semantic checks
-implemented yet.
+`port_instance/` (31 tests).
 
-- [ ] **Active/queued async requirement** -- active and queued components must
+- [x] **Active/queued async requirement** -- active and queued components must
       have at least one async input port
-- [ ] **State machine instance placement** -- SM instances require async queue
+- [x] **State machine instance placement** -- SM instances require async queue
       (not allowed in passive components)
-- [ ] **Port instance validation** -- async input restrictions (no return
+- [x] **Port instance validation** -- async input restrictions (no return
       values, no ref params on passive components), priority and queue-full
       policy validation (31 upstream tests)
-- [ ] **Special port requirements** -- command ports require matching product
+- [x] **Special port requirements** -- command ports require matching product
       recv ports; duplicate special ports rejected
 
 ### Upstream Check Coverage
@@ -282,33 +276,35 @@ implemented yet.
 All 670 upstream test files are imported and parse correctly. Semantic check
 coverage by category:
 
-| Category | Files | Checks | Status |
+| Category | Files | Module | Status |
 |----------|-------|--------|--------|
-| `state_machine/` | 91 | error + warning | done (101 pass/fail tests) |
-| `connection_direct/` | 11 | none | parse only |
-| `connection_pattern/` | 31 | none | parse only |
-| `port_instance/` | 31 | none | parse only |
-| `port_matching/` | 7 | none | parse only |
-| `port_numbering/` | 11 | none | parse only |
-| `top_import/` | 6 | none | parse only |
-| `unconnected/` | 2 | none | parse only |
-| `component/` | 21 | none | parse only |
-| `component_instance_def/` | 19 | none | parse only |
-| `state_machine_instance/` | 7 | none | parse only |
-| `array/` | 26 | none | parse only |
-| `enum/` | 15 | none | parse only |
-| `struct/` | 17 | none | parse only |
-| `expr/` | 12 | none | parse only |
-| `constant/` | 10 | none | parse only |
-| `type/` | 7 | none | parse only |
-| others (14 categories) | 246 | none | parse only |
+| `state_machine/` | 91 | `Check_core` + `Check_warn` | done (101 pass/fail tests) |
+| `connection_direct/` | 11 | `Check_topo` | done (type matching, duplicates) |
+| `connection_pattern/` | 31 | `Check_topo` | done (pattern port validation) |
+| `port_instance/` | 31 | `Check_comp` | partial (1 failure) |
+| `port_matching/` | 7 | `Check_topo` | done (index consistency) |
+| `port_numbering/` | 11 | `Check_topo` | partial (3 failures) |
+| `top_import/` | 6 | `Check_topo` | partial (1 failure) |
+| `unconnected/` | 2 | — | parse only |
+| `component/` | 21 | `Check_comp` | done |
+| `component_instance_def/` | 19 | `Check_topo` | done |
+| `component_instance_spec/` | 3 | `Check_topo` | partial (1 failure) |
+| `state_machine_instance/` | 7 | `Check_comp` | done |
+| `array/` | 26 | `Check_def` | done |
+| `enum/` | 15 | `Check_def` | done |
+| `struct/` | 17 | `Check_def` | done |
+| `expr/` | 12 | `Check_def` | done |
+| `constant/` | 10 | `Check_tu_env` | done |
+| `type/` | 7 | `Check_sym` | done |
+| `tlm_packets/` | 9 | `Check_topo` | partial (3 failures) |
+| others (13 categories) | 233 | various | done |
 
 ## Visualization (`ofpp dot`)
 
-- [x] **State machine → D2** -- render state machines as D2 diagrams with
-      ELK layout, hierarchical containers, and UML statechart notation.
-      Auto-invokes `d2` for SVG/PNG/PDF via `-o` flag
-- [ ] **Topology → D2** -- render topologies as connection diagrams showing
+- [x] **State machine → DOT** -- render state machines as Graphviz DOT
+      digraphs with subgraph clusters, HTML table labels, and bold signal
+      names. Auto-invokes `dot` for SVG/PNG/PDF via `-o` flag
+- [ ] **Topology → DOT** -- render topologies as connection diagrams showing
       component instances, port wiring, and connection patterns
 
 ## Test Generation (`ofpp test`)
