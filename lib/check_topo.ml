@@ -1070,7 +1070,7 @@ let check_unconnected_internal_ports ~scope tu_env topo_instances members =
             acc internals)
     topo_instances []
 
-let get_matched_pairs (comp : Ast.def_component) =
+let matched_pairs (comp : Ast.def_component) =
   List.filter_map
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
@@ -1139,7 +1139,7 @@ let check_matched_port_numbering ~scope tu_env topo_instances members =
       match resolve_instance_comp tu_env inst_name with
       | None -> acc
       | Some comp ->
-          let pairs = get_matched_pairs comp in
+          let pairs = matched_pairs comp in
           List.fold_left
             (fun acc (port1, port2) ->
               let n1 = count_port_connections connections inst_name port1 in
