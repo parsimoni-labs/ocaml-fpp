@@ -13,11 +13,11 @@ Basic state machine (DOT to stdout)
     bgcolor=white;
     pad="0.4";
     node [fontname="Helvetica" fontsize=11];
-    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
     "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
-    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S"];
+    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="S"];
     "__init__" -> "S";
-    "S" -> "S" [label="s"];
+    "S" -> "S" [label=<<b>s</b>>];
   }
 
 Choice with guard and else
@@ -36,13 +36,17 @@ Choice with guard and else
     bgcolor=white;
     pad="0.4";
     node [fontname="Helvetica" fontsize=11];
-    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
     "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
-    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S"];
-    "C" [shape=diamond style=filled fillcolor="#fff8e1" color="#f9ab00" label="C"];
+    "S" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="S"];
+    "C" [shape=diamond style=filled fillcolor="#fff8e1" color="#f9ab00" fontcolor="#1a1a2e" label="C"];
     "__init__" -> "C";
-    "C" -> "S" [label="[g]"];
-    "C" -> "S" [label="else"];
+    "__e0" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<[ g ]>];
+    "C" -> "__e0" [arrowhead=none];
+    "__e0" -> "S";
+    "__e1" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<<b>else</b>>];
+    "C" -> "__e1" [arrowhead=none];
+    "__e1" -> "S";
   }
 
 Hierarchical state machine
@@ -66,7 +70,7 @@ Hierarchical state machine
     bgcolor=white;
     pad="0.4";
     node [fontname="Helvetica" fontsize=11];
-    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
     "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
     subgraph "cluster_P" {
       label="P";
@@ -74,14 +78,16 @@ Hierarchical state machine
       fillcolor="#f8f9fa";
       color="#5f6368";
       fontname="Helvetica";
-      "P.A" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="A"];
-      "P.B" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="B"];
+      "P.A" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="A"];
+      "P.B" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="B"];
       "P.__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
     }
     "__init__" -> "P";
-    "P.A" -> "P.B" [label="s2"];
+    "__e0" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<<b>s2</b>>];
+    "P.A" -> "__e0" [arrowhead=none];
+    "__e0" -> "P.B";
     "P.__init__" -> "P.A";
-    "P" -> "P" [label="s1"];
+    "P" -> "P" [label=<<b>s1</b>>];
   }
 
 External state machine (no body) produces no output
@@ -108,9 +114,9 @@ Filter by SM name
     bgcolor=white;
     pad="0.4";
     node [fontname="Helvetica" fontsize=11];
-    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
     "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
-    "T" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="T"];
+    "T" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="T"];
     "__init__" -> "T";
   }
 
@@ -133,13 +139,17 @@ Structured edge labels with guard and actions
     bgcolor=white;
     pad="0.4";
     node [fontname="Helvetica" fontsize=11];
-    edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
     "__init__" [shape=circle width=0.25 fixedsize=true style=filled fillcolor="#1a1a2e" label=""];
-    "S1" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S1"];
-    "S2" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="S2"];
+    "S1" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="S1"];
+    "S2" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="S2"];
     "__init__" -> "S1";
-    "S1" -> "S2" [label="s [g]\n/ a1, a2"];
-    "S2" -> "S1" [label="s\n/ a1"];
+    "__e0" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<<b>s</b> [ g ] / a1, a2>];
+    "S1" -> "__e0" [arrowhead=none];
+    "__e0" -> "S2";
+    "__e1" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<<b>s</b> / a1>];
+    "S2" -> "__e1" [arrowhead=none];
+    "__e1" -> "S1";
   }
 
 Render to PNG via -o

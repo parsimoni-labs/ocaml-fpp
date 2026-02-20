@@ -70,10 +70,8 @@ let test_choice_node () =
   Alcotest.(check bool)
     "choice diamond" true
     (contains ~substr:"shape=diamond" dot);
-  Alcotest.(check bool) "guard label" true (contains ~substr:{|[g]|} dot);
-  Alcotest.(check bool)
-    "else label" true
-    (contains ~substr:{|label="else"|} dot)
+  Alcotest.(check bool) "guard label" true (contains ~substr:{|[ g ]|} dot);
+  Alcotest.(check bool) "else label" true (contains ~substr:{|<b>else</b>|} dot)
 
 let test_hierarchical () =
   let dot =
@@ -116,8 +114,12 @@ let test_entry_exit_actions () =
   |}
   in
   Alcotest.(check bool) "HTML table label" true (contains ~substr:"<table" dot);
-  Alcotest.(check bool) "entry action" true (contains ~substr:"entry / a1" dot);
-  Alcotest.(check bool) "exit action" true (contains ~substr:"exit / a2" dot)
+  Alcotest.(check bool)
+    "entry action" true
+    (contains ~substr:"<b>entry</b> / a1" dot);
+  Alcotest.(check bool)
+    "exit action" true
+    (contains ~substr:"<b>exit</b> / a2" dot)
 
 let test_structured_labels () =
   let dot =
@@ -140,16 +142,18 @@ let test_structured_labels () =
   |}
   in
   Alcotest.(check bool)
-    "direct edge with label" true
-    (contains ~substr:{|"S1" -> "S2"|} dot);
-  Alcotest.(check bool) "guard in label" true (contains ~substr:{|[g]|} dot);
+    "label node for cross-edge" true
+    (contains ~substr:"__e0" dot);
+  Alcotest.(check bool) "guard in label" true (contains ~substr:{|[ g ]|} dot);
   Alcotest.(check bool)
     "actions in label" true
     (contains ~substr:"/ a1, a2" dot);
   Alcotest.(check bool)
-    "self-loop with label" true
-    (contains ~substr:{|"S2" -> "S2"|} dot);
-  Alcotest.(check bool) "no __e nodes" true (not (contains ~substr:"__e0" dot))
+    "self-loop with inline label" true
+    (contains ~substr:{|"S2" -> "S2" [label=<<b>s</b>>]|} dot);
+  Alcotest.(check bool)
+    "label node to target" true
+    (contains ~substr:{|"__e0" -> "S2"|} dot)
 
 let test_choice_with_actions () =
   let dot =
@@ -169,11 +173,13 @@ let test_choice_with_actions () =
     (contains ~substr:"shape=diamond" dot);
   Alcotest.(check bool)
     "guard in edge label" true
-    (contains ~substr:{|[g]|} dot);
+    (contains ~substr:{|[ g ]|} dot);
   Alcotest.(check bool)
     "action in choice edge" true
     (contains ~substr:"/ a1" dot);
-  Alcotest.(check bool) "no __e nodes" true (not (contains ~substr:"__e0" dot))
+  Alcotest.(check bool)
+    "label node for choice edge" true
+    (contains ~substr:"__e0" dot)
 
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 

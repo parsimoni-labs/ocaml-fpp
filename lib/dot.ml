@@ -59,6 +59,18 @@ let escape_dot s =
     s;
   Buffer.contents buf
 
+let escape_html s =
+  let buf = Buffer.create (String.length s) in
+  String.iter
+    (fun c ->
+      match c with
+      | '&' -> Buffer.add_string buf "&amp;"
+      | '<' -> Buffer.add_string buf "&lt;"
+      | '>' -> Buffer.add_string buf "&gt;"
+      | c -> Buffer.add_char buf c)
+    s;
+  Buffer.contents buf
+
 (* ── Label formatting ─────────────────────────────────────────────── *)
 
 let actions_of_transition (tr : Ast.spec_state_transition) =
@@ -70,26 +82,20 @@ let actions_of_transition (tr : Ast.spec_state_transition) =
 let actions_of_trans_expr (te : Ast.transition_expr) =
   List.map (fun (a : Ast.ident Ast.node) -> a.data) te.trans_actions
 
-(** Build a unified edge label string. Components are omitted when empty. Lines
-    are separated by [\\n] for DOT label rendering. *)
+(** Build a unified HTML edge label. Components are omitted when empty. The
+    signal is bold; all parts appear on a single line: [<b>x</b> [ y ] / z]. *)
 let edge_label signal guard actions =
-  let first_line =
-    match (signal, guard) with
-    | "", None -> ""
-    | "", Some g -> "[" ^ g ^ "]"
-    | s, None -> s
-    | s, Some g -> s ^ " [" ^ g ^ "]"
-  in
-  let action_line =
+  let parts =
+    (match signal with "" -> [] | s -> [ "<b>" ^ escape_html s ^ "</b>" ])
+    @ (match guard with
+      | None -> []
+      | Some g -> [ "[ " ^ escape_html g ^ " ]" ])
+    @
     match actions with
-    | [] -> None
-    | acts -> Some ("/ " ^ String.concat ", " acts)
+    | [] -> []
+    | acts -> [ "/ " ^ String.concat ", " (List.map escape_html acts) ]
   in
-  match (first_line, action_line) with
-  | "", None -> ""
-  | "", Some a -> a
-  | fl, None -> fl
-  | fl, Some a -> fl ^ "\\n" ^ a
+  String.concat " " parts
 
 (* ── Edge accumulator ─────────────────────────────────────────────── *)
 
@@ -115,7 +121,7 @@ let pp_preamble ppf name =
   bgcolor=white;
   pad="0.4";
   node [fontname="Helvetica" fontsize=11];
-  edge [fontname="Helvetica" fontsize=9 color="#5f6368"];
+  edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
 |}
 
 (* ── Node emission ────────────────────────────────────────────────── *)
@@ -149,7 +155,8 @@ let state_annotations st =
         | Ast.State_entry _ -> true
         | _ -> false)
     in
-    if acts = [] then [] else [ "entry / " ^ String.concat ", " acts ]
+    if acts = [] then []
+    else [ "<b>entry</b> / " ^ String.concat ", " (List.map escape_html acts) ]
   in
   let exit_ =
     let acts =
@@ -157,23 +164,24 @@ let state_annotations st =
         | Ast.State_exit _ -> true
         | _ -> false)
     in
-    if acts = [] then [] else [ "exit / " ^ String.concat ", " acts ]
+    if acts = [] then []
+    else [ "<b>exit</b> / " ^ String.concat ", " (List.map escape_html acts) ]
   in
   entry @ exit_
 
 (** Build an HTML table label for a state with entry/exit actions. *)
 let html_state_label name extras =
   let buf = Buffer.create 128 in
-  Buffer.add_string buf {|<<table border="0" cellborder="0" cellspacing="0">|};
   Buffer.add_string buf
-    (Fmt.str {|<tr><td><b>%s</b></td></tr>|} (escape_dot name));
+    {|<<table border="0" cellborder="0" cellspacing="0" cellpadding="4">|};
+  Buffer.add_string buf (Fmt.str {|<tr><td>%s</td></tr>|} (escape_html name));
   Buffer.add_string buf {|<HR/>|};
   List.iter
     (fun line ->
       Buffer.add_string buf
         (Fmt.str
            {|<tr><td align="left"><font point-size="9">%s</font></td></tr>|}
-           (escape_dot line)))
+           line))
     extras;
   Buffer.add_string buf {|</table>>|};
   Buffer.contents buf
@@ -184,13 +192,13 @@ let emit_leaf ppf ~ind ~prefix (st : Ast.def_state) =
   indent ppf ind;
   if extras = [] then
     Fmt.pf ppf
-      {|"%s" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label="%s"];@.|}
+      {|"%s" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label="%s"];@.|}
       (escape_dot id)
       (escape_dot st.state_name.data)
   else
     let label = html_state_label st.state_name.data extras in
     Fmt.pf ppf
-      {|"%s" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" label=%s];@.|}
+      {|"%s" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label=%s];@.|}
       (escape_dot id) label
 
 (* ── Choice nodes ─────────────────────────────────────────────────── *)
@@ -199,7 +207,7 @@ let emit_choice_node ppf ids ~ind ~prefix (c : Ast.def_choice) =
   let id = node_id prefix c.choice_name.data in
   indent ppf ind;
   Fmt.pf ppf
-    {|"%s" [shape=diamond style=filled fillcolor="#fff8e1" color="#f9ab00" label="%s"];@.|}
+    {|"%s" [shape=diamond style=filled fillcolor="#fff8e1" color="#f9ab00" fontcolor="#1a1a2e" label="%s"];@.|}
     (escape_dot id)
     (escape_dot c.choice_name.data);
   List.iter
@@ -308,13 +316,26 @@ let pp ppf (sm : Ast.def_state_machine) =
           | _ -> ())
         members;
       (* All edges at top level *)
+      let eid = ref 0 in
       List.iter
         (fun e ->
           if e.label = "" then
             Fmt.pf ppf {|  "%s" -> "%s";@.|} (escape_dot e.src)
               (escape_dot e.dst)
-          else
-            Fmt.pf ppf {|  "%s" -> "%s" [label="%s"];@.|} (escape_dot e.src)
-              (escape_dot e.dst) e.label)
+          else if e.src = e.dst then
+            (* Self-loop: inline HTML label *)
+            Fmt.pf ppf {|  "%s" -> "%s" [label=<%s>];@.|} (escape_dot e.src)
+              (escape_dot e.dst) e.label
+          else begin
+            (* Cross-node: intermediate label node *)
+            let id = Fmt.str "__e%d" !eid in
+            incr eid;
+            Fmt.pf ppf
+              {|  "%s" [shape=plaintext fontcolor="#1a1a2e" fontname="Helvetica" fontsize=9 label=<%s>];@.|}
+              id e.label;
+            Fmt.pf ppf {|  "%s" -> "%s" [arrowhead=none];@.|} (escape_dot e.src)
+              id;
+            Fmt.pf ppf {|  "%s" -> "%s";@.|} id (escape_dot e.dst)
+          end)
         (List.rev !edges);
       Fmt.pf ppf "}@."
