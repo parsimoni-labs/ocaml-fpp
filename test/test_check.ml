@@ -2,7 +2,8 @@
 
     Runs the checker against ALL upstream fpp-check test files. Files with "ok"
     in the name must produce no errors; all others must produce at least one
-    error. Test failures indicate missing check implementations. *)
+    error whose message matches the expected pattern for that folder/file. Test
+    failures indicate missing check implementations. *)
 
 (* ── Upstream directory discovery ──────────────────────────────────── *)
 
@@ -91,6 +92,24 @@ let is_ok_file ~dir name =
   || Filename.check_suffix name "_ok.fpp"
   || List.mem rel extra_pass
 
+(* ── Expected error patterns ───────────────────────────────────────── *)
+
+(** Expected error message substrings per test file. When defined, at least one
+    produced error must contain one of the listed substrings. This prevents
+    false passes where an unrelated check (e.g. instance-not-in-topology) masks
+    a missing check. Files not listed here use the default behaviour: any error
+    suffices. *)
+let expected_error_patterns =
+  [
+    (* connection_direct: each file tests a specific connection property *)
+    ("connection_direct/invalid_directions.fpp", [ "direction" ]);
+    ("connection_direct/internal_port.fpp", [ "internal" ]);
+    ( "connection_direct/invalid_port_instance.fpp",
+      [ "no port"; "has no port"; "undefined port" ] );
+    ( "connection_direct/invalid_port_number.fpp",
+      [ "port number"; "index"; "out of range"; "exceeds port size" ] );
+  ]
+
 (* ── Check runner ──────────────────────────────────────────────────── *)
 
 let errors_of_file path =
@@ -107,9 +126,26 @@ let test_pass abs_path () =
     Alcotest.failf "expected no errors, got: [%s]"
       (Check_test_helpers.format_diags errs)
 
-let test_fail abs_path () =
+let test_fail ~rel abs_path () =
   let errs = errors_of_file abs_path in
   if errs = [] then Alcotest.fail "expected check errors but got none"
+  else
+    match List.assoc_opt rel expected_error_patterns with
+    | None -> ()
+    | Some patterns ->
+        let has_match =
+          List.exists
+            (fun (d : Fpp.Check.diagnostic) ->
+              List.exists
+                (fun pat -> Check_test_helpers.msg_contains ~substr:pat d.msg)
+                patterns)
+            errs
+        in
+        if not has_match then
+          Alcotest.failf
+            "errors found but none match expected patterns [%s]: %s"
+            (String.concat "; " patterns)
+            (Check_test_helpers.format_diags errs)
 
 (* ── Suite construction ────────────────────────────────────────────── *)
 
@@ -124,16 +160,15 @@ let discover_tests () =
             if not (Filename.check_suffix name ".fpp") then None
             else
               let abs_path = Filename.concat dir_path name in
+              let rel = dir ^ "/" ^ name in
               if is_ok_file ~dir name then
                 Some
-                  (Alcotest.test_case
-                     ("pass/" ^ dir ^ "/" ^ name)
-                     `Quick (test_pass abs_path))
+                  (Alcotest.test_case ("pass/" ^ rel) `Quick
+                     (test_pass abs_path))
               else
                 Some
-                  (Alcotest.test_case
-                     ("fail/" ^ dir ^ "/" ^ name)
-                     `Quick (test_fail abs_path))))
+                  (Alcotest.test_case ("fail/" ^ rel) `Quick
+                     (test_fail ~rel abs_path))))
     check_dirs
 
 let suite = ("check", discover_tests ())

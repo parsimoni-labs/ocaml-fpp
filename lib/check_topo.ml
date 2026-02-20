@@ -497,6 +497,21 @@ let component_port (comp : Ast.def_component) port_name =
       | _ -> None)
     comp.comp_members
 
+let is_internal_port (comp : Ast.def_component) port_name =
+  List.exists
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_internal_port ip -> ip.internal_name.data = port_name
+      | _ -> false)
+    comp.comp_members
+
+let is_output_port (g : Ast.port_instance_general) = g.gen_kind = Output
+
+let is_input_port (g : Ast.port_instance_general) =
+  match g.gen_kind with
+  | Sync_input | Async_input | Guarded_input -> true
+  | Output -> false
+
 let resolve_port_type_def tu_env (qi : Ast.qual_ident) =
   let ids = Ast.qual_ident_to_list qi in
   let rec walk env = function
@@ -590,12 +605,74 @@ let check_direct_connection ~scope tu_env (conn : Ast.connection) =
     ( resolve_instance_comp tu_env from_inst,
       resolve_instance_comp tu_env to_inst )
   with
-  | Some from_comp, Some to_comp -> (
-      match
-        ( component_port from_comp from_port_name,
-          component_port to_comp to_port_name )
-      with
-      | Some from_port, Some to_port ->
+  | Some from_comp, Some to_comp ->
+      (* Check for internal port references *)
+      let internal_diags =
+        (if is_internal_port from_comp from_port_name then
+           [
+             errorf ~sm_name:scope conn.conn_from_port.loc
+               "internal port '%s.%s' cannot appear in a topology connection"
+               from_inst from_port_name;
+           ]
+         else [])
+        @
+        if is_internal_port to_comp to_port_name then
+          [
+            errorf ~sm_name:scope conn.conn_to_port.loc
+              "internal port '%s.%s' cannot appear in a topology connection"
+              to_inst to_port_name;
+          ]
+        else []
+      in
+      if internal_diags <> [] then internal_diags
+      else
+        (* Check that ports exist on the components *)
+        let from_port_opt = component_port from_comp from_port_name in
+        let to_port_opt = component_port to_comp to_port_name in
+        let undefined_diags =
+          (match from_port_opt with
+            | None ->
+                [
+                  errorf ~sm_name:scope conn.conn_from_port.loc
+                    "component instance '%s' has no port '%s'" from_inst
+                    from_port_name;
+                ]
+            | Some _ -> [])
+          @
+          match to_port_opt with
+          | None ->
+              [
+                errorf ~sm_name:scope conn.conn_to_port.loc
+                  "component instance '%s' has no port '%s'" to_inst
+                  to_port_name;
+              ]
+          | Some _ -> []
+        in
+        if undefined_diags <> [] then undefined_diags
+        else
+          let from_port = Option.get from_port_opt in
+          let to_port = Option.get to_port_opt in
+          (* Check port directions: source must be output, target must be
+             input *)
+          let direction_diags =
+            (if is_input_port from_port then
+               [
+                 errorf ~sm_name:scope conn.conn_from_port.loc
+                   "connection source '%s.%s' has wrong direction: expected \
+                    output port"
+                   from_inst from_port_name;
+               ]
+             else [])
+            @
+            if is_output_port to_port then
+              [
+                errorf ~sm_name:scope conn.conn_to_port.loc
+                  "connection target '%s.%s' has wrong direction: expected \
+                   input port"
+                  to_inst to_port_name;
+              ]
+            else []
+          in
           let type_diags =
             check_connection_types ~scope tu_env conn.conn_from_port.loc
               from_port to_port from_inst to_inst from_port_name to_port_name
@@ -612,11 +689,11 @@ let check_direct_connection ~scope tu_env (conn : Ast.connection) =
               else []
             else []
           in
-          type_diags @ unmatched_diag
-      | _ -> [])
+          direction_diags @ type_diags @ unmatched_diag
   | _ -> []
 
-let check_port_index ~scope tu_env (idx : Ast.expr Ast.node) label =
+let check_port_index ~scope tu_env (idx : Ast.expr Ast.node) ~inst ~port_name
+    ~size_opt label =
   let v, diags = eval_expr ~scope tu_env idx in
   let neg =
     match v with
@@ -626,7 +703,16 @@ let check_port_index ~scope tu_env (idx : Ast.expr Ast.node) label =
         ]
     | _ -> []
   in
-  diags @ neg
+  let bounds =
+    match (v, size_opt) with
+    | Val_int n, Some sz when n >= sz ->
+        [
+          errorf ~sm_name:scope idx.loc
+            "port index %d on '%s.%s' exceeds port size %d" n inst port_name sz;
+        ]
+    | _ -> []
+  in
+  diags @ neg @ bounds
 
 let port_size tu_env (comp : Ast.def_component) port_name =
   match component_port comp port_name with
@@ -711,13 +797,37 @@ let check_direct_connections ~scope tu_env members =
                   (Ast.unannotate conn_ann).Ast.data
                 in
                 let type_diags = check_direct_connection ~scope tu_env conn in
+                let from_pid = conn.conn_from_port.data in
+                let to_pid = conn.conn_to_port.data in
+                let from_inst =
+                  Ast.qual_ident_to_string from_pid.pid_component.data
+                in
+                let to_inst =
+                  Ast.qual_ident_to_string to_pid.pid_component.data
+                in
+                let from_size =
+                  match resolve_instance_comp tu_env from_inst with
+                  | Some comp -> port_size tu_env comp from_pid.pid_port.data
+                  | None -> None
+                in
+                let to_size =
+                  match resolve_instance_comp tu_env to_inst with
+                  | Some comp -> port_size tu_env comp to_pid.pid_port.data
+                  | None -> None
+                in
                 let idx_diags =
                   (match conn.conn_from_index with
-                    | Some idx -> check_port_index ~scope tu_env idx "source"
+                    | Some idx ->
+                        check_port_index ~scope tu_env idx ~inst:from_inst
+                          ~port_name:from_pid.pid_port.data ~size_opt:from_size
+                          "source"
                     | None -> [])
                   @
                   match conn.conn_to_index with
-                  | Some idx -> check_port_index ~scope tu_env idx "target"
+                  | Some idx ->
+                      check_port_index ~scope tu_env idx ~inst:to_inst
+                        ~port_name:to_pid.pid_port.data ~size_opt:to_size
+                        "target"
                   | None -> []
                 in
                 type_diags @ idx_diags)

@@ -137,10 +137,14 @@ Most Tier 1 checks are implemented; a few edge cases remain.
 These checks are well-specified by the upstream test suite and can be validated
 against it, following the same pattern used for state machine checks.
 
-- [ ] **Port direction validation** -- connections must go from output to input
+- [x] **Port direction validation** -- connections must go from output to input
       (11 tests in `connection_direct/`)
-- [ ] **Internal port prohibition** -- internal ports cannot appear in topology
+- [x] **Internal port prohibition** -- internal ports cannot appear in topology
       connections
+- [x] **Unknown port detection** -- error when a port name does not exist on
+      the component
+- [x] **Port index bounds checking** -- error when an explicit port index
+      exceeds the declared port size
 
 #### Tier 2: novel checks (not in upstream, high practical value)
 

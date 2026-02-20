@@ -127,7 +127,11 @@ including public instances from imported topologies. **Connection pattern
 validation** -- command, event, health, parameter, telemetry, text event, and
 time patterns require specific special ports. **Matched port numbering** --
 explicit indices on matched port pairs must be consistent; implicit duplicates
-from matching are detected. **Undefined instance and state machine references**
+from matching are detected. **Port direction validation** ensures connections go from output to input
+ports. **Internal port prohibition** rejects internal ports in topology
+connections. **Unknown port detection** reports port names that do not exist on
+the component. **Port index bounds checking** rejects indices exceeding the
+declared port size. **Undefined instance and state machine references**
 are reported with scope-aware resolution across modules.
 
 ### State machine checks
@@ -232,9 +236,8 @@ browsing, showing both the FPP source and the resulting SVG side by side.
 The roadmap (see [TODO.md](TODO.md)) covers three directions.
 
 **Static analysis** extends `ofpp check` with the remaining upstream topology
-checks (port direction validation, internal port prohibition) and deeper safety
-analyses for state machines: guard mutual exclusivity, numeric range checking,
-and bounded response analysis.
+checks and deeper safety analyses for state machines: guard mutual exclusivity,
+numeric range checking, and bounded response analysis.
 
 **Test generation** (`ofpp test`) will derive test cases from FPP model
 structure: GTest stubs for C++ projects, portable JSON vectors for any test
