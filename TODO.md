@@ -11,24 +11,12 @@ corresponding ofpp module (if implemented).
 
 | Step | Upstream phase | ofpp module | Status |
 |------|---------------|-------------|--------|
-| 1 | Create empty analysis | `Check_tu_env` | done (`build_tu_env`) |
-| 2 | [Enter symbols](https://github.com/nasa/fpp/wiki/Enter-Symbols) | `Check_tu_env` | done (symbol environment) |
 | 3 | Construct implied use map | — | not started |
 | 4 | [Check uses](https://github.com/nasa/fpp/wiki/Check-Uses) (build use-def map) | — | not started |
-| 5 | [Check use-def cycles](https://github.com/nasa/fpp/wiki/Check-Use-Def-Cycles) | `Check_sym` | done (dependency cycle DFS) |
-| 6 | Check type uses | `Check_sym` | done (symbol kind validation) |
-| 7 | Check expression types | `Check_def` | done (expression validation) |
 | 8 | Check framework definitions | — | not applicable |
 | 9 | Evaluate implied enum constants | — | not started |
-| 10 | Evaluate constant expressions | `Check_tu_env` | done (`eval_expr`) |
 | 11 | Finalise type definitions | — | not started |
-| 12 | Check port definitions | `Check_comp` | done (`check_port_def`) |
-| 13 | Check interface definitions | `Check_comp` | done (`check_interface`) |
-| 14 | Check component definitions | `Check_comp` | done (full validation) |
-| 15 | Check component instance defs | `Check_topo` | done (`check_component_instance`) |
-| 16 | [Check state machine definitions](https://github.com/nasa/fpp/wiki/Check-State-Machine-Definitions) | `Check_core` + `Check_warn` | done (101 + 6 analyses) |
 | 17 | Check topology definitions | `Check_topo` | partial (instances, imports, patterns) |
-| 18 | Check location specifiers | `Check_def` | done (`check_spec_locs`) |
 | 19 | Check dictionary definitions | — | not started |
 | 20 | Construct dictionary map | — | not started |
 
@@ -180,34 +168,6 @@ represent the highest-value additions beyond what `fpp-check` provides.
       (0..N-1); gaps suggest missing connections
 - [ ] **Pattern completeness** -- when a connection pattern is used, verify
       all eligible component instances participate
-
-### Upstream Check Coverage
-
-All 670 upstream test files are imported and parse correctly. Semantic check
-coverage by category:
-
-| Category | Files | Module | Status |
-|----------|-------|--------|--------|
-| `state_machine/` | 91 | `Check_core` + `Check_warn` | done (101 pass/fail tests) |
-| `connection_direct/` | 11 | `Check_topo` | done (type matching, duplicates) |
-| `connection_pattern/` | 31 | `Check_topo` | done (pattern port validation) |
-| `port_instance/` | 31 | `Check_comp` | partial (1 failure) |
-| `port_matching/` | 7 | `Check_topo` | done (index consistency) |
-| `port_numbering/` | 11 | `Check_topo` | partial (3 failures) |
-| `top_import/` | 6 | `Check_topo` | partial (1 failure) |
-| `unconnected/` | 2 | — | parse only |
-| `component/` | 21 | `Check_comp` | done |
-| `component_instance_def/` | 19 | `Check_topo` | done |
-| `component_instance_spec/` | 3 | `Check_topo` | partial (1 failure) |
-| `state_machine_instance/` | 7 | `Check_comp` | done |
-| `array/` | 26 | `Check_def` | done |
-| `enum/` | 15 | `Check_def` | done |
-| `struct/` | 17 | `Check_def` | done |
-| `expr/` | 12 | `Check_def` | done |
-| `constant/` | 10 | `Check_tu_env` | done |
-| `type/` | 7 | `Check_sym` | done |
-| `tlm_packets/` | 9 | `Check_topo` | partial (3 failures) |
-| others (13 categories) | 233 | various | done |
 
 ## Visualization (`ofpp dot`)
 
