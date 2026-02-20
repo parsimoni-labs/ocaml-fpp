@@ -196,7 +196,12 @@ let check_instance_with_root ~scope tu_env root_env
                  a
                  (string_of_symbol_kind kind));
           ]
-      | None -> [])
+      | None ->
+          [
+            error ~sm_name:scope qi.loc
+              (Fmt.str "undefined component instance '%s'"
+                 (Ast.qual_ident_to_string qi.data));
+          ])
 
 let check_member_refs ~scope ~root_env tu_env members =
   List.concat_map
@@ -1065,6 +1070,146 @@ let check_unconnected_internal_ports ~scope tu_env topo_instances members =
             acc internals)
     topo_instances []
 
+let get_matched_pairs (comp : Ast.def_component) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_port_matching pm ->
+          Some (pm.match_port1.data, pm.match_port2.data)
+      | _ -> None)
+    comp.comp_members
+
+let collect_all_direct_connections members =
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+          List.map
+            (fun conn_ann -> (Ast.unannotate conn_ann).Ast.data)
+            d.graph_connections
+      | _ -> [])
+    members
+
+let count_port_connections connections inst_name port_name =
+  List.fold_left
+    (fun n (conn : Ast.connection) ->
+      if conn.conn_unmatched then n
+      else
+        let from_pid = conn.conn_from_port.data in
+        let to_pid = conn.conn_to_port.data in
+        let from_inst = Ast.qual_ident_to_string from_pid.pid_component.data in
+        let to_inst = Ast.qual_ident_to_string to_pid.pid_component.data in
+        if
+          (from_inst = inst_name && from_pid.pid_port.data = port_name)
+          || (to_inst = inst_name && to_pid.pid_port.data = port_name)
+        then n + 1
+        else n)
+    0 connections
+
+let collect_port_indices ~scope tu_env connections inst_name port_name =
+  List.fold_left
+    (fun acc (conn : Ast.connection) ->
+      if conn.conn_unmatched then acc
+      else
+        let from_pid = conn.conn_from_port.data in
+        let to_pid = conn.conn_to_port.data in
+        let from_inst = Ast.qual_ident_to_string from_pid.pid_component.data in
+        let to_inst = Ast.qual_ident_to_string to_pid.pid_component.data in
+        if from_inst = inst_name && from_pid.pid_port.data = port_name then
+          match conn.conn_from_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> n :: acc
+              | _ -> acc)
+          | None -> acc
+        else if to_inst = inst_name && to_pid.pid_port.data = port_name then
+          match conn.conn_to_index with
+          | Some ie -> (
+              match fst (eval_expr ~scope tu_env ie) with
+              | Val_int n -> n :: acc
+              | _ -> acc)
+          | None -> acc
+        else acc)
+    [] connections
+
+let check_matched_port_numbering ~scope tu_env topo_instances members =
+  let connections = collect_all_direct_connections members in
+  Hashtbl.fold
+    (fun inst_name inst_loc acc ->
+      match resolve_instance_comp tu_env inst_name with
+      | None -> acc
+      | Some comp ->
+          let pairs = get_matched_pairs comp in
+          List.fold_left
+            (fun acc (port1, port2) ->
+              let n1 = count_port_connections connections inst_name port1 in
+              let n2 = count_port_connections connections inst_name port2 in
+              if n1 <> n2 then
+                errorf ~sm_name:scope inst_loc
+                  "matched ports '%s.%s' and '%s.%s' have different connection \
+                   counts (%d vs %d)"
+                  inst_name port1 inst_name port2 n1 n2
+                :: acc
+              else
+                let idx1 =
+                  collect_port_indices ~scope tu_env connections inst_name port1
+                  |> List.sort Int.compare
+                in
+                let idx2 =
+                  collect_port_indices ~scope tu_env connections inst_name port2
+                  |> List.sort Int.compare
+                in
+                if idx1 <> [] && idx2 <> [] && idx1 <> idx2 then
+                  errorf ~sm_name:scope inst_loc
+                    "matched ports '%s.%s' and '%s.%s' have mismatched port \
+                     numbers"
+                    inst_name port1 inst_name port2
+                  :: acc
+                else acc)
+            acc pairs)
+    topo_instances []
+
+let collect_private_instances (topo : Ast.def_topology) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_comp_instance ci when ci.ci_visibility = `Private ->
+          Some (Ast.qual_ident_to_string ci.ci_instance.data)
+      | _ -> None)
+    topo.topo_members
+
+let check_import_visibility ~scope tu_env members =
+  let imported_private = Hashtbl.create 8 in
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_top_import qi -> (
+          let name = Ast.qual_ident_to_string qi.data in
+          let topo_def = SMap.find_opt name tu_env.topologies in
+          match topo_def with
+          | Some t ->
+              List.iter
+                (fun inst -> Hashtbl.replace imported_private inst name)
+                (collect_private_instances t)
+          | None -> ())
+      | _ -> ())
+    members;
+  List.concat_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_comp_instance ci -> (
+          let name = Ast.qual_ident_to_string ci.ci_instance.data in
+          match Hashtbl.find_opt imported_private name with
+          | Some from_topo ->
+              [
+                errorf ~sm_name:scope ci.ci_instance.loc
+                  "instance '%s' is private in imported topology '%s'" name
+                  from_topo;
+              ]
+          | None -> [])
+      | _ -> [])
+    members
+
 let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   let topo_instances = collect_topo_instances topo.topo_members in
   check_member_refs ~scope ~root_env tu_env topo.topo_members
@@ -1077,6 +1222,8 @@ let check_topology ~scope ~root_env tu_env (topo : Ast.def_topology) =
   @ check_tlm_packet_sets ~scope tu_env topo_instances topo.topo_members
   @ check_unconnected_internal_ports ~scope tu_env topo_instances
       topo.topo_members
+  @ check_matched_port_numbering ~scope tu_env topo_instances topo.topo_members
+  @ check_import_visibility ~scope tu_env topo.topo_members
 
 (* ── Entry point ───────────────────────────────────────────────────── *)
 

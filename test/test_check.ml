@@ -67,6 +67,7 @@ let extra_pass =
     "tlm_packets/instances.fpp";
     "array/large_size.fpp";
     "top_import/basic.fpp";
+    "port_instance/async_input_active.fpp";
   ]
 
 let is_ok_file ~dir name =
