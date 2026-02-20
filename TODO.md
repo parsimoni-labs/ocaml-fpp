@@ -147,15 +147,6 @@ against it, following the same pattern used for state machine checks.
 These are inspired by AUTOSAR, Simulink, Capella, and AADL tools. They
 represent the highest-value additions beyond what `fpp-check` provides.
 
-- [x] **Unconnected required port detection** -- warn when an input port has
-      no incoming connection. The single most common wiring bug across all
-      surveyed tools (AUTOSAR mandates this, Capella's I\_20 rule, Simulink's
-      Model Advisor). Warning-level analysis controllable via `--warning`
-      (`unc` abbreviation). (2 tests in `unconnected/`)
-- [x] **Connection graph cycle detection** -- flag cycles in synchronous port
-      connections that could cause deadlock. Analogous to Simulink's algebraic
-      loop detection. Warning-level analysis controllable via `--warning`
-      (`syn` abbreviation).
 - [ ] **Rate group coverage** -- warn when an active component is not
       scheduled by any rate group. Missing scheduling is a common deployment
       error

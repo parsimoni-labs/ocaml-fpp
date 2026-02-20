@@ -93,10 +93,9 @@ Parse one or more FPP files and report syntax or semantic errors with
 machine, and topology counts per file; warnings are displayed in a formatted
 table. Exit code is 0 when all files pass, 1 otherwise.
 
-The checker is validated against 446 upstream test files from the NASA
-`fpp-check` test suite across 27 categories. The error-level checks below
-replicate the upstream `fpp-check` behaviour; the warning-level analyses are
-novel to ofpp.
+The checker has complete coverage of the upstream `fpp-check` test suite.
+The error-level checks below replicate the upstream `fpp-check` behaviour;
+the warning-level analyses are novel to ofpp.
 
 ### Translation unit checks
 
@@ -260,10 +259,10 @@ dune exec -- ofpp check test/upstream/component/*.fpp
 dune runtest
 ```
 
-This runs 1300+ tests: unit tests covering core error checks,
-warning-level analyses, DOT rendering, and environment construction, plus 670
-upstream file parse tests, 446 upstream semantic check tests across 27
-categories, and a cram test suite for the CLI.
+This runs over 1300 tests: unit tests covering core error checks,
+warning-level analyses, DOT rendering, and environment construction, plus
+upstream file parse and semantic check tests across all categories, and a
+cram test suite for the CLI.
 
 ## Benchmarks
 
