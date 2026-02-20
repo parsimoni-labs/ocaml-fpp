@@ -1,9 +1,31 @@
 (executable
  (name gen_index)
  (public_name gen_gallery_index)
+ (libraries fmt)
  (package fpp))
 
 ; --- SVG generation rules ---
+
+(rule
+ (mode promote)
+ (target toggle.svg)
+ (deps toggle.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target entry_exit.svg)
+ (deps entry_exit.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
+
+(rule
+ (mode promote)
+ (target simple_choice.svg)
+ (deps simple_choice.fpp)
+ (action
+  (run %{bin:ofpp} dot -o %{target} %{deps})))
 
 (rule
  (mode promote)
@@ -60,6 +82,12 @@
  (mode promote)
  (target index.html)
  (deps
+  toggle.fpp
+  toggle.svg
+  entry_exit.fpp
+  entry_exit.svg
+  simple_choice.fpp
+  simple_choice.svg
   thermostat.fpp
   thermostat.svg
   deploy.fpp

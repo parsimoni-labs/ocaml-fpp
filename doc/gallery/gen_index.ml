@@ -2,6 +2,11 @@
 
 let entries =
   [
+    ("toggle", "Toggle", "Minimal two-state machine");
+    ("entry_exit", "Entry / Exit", "States with entry and exit actions");
+    ( "simple_choice",
+      "Simple Choice",
+      "A single choice node branching to two states" );
     ("thermostat", "Thermostat", "Guarded transitions with actions");
     ("deploy", "Deploy Sequence", "Nested states with choices");
     ("fan_out", "Fan-Out", "One state fans out to many targets");
