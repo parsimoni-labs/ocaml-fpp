@@ -413,7 +413,7 @@ let to_ml ~output ~sm_name files =
                   Fun.protect
                     ~finally:(fun () -> close_out oc)
                     (fun () -> output_string oc text)
-              | None -> Fmt.pr "%s" text)
+              | None -> print_string text)
             sms
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;

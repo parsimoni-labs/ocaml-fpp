@@ -167,11 +167,42 @@ let rec resolve_target all_states all_choices tgt =
           match state_initial st with
           | Some te ->
               let sub = target_name te.data.trans_target in
-              resolve_target all_states all_choices sub
+              (* Scope to children to avoid infinite loops when parent and
+                 child share the same name (state shadowing). *)
+              let child_states = List.concat_map collect_all_states children in
+              resolve_target child_states all_choices sub
           | None -> (
               match children with
               | child :: _ -> Leaf child.state_name.data
               | [] -> Leaf tgt))
+
+(** Like {!resolve_target} but also collects the initial-transition actions
+    encountered along the way (for use in [create]). *)
+let rec resolve_target_with_actions all_states all_choices tgt =
+  if is_choice all_choices tgt then (Choice tgt, [])
+  else
+    match
+      List.find_opt
+        (fun (st : Ast.def_state) -> st.state_name.data = tgt)
+        all_states
+    with
+    | None -> (Leaf tgt, [])
+    | Some st -> (
+        let children = Check_env.collect_substates st in
+        if children = [] then (Leaf tgt, [])
+        else
+          match state_initial st with
+          | Some te ->
+              let sub = target_name te.data.trans_target in
+              let child_states = List.concat_map collect_all_states children in
+              let resolved, deeper_acts =
+                resolve_target_with_actions child_states all_choices sub
+              in
+              (resolved, te.data.trans_actions @ deeper_acts)
+          | None -> (
+              match children with
+              | child :: _ -> (Leaf child.state_name.data, [])
+              | [] -> (Leaf tgt, [])))
 
 (** Compute the effective transitions for a leaf state: its own transitions plus
     inherited transitions from all ancestor states (leaf's own take precedence
@@ -297,13 +328,28 @@ let pp_guards_sig ppf guards =
 
 (* ── Choice enter functions ───────────────────────────────────────── *)
 
+(** Check whether any choice targets another choice (needs [let rec]). *)
+let choices_need_rec all_choices =
+  List.exists
+    (fun (c : Ast.def_choice) ->
+      List.exists
+        (fun cm ->
+          let tgt =
+            match cm with
+            | Ast.Choice_if (_, te) -> target_name te.data.trans_target
+            | Ast.Choice_else te -> target_name te.data.trans_target
+          in
+          is_choice all_choices tgt)
+        c.choice_members)
+    all_choices
+
 let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
-    ~first (c : Ast.def_choice) =
+    ~has_ctx ~needs_rec ~first (c : Ast.def_choice) =
   let name = camel_to_snake c.choice_name.data in
   let keyword =
     if !first then (
       first := false;
-      "let rec")
+      if needs_rec then "let rec" else "let")
     else "and"
   in
   pf ppf "@,@,  %s enter_%s t =" keyword name;
@@ -325,17 +371,20 @@ let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
                   (camel_to_snake g.data)
               else pf ppf "@,    if G.%s t.ctx then (" (camel_to_snake g.data)
           | None -> pf ppf "@,    (");
-          pp_choice_body ppf all_states all_choices ~action_types acts tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts
+            tgt;
           pf ppf ")"
       | Ast.Choice_else te ->
           let tgt = target_name te.data.trans_target in
           let acts = te.data.trans_actions in
           pf ppf "@,    else (";
-          pp_choice_body ppf all_states all_choices ~action_types acts tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts
+            tgt;
           pf ppf ")")
     c.choice_members
 
-and pp_enter_target ppf all_states all_choices ~action_types ~indent tgt =
+and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~indent
+    tgt =
   match resolve_target all_states all_choices tgt with
   | Choice c -> pf ppf "@,%senter_%s t" indent (camel_to_snake c)
   | Leaf leaf ->
@@ -359,9 +408,11 @@ and pp_enter_target ppf all_states all_choices ~action_types ~indent tgt =
           if has_type then pf ppf "@,%sA.%s t.ctx _v;" indent n
           else pf ppf "@,%sA.%s t.ctx;" indent n)
         entry_acts;
-      pf ppf "@,%s{ t with state = State %s }" indent (constructor_name leaf)
+      let ctor = constructor_name leaf in
+      if has_ctx then pf ppf "@,%s{ t with state = State %s }" indent ctor
+      else pf ppf "@,%s{ state = State %s }" indent ctor
 
-and pp_choice_body ppf all_states all_choices ~action_types acts tgt =
+and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts tgt =
   List.iter
     (fun (act : Ast.ident Ast.node) ->
       let has_type =
@@ -373,7 +424,8 @@ and pp_choice_body ppf all_states all_choices ~action_types acts tgt =
       if has_type then pf ppf "@,      A.%s t.ctx (* TODO: value *); " name
       else pf ppf "@,      A.%s t.ctx; " name)
     acts;
-  pp_enter_target ppf all_states all_choices ~action_types ~indent:"      " tgt
+  pp_enter_target ppf all_states all_choices ~action_types ~has_ctx
+    ~indent:"      " tgt
 
 (* ── Action list helper ───────────────────────────────────────────── *)
 
@@ -389,11 +441,12 @@ let pp_action_list ppf ~action_types ~indent acts =
 (* ── Step function ────────────────────────────────────────────────── *)
 
 let rec pp_step ppf leaves all_states all_choices signals ~action_types
-    ~guard_types =
+    ~guard_types ~has_ctx =
   pf ppf "@,@,  let step t signal =";
   pf ppf "@,    match t.state, signal with";
   List.iter
-    (pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types)
+    (pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
+       ~has_ctx)
     leaves;
   (* Only emit final catch-all if some leaf has no handled signals at all *)
   let needs_final_catchall =
@@ -413,7 +466,7 @@ let rec pp_step ppf leaves all_states all_choices signals ~action_types
   if needs_final_catchall then pf ppf "@,    | _ -> t"
 
 and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
-    (leaf : Ast.def_state) =
+    ~has_ctx (leaf : Ast.def_state) =
   let transitions = effective_transitions leaf all_states in
   let leaf_ctor = constructor_name leaf.state_name.data in
   let exit_acts = state_exit_actions leaf in
@@ -442,10 +495,11 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
         in
         if guarded <> [] then
           pp_guarded ppf all_states all_choices ~action_types ~guard_types
-            guarded unguarded
+            ~has_ctx guarded unguarded
         else
           match unguarded with
-          | [ tr ] -> pp_transition ppf all_states all_choices ~action_types tr
+          | [ tr ] ->
+              pp_transition ppf all_states all_choices ~action_types ~has_ctx tr
           | _ -> ()))
     signals;
   let n_handled =
@@ -461,8 +515,8 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
   if n_handled > 0 && n_handled < List.length signals then
     pf ppf "@,    | State %s, _ -> t" leaf_ctor
 
-and pp_guarded ppf all_states all_choices ~action_types ~guard_types guarded
-    unguarded =
+and pp_guarded ppf all_states all_choices ~action_types ~guard_types ~has_ctx
+    guarded unguarded =
   List.iteri
     (fun i (tr : Ast.spec_state_transition) ->
       let g = Option.get tr.st_guard in
@@ -475,22 +529,22 @@ and pp_guarded ppf all_states all_choices ~action_types ~guard_types guarded
       if has_type then
         pf ppf "@,        %s G.%s t.ctx _v then" kw (camel_to_snake g.data)
       else pf ppf "@,        %s G.%s t.ctx then" kw (camel_to_snake g.data);
-      pp_transition ppf all_states all_choices ~action_types tr)
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr)
     guarded;
   match unguarded with
   | [ tr ] ->
       pf ppf "@,        else";
-      pp_transition ppf all_states all_choices ~action_types tr
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr
   | _ -> pf ppf "@,        else t"
 
-and pp_transition ppf all_states all_choices ~action_types
+and pp_transition ppf all_states all_choices ~action_types ~has_ctx
     (tr : Ast.spec_state_transition) =
   match tr.st_action with
   | Ast.Transition te ->
       let tgt = target_name te.data.trans_target in
       pp_action_list ppf ~action_types ~indent:"          "
         te.data.trans_actions;
-      pp_enter_target ppf all_states all_choices ~action_types
+      pp_enter_target ppf all_states all_choices ~action_types ~has_ctx
         ~indent:"          " tgt
   | Ast.Do acts ->
       pp_action_list ppf ~action_types ~indent:"          " acts;
@@ -509,9 +563,13 @@ let pp_init_actions ppf ~action_types init_acts =
 
 let pp_create_init ppf leaves all_states all_choices ~action_types ~mk_record
     init_acts tgt =
-  match resolve_target all_states all_choices tgt with
+  let resolved, deeper_acts =
+    resolve_target_with_actions all_states all_choices tgt
+  in
+  let all_acts = init_acts @ deeper_acts in
+  match resolved with
   | Leaf leaf ->
-      pp_init_actions ppf ~action_types init_acts;
+      pp_init_actions ppf ~action_types all_acts;
       pf ppf "@,    %s" (mk_record leaf)
   | Choice c ->
       let dummy =
@@ -519,7 +577,7 @@ let pp_create_init ppf leaves all_states all_choices ~action_types ~mk_record
         | leaf :: _ -> constructor_name leaf.Ast.state_name.data
         | [] -> "assert false"
       in
-      pp_init_actions ppf ~action_types init_acts;
+      pp_init_actions ppf ~action_types all_acts;
       pf ppf "@,    let t = %s in" (mk_record dummy);
       pf ppf "@,    enter_%s t" (camel_to_snake c)
 
@@ -569,12 +627,15 @@ let pp_functor ppf leaves all_states all_choices signals ~action_types
   pf ppf "@,@,  let state t = t.state";
   (* Choice enter functions *)
   let first = ref true in
+  let needs_rec = choices_need_rec all_choices in
   List.iter
-    (pp_choice_fn ppf all_states all_choices ~action_types ~guard_types ~first)
+    (pp_choice_fn ppf all_states all_choices ~action_types ~guard_types ~has_ctx
+       ~needs_rec ~first)
     all_choices;
   (* Step function *)
   if signals <> [] then
-    pp_step ppf leaves all_states all_choices signals ~action_types ~guard_types;
+    pp_step ppf leaves all_states all_choices signals ~action_types ~guard_types
+      ~has_ctx;
   (* Create function *)
   pp_create ppf leaves all_states all_choices ~has_ctx ~action_types initial;
   pf ppf "@,end"
@@ -619,4 +680,4 @@ let pp ppf (sm : Ast.def_state_machine) =
       pp_guards_sig ppf guards;
       pp_functor ppf leaves all_top_states all_choices signals ~action_types
         ~guard_types ~has_actions ~has_guards initial;
-      pf ppf "@,@]@."
+      pf ppf "@]@."
