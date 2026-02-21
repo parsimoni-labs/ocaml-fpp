@@ -146,16 +146,7 @@ against it, following the same pattern used for state machine checks.
 - [x] **Port index bounds checking** -- error when an explicit port index
       exceeds the declared port size
 
-#### Tier 2: novel checks (not in upstream, high practical value)
-
-These are inspired by AUTOSAR, Simulink, Capella, and AADL tools. They
-represent the highest-value additions beyond what `fpp-check` provides.
-
-- [ ] **Rate group coverage** -- warn when an active component is not
-      scheduled by any rate group. Missing scheduling is a common deployment
-      error
-
-#### Tier 3: deeper analysis (large systems)
+#### Tier 2: deeper analysis (large systems)
 
 - [ ] **Cross-topology import conflict detection** -- when `import` brings
       connections from another topology, check for conflicting connections to

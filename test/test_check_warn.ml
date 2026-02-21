@@ -315,6 +315,57 @@ let test_guard_nested_with_else () =
     }
   |}
 
+(* ── Unconnected ports: rate group scheduling ─────────────────────── *)
+
+let test_unconnected_unscheduled_active () =
+  expect_warning
+    ~substr:"input port 'sensor.schedIn' has no incoming connection"
+    {|
+    port Sched
+    active component Sensor {
+      sync input port schedIn: Sched
+      async input port cmdIn: Sched
+    }
+    passive component RateGroupDriver {
+      output port rateGroupOut: [2] Sched
+    }
+    instance sensor: Sensor base id 0x100 \
+      queue size 10 \
+      stack size 1024 \
+      priority 10
+    instance rgDriver: RateGroupDriver base id 0x200
+    topology T {
+      instance sensor
+      instance rgDriver
+    }
+  |}
+
+let test_unconnected_scheduled_active () =
+  expect_no_warnings
+    {|
+    port Sched
+    active component Sensor {
+      sync input port schedIn: Sched
+      async input port cmdIn: Sched
+    }
+    passive component RateGroupDriver {
+      output port rateGroupOut: [2] Sched
+    }
+    instance sensor: Sensor base id 0x100 \
+      queue size 10 \
+      stack size 1024 \
+      priority 10
+    instance rgDriver: RateGroupDriver base id 0x200
+    topology T {
+      instance sensor
+      instance rgDriver
+      connections RateGroups {
+        rgDriver.rateGroupOut -> sensor.schedIn
+        rgDriver.rateGroupOut -> sensor.cmdIn
+      }
+    }
+  |}
+
 (* ── Warning spec ──────────────────────────────────────────────────── *)
 
 let test_parse_spec_all () =
@@ -475,6 +526,10 @@ let suite =
       Alcotest.test_case "guard_nested_no_else" `Quick test_guard_nested_no_else;
       Alcotest.test_case "guard_nested_with_else" `Quick
         test_guard_nested_with_else;
+      Alcotest.test_case "unconnected_unscheduled_active" `Quick
+        test_unconnected_unscheduled_active;
+      Alcotest.test_case "unconnected_scheduled_active" `Quick
+        test_unconnected_scheduled_active;
       Alcotest.test_case "parse_spec_all" `Quick test_parse_spec_all;
       Alcotest.test_case "parse_spec_A" `Quick test_parse_spec_A;
       Alcotest.test_case "parse_spec_disable_all" `Quick
