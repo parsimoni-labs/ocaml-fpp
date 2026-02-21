@@ -40,9 +40,14 @@ let test_simple_sm () =
     }
   |}
   in
-  Alcotest.(check bool) "state type" true (contains ~substr:"type state =" ml);
+  Alcotest.(check bool) "phantom types" true (contains ~substr:"type s1" ml);
+  Alcotest.(check bool) "state GADT" true (contains ~substr:"_ state =" ml);
+  Alcotest.(check bool)
+    "existential" true
+    (contains ~substr:"type any = State" ml);
   Alcotest.(check bool) "module Make" true (contains ~substr:"module Make" ml);
-  Alcotest.(check bool) "let create" true (contains ~substr:"let create" ml)
+  Alcotest.(check bool) "let create" true (contains ~substr:"let create" ml);
+  Alcotest.(check bool) "let step" true (contains ~substr:"let step" ml)
 
 let test_typed_signal () =
   let ml =
@@ -55,8 +60,10 @@ let test_typed_signal () =
     }
   |}
   in
-  Alcotest.(check bool) "signal GADT" true (contains ~substr:"signal" ml);
-  Alcotest.(check bool) "event type" true (contains ~substr:"event" ml)
+  Alcotest.(check bool) "signal type" true (contains ~substr:"type signal" ml);
+  Alcotest.(check bool)
+    "signal with data" true
+    (contains ~substr:"S of int32" ml)
 
 let test_guard_choice () =
   let ml =
@@ -75,7 +82,56 @@ let test_guard_choice () =
   Alcotest.(check bool)
     "ACTIONS module type" true
     (contains ~substr:"ACTIONS" ml);
-  Alcotest.(check bool) "GUARDS module type" true (contains ~substr:"GUARDS" ml)
+  Alcotest.(check bool) "GUARDS module type" true (contains ~substr:"GUARDS" ml);
+  Alcotest.(check bool) "enter_c function" true (contains ~substr:"enter_c" ml)
+
+let test_nested_state () =
+  let ml =
+    render
+      {|
+    state machine M {
+      initial enter S
+      state S {
+        initial enter T
+        state T
+      }
+    }
+  |}
+  in
+  Alcotest.(check bool) "leaf phantom type" true (contains ~substr:"type t" ml);
+  Alcotest.(check bool)
+    "leaf state GADT" true
+    (contains ~substr:"| T : t state" ml);
+  Alcotest.(check bool)
+    "create resolves to leaf" true
+    (contains ~substr:"State T" ml)
+
+let test_door () =
+  let ml =
+    render
+      {|
+    state machine Door {
+      action lock
+      guard locked
+      signal open
+      signal close
+      initial enter Closed
+      state Closed { on open if locked enter Closed
+                     on open enter Opened }
+      state Opened { on close do { lock } enter Closed }
+    }
+  |}
+  in
+  Alcotest.(check bool)
+    "phantom closed" true
+    (contains ~substr:"type closed" ml);
+  Alcotest.(check bool)
+    "phantom opened" true
+    (contains ~substr:"type opened" ml);
+  Alcotest.(check bool) "State Closed" true (contains ~substr:"State Closed" ml);
+  Alcotest.(check bool) "State Opened" true (contains ~substr:"State Opened" ml);
+  Alcotest.(check bool) "G.locked" true (contains ~substr:"G.locked" ml);
+  Alcotest.(check bool) "A.lock" true (contains ~substr:"A.lock" ml)
 
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
@@ -85,4 +141,6 @@ let suite =
       Alcotest.test_case "simple_sm" `Quick test_simple_sm;
       Alcotest.test_case "typed_signal" `Quick test_typed_signal;
       Alcotest.test_case "guard_choice" `Quick test_guard_choice;
+      Alcotest.test_case "nested_state" `Quick test_nested_state;
+      Alcotest.test_case "door" `Quick test_door;
     ] )
