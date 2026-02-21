@@ -594,6 +594,77 @@ let check_connection_types ~scope tu_env loc from_port to_port from_inst to_inst
       else []
   | None, None -> []
 
+let check_internal_ports ~scope conn from_comp to_comp from_inst to_inst
+    from_port_name to_port_name =
+  (if is_internal_port from_comp from_port_name then
+     [
+       errorf ~sm_name:scope conn.Ast.conn_from_port.loc
+         "internal port '%s.%s' cannot appear in a topology connection"
+         from_inst from_port_name;
+     ]
+   else [])
+  @
+  if is_internal_port to_comp to_port_name then
+    [
+      errorf ~sm_name:scope conn.conn_to_port.loc
+        "internal port '%s.%s' cannot appear in a topology connection" to_inst
+        to_port_name;
+    ]
+  else []
+
+let check_ports_exist ~scope conn from_comp to_comp from_inst to_inst
+    from_port_name to_port_name =
+  let from_port_opt = component_port from_comp from_port_name in
+  let to_port_opt = component_port to_comp to_port_name in
+  let diags =
+    (match from_port_opt with
+      | None ->
+          [
+            errorf ~sm_name:scope conn.Ast.conn_from_port.loc
+              "component instance '%s' has no port '%s'" from_inst
+              from_port_name;
+          ]
+      | Some _ -> [])
+    @
+    match to_port_opt with
+    | None ->
+        [
+          errorf ~sm_name:scope conn.Ast.conn_to_port.loc
+            "component instance '%s' has no port '%s'" to_inst to_port_name;
+        ]
+    | Some _ -> []
+  in
+  (from_port_opt, to_port_opt, diags)
+
+let check_port_directions ~scope conn from_port to_port from_inst to_inst
+    from_port_name to_port_name =
+  (if is_input_port from_port then
+     [
+       errorf ~sm_name:scope conn.Ast.conn_from_port.loc
+         "connection source '%s.%s' has wrong direction: expected output port"
+         from_inst from_port_name;
+     ]
+   else [])
+  @
+  if is_output_port to_port then
+    [
+      errorf ~sm_name:scope conn.Ast.conn_to_port.loc
+        "connection target '%s.%s' has wrong direction: expected input port"
+        to_inst to_port_name;
+    ]
+  else []
+
+let check_unmatched ~scope conn from_comp from_inst from_port_name =
+  if conn.Ast.conn_unmatched then
+    if not (is_matched_port from_comp from_port_name) then
+      [
+        errorf ~sm_name:scope conn.conn_from_port.loc
+          "'unmatched' used on port '%s.%s' which is not in a port matching"
+          from_inst from_port_name;
+      ]
+    else []
+  else []
+
 let check_direct_connection ~scope tu_env (conn : Ast.connection) =
   let from_pid = conn.conn_from_port.data in
   let to_pid = conn.conn_to_port.data in
@@ -606,88 +677,30 @@ let check_direct_connection ~scope tu_env (conn : Ast.connection) =
       resolve_instance_comp tu_env to_inst )
   with
   | Some from_comp, Some to_comp ->
-      (* Check for internal port references *)
       let internal_diags =
-        (if is_internal_port from_comp from_port_name then
-           [
-             errorf ~sm_name:scope conn.conn_from_port.loc
-               "internal port '%s.%s' cannot appear in a topology connection"
-               from_inst from_port_name;
-           ]
-         else [])
-        @
-        if is_internal_port to_comp to_port_name then
-          [
-            errorf ~sm_name:scope conn.conn_to_port.loc
-              "internal port '%s.%s' cannot appear in a topology connection"
-              to_inst to_port_name;
-          ]
-        else []
+        check_internal_ports ~scope conn from_comp to_comp from_inst to_inst
+          from_port_name to_port_name
       in
       if internal_diags <> [] then internal_diags
       else
-        (* Check that ports exist on the components *)
-        let from_port_opt = component_port from_comp from_port_name in
-        let to_port_opt = component_port to_comp to_port_name in
-        let undefined_diags =
-          (match from_port_opt with
-            | None ->
-                [
-                  errorf ~sm_name:scope conn.conn_from_port.loc
-                    "component instance '%s' has no port '%s'" from_inst
-                    from_port_name;
-                ]
-            | Some _ -> [])
-          @
-          match to_port_opt with
-          | None ->
-              [
-                errorf ~sm_name:scope conn.conn_to_port.loc
-                  "component instance '%s' has no port '%s'" to_inst
-                  to_port_name;
-              ]
-          | Some _ -> []
+        let from_port_opt, to_port_opt, undefined_diags =
+          check_ports_exist ~scope conn from_comp to_comp from_inst to_inst
+            from_port_name to_port_name
         in
         if undefined_diags <> [] then undefined_diags
         else
           let from_port = Option.get from_port_opt in
           let to_port = Option.get to_port_opt in
-          (* Check port directions: source must be output, target must be
-             input *)
           let direction_diags =
-            (if is_input_port from_port then
-               [
-                 errorf ~sm_name:scope conn.conn_from_port.loc
-                   "connection source '%s.%s' has wrong direction: expected \
-                    output port"
-                   from_inst from_port_name;
-               ]
-             else [])
-            @
-            if is_output_port to_port then
-              [
-                errorf ~sm_name:scope conn.conn_to_port.loc
-                  "connection target '%s.%s' has wrong direction: expected \
-                   input port"
-                  to_inst to_port_name;
-              ]
-            else []
+            check_port_directions ~scope conn from_port to_port from_inst
+              to_inst from_port_name to_port_name
           in
           let type_diags =
             check_connection_types ~scope tu_env conn.conn_from_port.loc
               from_port to_port from_inst to_inst from_port_name to_port_name
           in
           let unmatched_diag =
-            if conn.conn_unmatched then
-              if not (is_matched_port from_comp from_port_name) then
-                [
-                  errorf ~sm_name:scope conn.conn_from_port.loc
-                    "'unmatched' used on port '%s.%s' which is not in a port \
-                     matching"
-                    from_inst from_port_name;
-                ]
-              else []
-            else []
+            check_unmatched ~scope conn from_comp from_inst from_port_name
           in
           direction_diags @ type_diags @ unmatched_diag
   | _ -> []
@@ -1384,9 +1397,56 @@ let check_matched_port_numbering ~scope tu_env topo_instances members =
 
 (* ── Unconnected port detection ─────────────────────────────────────── *)
 
+let port_matches_pattern ~is_source (kind : Ast.graph_pattern_kind)
+    (g : Ast.port_instance_general) =
+  let port_type =
+    match g.gen_port with
+    | Some qi -> Ast.qual_ident_to_string qi.data
+    | None -> ""
+  in
+  match kind with
+  | Pattern_command -> is_source && port_type = "Fw.Cmd"
+  | Pattern_health -> port_type = "Svc.Ping"
+  | _ -> false
+
+let mark_pattern_connections tu_env connected ~pattern_kind ~pattern_source
+    ~pattern_targets =
+  List.iter
+    (fun (qi : Ast.qual_ident Ast.node) ->
+      let tname = Ast.qual_ident_to_string qi.data in
+      match resolve_instance_comp tu_env tname with
+      | None -> ()
+      | Some tcomp ->
+          List.iter
+            (fun ann ->
+              match (Ast.unannotate ann).Ast.data with
+              | Ast.Comp_spec_port_instance (Port_general g)
+                when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                     || g.gen_kind = Guarded_input ->
+                  if port_matches_pattern ~is_source:false pattern_kind g then
+                    Hashtbl.replace connected
+                      (tname ^ "." ^ g.gen_name.data)
+                      true
+              | _ -> ())
+            tcomp.comp_members)
+    pattern_targets;
+  let sname = Ast.qual_ident_to_string pattern_source.Ast.data in
+  match resolve_instance_comp tu_env sname with
+  | None -> ()
+  | Some scomp ->
+      List.iter
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Comp_spec_port_instance (Port_general g)
+            when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                 || g.gen_kind = Guarded_input ->
+              if port_matches_pattern ~is_source:true pattern_kind g then
+                Hashtbl.replace connected (sname ^ "." ^ g.gen_name.data) true
+          | _ -> ())
+        scomp.comp_members
+
 let collect_connected_input_ports tu_env members =
   let connected = Hashtbl.create 32 in
-  (* Direct connections: target side *)
   List.iter
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
@@ -1401,66 +1461,9 @@ let collect_connected_input_ports tu_env members =
               let key = to_inst ^ "." ^ to_pid.pid_port.data in
               Hashtbl.replace connected key true)
             d.graph_connections
-      | Ast.Topo_spec_connection_graph (Graph_pattern p) -> (
-          (* Patterns connect special ports on targets. Mark all general input
-             ports of the appropriate type as connected for each target. *)
-          List.iter
-            (fun (qi : Ast.qual_ident Ast.node) ->
-              let tname = Ast.qual_ident_to_string qi.data in
-              match resolve_instance_comp tu_env tname with
-              | None -> ()
-              | Some tcomp ->
-                  List.iter
-                    (fun ann ->
-                      match (Ast.unannotate ann).Ast.data with
-                      | Ast.Comp_spec_port_instance (Port_general g)
-                        when g.gen_kind = Sync_input || g.gen_kind = Async_input
-                             || g.gen_kind = Guarded_input ->
-                          let key = tname ^ "." ^ g.gen_name.data in
-                          (* Mark input ports connected by pattern based on
-                             port type matching the pattern kind *)
-                          let port_type =
-                            match g.gen_port with
-                            | Some qi -> Ast.qual_ident_to_string qi.data
-                            | None -> ""
-                          in
-                          let matches =
-                            match p.pattern_kind with
-                            | Pattern_health -> port_type = "Svc.Ping"
-                            | _ -> false
-                          in
-                          if matches then Hashtbl.replace connected key true
-                      | _ -> ())
-                    tcomp.comp_members)
-            p.pattern_targets;
-          (* Also mark the source's input ports connected by the pattern *)
-          let sname = Ast.qual_ident_to_string p.pattern_source.data in
-          match resolve_instance_comp tu_env sname with
-          | None -> ()
-          | Some scomp ->
-              List.iter
-                (fun ann ->
-                  match (Ast.unannotate ann).Ast.data with
-                  | Ast.Comp_spec_port_instance (Port_general g)
-                    when g.gen_kind = Sync_input || g.gen_kind = Async_input
-                         || g.gen_kind = Guarded_input ->
-                      let port_type =
-                        match g.gen_port with
-                        | Some qi -> Ast.qual_ident_to_string qi.data
-                        | None -> ""
-                      in
-                      let matches =
-                        match p.pattern_kind with
-                        | Pattern_command -> port_type = "Fw.Cmd"
-                        | Pattern_health -> port_type = "Svc.Ping"
-                        | _ -> false
-                      in
-                      if matches then
-                        Hashtbl.replace connected
-                          (sname ^ "." ^ g.gen_name.data)
-                          true
-                  | _ -> ())
-                scomp.comp_members)
+      | Ast.Topo_spec_connection_graph (Graph_pattern p) ->
+          mark_pattern_connections tu_env connected ~pattern_kind:p.pattern_kind
+            ~pattern_source:p.pattern_source ~pattern_targets:p.pattern_targets
       | _ -> ())
     members;
   connected
@@ -1491,9 +1494,7 @@ let check_unconnected_ports ~scope tu_env topo_instances members =
 
 (* ── Synchronous cycle detection ──────────────────────────────────── *)
 
-let check_sync_cycles ~scope tu_env topo_instances members =
-  (* Build adjacency list: inst A -> inst B when a direct connection goes
-     from A's output port to B's sync input port *)
+let build_sync_graph tu_env members =
   let adj = Hashtbl.create 16 in
   let add_edge from_inst to_inst =
     let prev = Option.value ~default:[] (Hashtbl.find_opt adj from_inst) in
@@ -1516,7 +1517,6 @@ let check_sync_cycles ~scope tu_env topo_instances members =
                 Ast.qual_ident_to_string to_pid.pid_component.data
               in
               let to_port_name = to_pid.pid_port.data in
-              (* Check if the target port is a sync input *)
               match resolve_instance_comp tu_env to_inst with
               | Some comp -> (
                   match component_port comp to_port_name with
@@ -1527,7 +1527,9 @@ let check_sync_cycles ~scope tu_env topo_instances members =
             d.graph_connections
       | _ -> ())
     members;
-  (* DFS with grey/black colouring to detect back edges *)
+  adj
+
+let detect_cycles adj topo_instances =
   let white = 0 and grey = 1 and black = 2 in
   let colour = Hashtbl.create 16 in
   let cycles = ref [] in
@@ -1540,7 +1542,6 @@ let check_sync_cycles ~scope tu_env topo_instances members =
       (fun next ->
         match Option.value ~default:white (Hashtbl.find_opt colour next) with
         | c when c = grey ->
-            (* Back edge found — extract the cycle from path *)
             let cycle =
               let rec take = function
                 | [] -> []
@@ -1560,6 +1561,11 @@ let check_sync_cycles ~scope tu_env topo_instances members =
       if Option.value ~default:white (Hashtbl.find_opt colour inst) = white then
         dfs inst)
     topo_instances;
+  !cycles
+
+let check_sync_cycles ~scope tu_env topo_instances members =
+  let adj = build_sync_graph tu_env members in
+  let cycles = detect_cycles adj topo_instances in
   List.map
     (fun cycle ->
       let cycle_str = String.concat " -> " cycle ^ " -> " ^ List.hd cycle in
@@ -1569,7 +1575,7 @@ let check_sync_cycles ~scope tu_env topo_instances members =
         | None -> Ast.dummy_loc
       in
       warning ~sm_name:scope loc ("synchronous port cycle: " ^ cycle_str))
-    !cycles
+    cycles
 
 (* ── Topology orchestrator ─────────────────────────────────────────── *)
 

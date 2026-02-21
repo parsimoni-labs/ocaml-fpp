@@ -381,6 +381,78 @@ let dot_cmd =
   in
   Cmd.v info dot_term
 
+(* --- to-ml command --- *)
+
+let to_ml ~output ~sm_name files =
+  let buf = Buffer.create 4096 in
+  let ppf = Fmt.with_buffer buf in
+  let ok = ref true in
+  List.iter
+    (fun file ->
+      match Fpp.parse_file file with
+      | tu ->
+          let sms = Fpp.state_machines tu in
+          let sms =
+            match sm_name with
+            | None -> sms
+            | Some name ->
+                List.filter
+                  (fun (sm : Fpp.Ast.def_state_machine) ->
+                    sm.sm_name.data = name)
+                  sms
+          in
+          List.iter
+            (fun sm ->
+              Buffer.clear buf;
+              Fpp.Gen_ml.pp ppf sm;
+              Fmt.flush ppf ();
+              let text = Buffer.contents buf in
+              match output with
+              | Some path ->
+                  let oc = open_out path in
+                  Fun.protect
+                    ~finally:(fun () -> close_out oc)
+                    (fun () -> output_string oc text)
+              | None -> Fmt.pr "%s" text)
+            sms
+      | exception Fpp.Parse_error e ->
+          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
+          ok := false)
+    files;
+  if !ok then 0 else 1
+
+let to_ml_output_t =
+  let doc = "Output file. If omitted, OCaml code is written to stdout." in
+  Arg.(
+    value & opt (some string) None & info [ "o"; "output" ] ~doc ~docv:"FILE")
+
+let to_ml_files_t =
+  Arg.(
+    non_empty & pos_all file []
+    & info [] ~docv:"FILE" ~doc:"FPP files to generate OCaml from.")
+
+let to_ml_term =
+  let to_ml output sm_name files = to_ml ~output ~sm_name files in
+  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ to_ml_files_t)
+
+let to_ml_cmd =
+  let info =
+    Cmd.info "to-ml" ~doc:"Generate OCaml modules from state machines."
+      ~man:
+        [
+          `S "DESCRIPTION";
+          `P
+            "Parse FPP files and generate idiomatic OCaml code for state \
+             machines. The output uses GADTs for typed signals, module types \
+             for actions and guards, and functors for dependency injection.";
+          `S "EXAMPLES";
+          `P "$(iname) model.fpp                    # OCaml to stdout";
+          `P "$(iname) -o sm.ml model.fpp           # write to file";
+          `P "$(iname) --sm Thermostat model.fpp    # select one SM";
+        ]
+  in
+  Cmd.v info to_ml_term
+
 (* --- main --- *)
 
 let cmd =
@@ -398,7 +470,7 @@ let cmd =
           `P "$(b,https://nasa.github.io/fpp/fpp-users-guide.html)";
         ]
   in
-  Cmd.group info [ check_cmd; dot_cmd ]
+  Cmd.group info [ check_cmd; dot_cmd; to_ml_cmd ]
 
 let () =
   match Cmd.eval_value cmd with
