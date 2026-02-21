@@ -395,7 +395,22 @@ let rec pp_step ppf leaves all_states all_choices signals ~action_types
   List.iter
     (pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types)
     leaves;
-  pf ppf "@,    | _ -> t"
+  (* Only emit final catch-all if some leaf has no handled signals at all *)
+  let needs_final_catchall =
+    List.exists
+      (fun (leaf : Ast.def_state) ->
+        let trs = effective_transitions leaf all_states in
+        not
+          (List.exists
+             (fun (s : Ast.def_signal) ->
+               List.exists
+                 (fun (tr : Ast.spec_state_transition) ->
+                   tr.st_signal.data = s.signal_name.data)
+                 trs)
+             signals))
+      leaves
+  in
+  if needs_final_catchall then pf ppf "@,    | _ -> t"
 
 and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
     (leaf : Ast.def_state) =
