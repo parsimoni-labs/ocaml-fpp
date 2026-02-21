@@ -190,8 +190,17 @@ Generate filled GTest test cases using standard F Prime test macros:
 
 ## Code Generation (`ofpp to-ml`)
 
-- [ ] Generate OCaml types from FPP definitions
-- [ ] Generate state machine modules with variant types and transitions
+- [x] Generate phantom-typed GADT state machine modules
+- [x] Functor-based actions and guards (module types + dependency injection)
+- [x] Nested state flattening (leaf states only)
+- [x] Choice enter functions with guard dispatch
+- [x] Typed signals (FPP types mapped to OCaml: U32→int32, F64→float, etc.)
+- [x] Effective transitions (inherited from ancestor states)
+- [x] State shadowing support (parent/child same name)
+- [x] Nested initial-transition action collection
+- [x] CLI subcommand with `--output` and `--sm` flags
+- [x] Compile tests for all upstream state machine patterns
+- [ ] Generate OCaml types from FPP type definitions (structs, enums, arrays)
 - [ ] Generate test harness stubs
 
 ## Infrastructure

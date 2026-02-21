@@ -79,8 +79,8 @@ expressions. The parser produces zero Menhir conflicts and is validated against
 all 670 upstream test files imported from the reference compiler's test suite
 (35 categories covering codegen, state machines, topologies, ports, and more).
 
-Two subcommands are available: `ofpp check` for static analysis, and `ofpp dot`
-for state machine visualisation.
+Three subcommands are available: `ofpp check` for static analysis, `ofpp dot`
+for state machine visualisation, and `ofpp to-ml` for OCaml code generation.
 
 ## `ofpp check` -- static analysis
 
@@ -231,6 +231,46 @@ Rendering to image formats requires
 A [gallery](doc/gallery/index.html) of rendered diagrams is available for
 browsing, showing both the FPP source and the resulting SVG side by side.
 
+## `ofpp to-ml` -- OCaml code generation
+
+```
+ofpp to-ml [-o FILE] [--sm NAME] FILE...
+```
+
+Generate idiomatic OCaml modules from FPP state machines using phantom-typed
+GADTs, module types for actions and guards, and functors for dependency
+injection. The generated code leverages the OCaml type system to enforce state
+machine contracts at compile time.
+
+For a state machine with actions and guards, the generated output includes:
+
+- **Phantom types** for each leaf state (e.g. `type closed`, `type opened`)
+- **State GADT** (`type _ state = Closed : closed state | ...`)
+- **Existential wrapper** (`type any = State : _ state -> any`)
+- **Signal variant** (`type signal = Open | Close`)
+- **Module types** (`module type ACTIONS`, `module type GUARDS`) defining the
+  callbacks the user must implement
+- **Functor** (`module Make (A : ACTIONS) (G : GUARDS with type ctx = A.ctx)`)
+  producing an immutable state machine with `create`, `state`, and `step`
+
+Nested states are flattened to leaf states. Choice pseudostates become private
+`enter_*` functions that evaluate guards and dispatch to targets. Transitions
+are inherited from ancestor states, and entry actions are called when entering
+a leaf state.
+
+Without `-o`, OCaml text is written to stdout. With `-o`, the output is written
+to a file. The `--sm` flag selects a single state machine by name.
+
+### Examples
+
+```
+ofpp to-ml model.fpp                     # OCaml to stdout
+ofpp to-ml -o sm.ml model.fpp            # write to file
+ofpp to-ml --sm Thermostat model.fpp     # select one SM
+```
+
+This feature is not available in the upstream FPP toolchain.
+
 ## What is planned
 
 The roadmap (see [TODO.md](TODO.md)) covers three directions.
@@ -243,8 +283,9 @@ numeric range checking, and bounded response analysis.
 structure: GTest stubs for C++ projects, portable JSON vectors for any test
 runner, and QCheck property-based tests for OCaml harnesses.
 
-**OCaml code generation** (`ofpp to-ml`) will generate OCaml types and state
-machine modules from FPP definitions. This is at the research stage.
+**OCaml code generation** (`ofpp to-ml`) generates phantom-typed GADT state
+machine modules. Next steps include generating OCaml types from FPP type
+definitions (structs, enums, arrays) and test harness stubs.
 
 ## Building
 
@@ -262,10 +303,11 @@ dune exec -- ofpp check test/upstream/component/*.fpp
 dune runtest
 ```
 
-This runs over 1300 tests: unit tests covering core error checks,
-warning-level analyses, DOT rendering, and environment construction, plus
-upstream file parse and semantic check tests across all categories, and a
-cram test suite for the CLI.
+This runs over 1390 tests: unit tests covering core error checks,
+warning-level analyses, DOT rendering, code generation, and environment
+construction, plus upstream file parse and semantic check tests across all
+categories, and a cram test suite for the CLI including compile tests for
+generated OCaml.
 
 ## Benchmarks
 
