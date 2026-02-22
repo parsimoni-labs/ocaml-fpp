@@ -383,7 +383,53 @@ let dot_cmd =
 
 (* --- to-ml command --- *)
 
-let to_ml ~output ~sm_name files =
+let write_output output text =
+  match output with
+  | Some path ->
+      let oc = open_out path in
+      Fun.protect
+        ~finally:(fun () -> close_out oc)
+        (fun () -> output_string oc text)
+  | None -> print_string text
+
+let gen_ml_for_tu ppf tu ~sm_name ~topo_name =
+  let sms = Fpp.state_machines tu in
+  let sms =
+    match sm_name with
+    | None -> sms
+    | Some name ->
+        List.filter
+          (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
+          sms
+  in
+  let topos = Fpp.topologies tu in
+  let topos =
+    match topo_name with
+    | None -> topos
+    | Some name ->
+        List.filter
+          (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data = name)
+          topos
+  in
+  let wrap = List.length sms + List.length topos > 1 in
+  List.iter
+    (fun (sm : Fpp.Ast.def_state_machine) ->
+      if wrap then
+        Fmt.pf ppf "@[<v>module %s = struct@,"
+          (String.capitalize_ascii sm.sm_name.data);
+      Fpp.Gen_ml.pp ppf sm;
+      if wrap then Fmt.pf ppf "end@]@.")
+    sms;
+  List.iter
+    (fun (t : Fpp.Ast.def_topology) ->
+      if wrap then
+        Fmt.pf ppf "@[<v>module %s = struct@,"
+          (String.capitalize_ascii t.topo_name.data);
+      Fpp.Gen_ml.pp_topology tu ppf t;
+      if wrap then Fmt.pf ppf "end@]@.")
+    topos
+
+let to_ml ~output ~sm_name ~topo_name files =
   let buf = Buffer.create 4096 in
   let ppf = Fmt.with_buffer buf in
   let ok = ref true in
@@ -391,30 +437,11 @@ let to_ml ~output ~sm_name files =
     (fun file ->
       match Fpp.parse_file file with
       | tu ->
-          let sms = Fpp.state_machines tu in
-          let sms =
-            match sm_name with
-            | None -> sms
-            | Some name ->
-                List.filter
-                  (fun (sm : Fpp.Ast.def_state_machine) ->
-                    sm.sm_name.data = name)
-                  sms
-          in
-          List.iter
-            (fun sm ->
-              Buffer.clear buf;
-              Fpp.Gen_ml.pp ppf sm;
-              Fmt.flush ppf ();
-              let text = Buffer.contents buf in
-              match output with
-              | Some path ->
-                  let oc = open_out path in
-                  Fun.protect
-                    ~finally:(fun () -> close_out oc)
-                    (fun () -> output_string oc text)
-              | None -> print_string text)
-            sms
+          Buffer.clear buf;
+          gen_ml_for_tu ppf tu ~sm_name ~topo_name;
+          Fmt.flush ppf ();
+          let text = Buffer.contents buf in
+          if text <> "" then write_output output text
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
           ok := false)
@@ -431,24 +458,37 @@ let to_ml_files_t =
     non_empty & pos_all file []
     & info [] ~docv:"FILE" ~doc:"FPP files to generate OCaml from.")
 
+let topo_name_t =
+  Arg.(
+    value
+    & opt (some string) None
+    & info [ "topology" ] ~docv:"NAME"
+        ~doc:"Only output the topology named $(docv).")
+
 let to_ml_term =
-  let to_ml output sm_name files = to_ml ~output ~sm_name files in
-  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ to_ml_files_t)
+  let to_ml output sm_name topo_name files =
+    to_ml ~output ~sm_name ~topo_name files
+  in
+  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ topo_name_t $ to_ml_files_t)
 
 let to_ml_cmd =
   let info =
-    Cmd.info "to-ml" ~doc:"Generate OCaml modules from state machines."
+    Cmd.info "to-ml"
+      ~doc:"Generate OCaml modules from state machines and topologies."
       ~man:
         [
           `S "DESCRIPTION";
           `P
             "Parse FPP files and generate idiomatic OCaml code for state \
-             machines. The output uses GADTs for typed signals, module types \
-             for actions and guards, and functors for dependency injection.";
+             machines and topologies. State machines use GADTs for typed \
+             signals, module types for actions and guards, and functors for \
+             dependency injection. Topologies become OCaml functors with typed \
+             wiring.";
           `S "EXAMPLES";
-          `P "$(iname) model.fpp                    # OCaml to stdout";
-          `P "$(iname) -o sm.ml model.fpp           # write to file";
-          `P "$(iname) --sm Thermostat model.fpp    # select one SM";
+          `P "$(iname) model.fpp                        # OCaml to stdout";
+          `P "$(iname) -o out.ml model.fpp              # write to file";
+          `P "$(iname) --sm Thermostat model.fpp        # select one SM";
+          `P "$(iname) --topology System model.fpp      # select one topology";
         ]
   in
   Cmd.v info to_ml_term

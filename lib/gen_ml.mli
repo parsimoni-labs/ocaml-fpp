@@ -13,5 +13,5 @@ val pp : Ast.def_state_machine Fmt.t
 
 val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology tu] is a pretty-printer for topology [topo] as an OCaml module.
-    Generates module type signatures for each component and a [Make] functor
-    that wires connections. *)
+    Generates component module type signatures and a [Make] functor that wires
+    connections. *)
