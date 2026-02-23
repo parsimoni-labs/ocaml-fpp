@@ -411,6 +411,8 @@ let gen_ml_for_tu ppf tu ~sm_name ~topo_name =
           (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data = name)
           topos
   in
+  (* Emit module type aliases before topologies *)
+  if topos <> [] then Fpp.Gen_ml.pp_module_types tu ppf;
   let wrap = List.length sms + List.length topos > 1 in
   List.iter
     (fun (sm : Fpp.Ast.def_state_machine) ->

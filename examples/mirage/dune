@@ -1,0 +1,62 @@
+; Generate OCaml module types and functor wiring from mirage.fpp
+
+(rule
+ (target mirage.ml)
+ (deps mirage.fpp)
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:ofpp} to-ml %{deps}))))
+
+; Crunch static assets into Mirage_kv.RO-compatible modules
+
+(rule
+ (target htdocs_data.ml)
+ (deps
+  (source_tree htdocs))
+ (action
+  (with-stdout-to
+   %{target}
+   (run ocaml-crunch --mode lwt htdocs))))
+
+(rule
+ (target tls_data.ml)
+ (deps
+  (source_tree tls))
+ (action
+  (with-stdout-to
+   %{target}
+   (run ocaml-crunch --mode lwt tls))))
+
+(executable
+ (name main)
+ (modules main mirage server htdocs_data tls_data)
+ (libraries
+  mirage-vnetif
+  ethernet
+  arp.mirage
+  tcpip.ipv4
+  tcpip.icmpv4
+  tcpip.udp
+  tcpip
+  tcpip.tcp
+  tls
+  tls-mirage
+  x509
+  cstruct
+  mirage-kv
+  mirage-kv-mem
+  cohttp-mirage
+  cohttp-lwt
+  cohttp
+  magic-mime
+  uri
+  lwt
+  lwt.unix
+  ipaddr
+  mirage-crypto-rng.unix
+  mirage-sleep.unix
+  mirage-mtime.unix
+  logs
+  logs.fmt
+  fmt))

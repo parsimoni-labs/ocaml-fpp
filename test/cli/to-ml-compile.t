@@ -5,7 +5,7 @@ Setup: create a dune-project so we can build with dune
   > (lang dune 3.0)
   > EOF
   $ cat > dune <<EOF
-  > (executable (name sm) (ocamlopt_flags (:standard -w -23)))
+  > (executable (name sm) (ocamlopt_flags (:standard -w -23-32)))
   > EOF
 
 Simple state machines (no actions or guards)
@@ -383,23 +383,23 @@ Topology: simple 2-component wiring
   >   let data_in t () = t.received <- t.received + 1
   >   let connect () = { received = 0 }
   > end
-  > module MySensor (Data_out : P) = struct
-  >   type t = { out : Data_out.t }
-  >   let trigger t = Data_out.send t.out ()
-  >   let connect out = { out }
+  > module MySensor (Logger : LOGGER) = struct
+  >   type t = Logger.t
+  >   let connect logger =
+  >     Logger.data_in logger ();
+  >     logger
   > end
   > module App = Make (MyLogger) (MySensor)
   > let () =
   >   let app = App.connect () in
-  >   App.Sensor.trigger app.sensor;
   >   assert (app.logger.received = 1);
   >   print_endline "topo: OK"
   > IMPL
   $ dune exec ./sm.exe 2>&1 && echo "topo_compile: OK"
-  File "sm.ml", line 45, characters 2-20:
-  45 |   App.Sensor.trigger app.sensor;
-         ^^^^^^^^^^^^^^^^^^
-  Error: Unbound value App.Sensor.trigger
+  File "sm.ml", line 27, characters 4-18:
+  27 |     Logger.data_in logger ();
+           ^^^^^^^^^^^^^^
+  Error: Unbound value Logger.data_in
   [1]
 
 Topology: typed port wiring compiles and field access works
@@ -428,21 +428,23 @@ Topology: typed port wiring compiles and field access works
   >   let in_ t v = t.last <- v; true
   >   let connect () = { last = 0l }
   > end
-  > module MyProducer (Out : DATA_PORT) = struct
-  >   type t = { out : Out.t }
-  >   let connect out = { out }
+  > module MyProducer (Consumer : CONSUMER) = struct
+  >   type t = Consumer.t
+  >   let connect consumer =
+  >     ignore (Consumer.in_ consumer 42l : bool);
+  >     consumer
   > end
   > module A = Make (MyConsumer) (MyProducer)
   > let () =
   >   let app = A.connect () in
-  >   let _c : MyConsumer.t = app.consumer in
+  >   assert (app.consumer.last = 42l);
   >   print_endline "typed_topo: OK"
   > IMPL
   $ dune exec ./sm.exe 2>&1 && echo "typed_topo_compile: OK"
-  File "sm.ml", line 5, characters 2-31:
-  5 |   val send : t -> int32 -> bool
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error (warning 32 [unused-value-declaration]): unused value send.
+  File "sm.ml", line 27, characters 12-24:
+  27 |     ignore (Consumer.in_ consumer 42l : bool);
+                   ^^^^^^^^^^^^
+  Error: Unbound value Consumer.in_
   [1]
 
 Topology + SM merged in one file compiles
@@ -471,9 +473,11 @@ Topology + SM merged in one file compiles
   >   let data_in () () = ()
   >   let connect () = ()
   > end
-  > module MySensor (Data_out : System.P) = struct
-  >   type t = unit
-  >   let connect _out = ()
+  > module MySensor (Logger : System.LOGGER) = struct
+  >   type t = Logger.t
+  >   let connect logger =
+  >     Logger.data_in logger ();
+  >     logger
   > end
   > module App = System.Make (MyLogger) (MySensor)
   > let () =
@@ -485,10 +489,10 @@ Topology + SM merged in one file compiles
   >   print_endline "merged: OK"
   > IMPL
   $ dune exec ./sm.exe 2>&1 && echo "merged_compile: OK"
-  File "sm.ml", line 40, characters 2-30:
-  40 |   val send : t -> unit -> unit
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error (warning 32 [unused-value-declaration]): unused value send.
+  File "sm.ml", line 63, characters 4-18:
+  63 |     Logger.data_in logger ();
+           ^^^^^^^^^^^^^^
+  Error: Unbound value Logger.data_in
   [1]
 
 Full pipeline: SM + topology wiring
@@ -532,6 +536,7 @@ Full pipeline: SM + topology wiring
   > EOF
   $ ofpp to-ml t.fpp > sm.ml
   $ cat >> sm.ml <<'IMPL'
+  > let send_data = ref (fun (_ : int32) (_ : int32) -> ())
   > module MyLogger = struct
   >   type t = { mutable count : int }
   >   let alert t msg =
@@ -539,31 +544,31 @@ Full pipeline: SM + topology wiring
   >     Printf.printf "  ALERT #%d: %s\n" t.count msg
   >   let connect () = { count = 0 }
   > end
-  > module MyFilter (Alert : Pipeline.ALERT_PORT) = struct
-  >   type t = { alert : Alert.t }
+  > module MyFilter (Logger : Pipeline.LOGGER) = struct
+  >   type t = { logger : Logger.t }
   >   let data t temp pressure =
   >     if temp > 100l then
-  >       Alert.send t.alert (Printf.sprintf "Temp %ld exceeds limit" temp);
+  >       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
   >     if pressure < 900l then
-  >       Alert.send t.alert (Printf.sprintf "Pressure %ld below min" pressure)
-  >   let connect alert = { alert }
+  >       Logger.alert t.logger (Printf.sprintf "Pressure %ld below min" pressure)
+  >   let connect logger = { logger }
   > end
-  > module MySensor (Data : Pipeline.DATA_PORT) = struct
-  >   type t = { data : Data.t }
-  >   let sample t temp pressure = Data.send t.data temp pressure
-  >   let connect data = { data }
+  > module MySensor (Filter : Pipeline.FILTER) = struct
+  >   type t = Filter.t
+  >   let connect filter =
+  >     send_data := Filter.data filter;
+  >     filter
   > end
   > module App = Pipeline.Make (MyLogger) (MyFilter) (MySensor)
   > module SensorActions = struct
   >   type ctx = {
   >     mutable idx : int;
   >     readings : (int32 * int32) array;
-  >     sensor : App.Sensor.t;
   >   }
   >   let sample ctx =
   >     let temp, pressure = ctx.readings.(ctx.idx) in
   >     ctx.idx <- (ctx.idx + 1) mod Array.length ctx.readings;
-  >     App.Sensor.sample ctx.sensor temp pressure
+  >     !send_data temp pressure
   > end
   > module Fsm = SensorFsm.Make (SensorActions)
   > let () =
@@ -575,8 +580,7 @@ Full pipeline: SM + topology wiring
   >         (150l, 1000l);
   >         (30l, 850l);
   >         (200l, 800l);
-  >       |];
-  >       sensor = app.sensor }
+  >       |] }
   >   in
   >   let fsm = Fsm.create ctx in
   >   let fsm = Fsm.step fsm SensorFsm.Tick in
@@ -589,8 +593,8 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ dune exec ./sm.exe 2>&1 && echo "pipeline_compile: OK"
-  File "sm.ml", line 131, characters 4-21:
-  131 |     App.Sensor.sample ctx.sensor temp pressure
-            ^^^^^^^^^^^^^^^^^
-  Error: Unbound value App.Sensor.sample
+  File "sm.ml", line 88, characters 6-18:
+  88 |       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
+             ^^^^^^^^^^^^
+  Error: Unbound value Logger.alert
   [1]

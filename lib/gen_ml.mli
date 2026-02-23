@@ -14,4 +14,17 @@ val pp : Ast.def_state_machine Fmt.t
 val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology tu] is a pretty-printer for topology [topo] as an OCaml module.
     Generates component module type signatures and a [Make] functor that wires
-    connections. *)
+    connections via direct functor application. Follows the device-centric
+    MirageOS functor pattern: functor parameters are target component module
+    types (not per-port adapters). Components that are both functor targets and
+    have outputs get an [_S] operations-only module type. Active components use
+    [Lwt.t] return types.
+
+    In annotated (functor-application) mode, passive components are module-only:
+    they get functor applications but no record fields, connect calls, or Make
+    parameters. *)
+
+val pp_module_types : Ast.translation_unit -> Format.formatter -> unit
+(** [pp_module_types tu ppf] emits module type aliases from components annotated
+    with [@ ocaml.sig]. For example, a component [Net] with
+    [@ ocaml.sig Mirage_net.S] produces [module type NET = Mirage_net.S]. *)
