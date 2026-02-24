@@ -24,7 +24,7 @@ let camel_to_snake s =
 
 let constructor_name s = String.capitalize_ascii s
 
-let ocaml_type_of_fpp_type (tn : Ast.type_name) =
+let ocaml_type_of_fpp_type ?(type_env = []) (tn : Ast.type_name) =
   match tn with
   | Type_bool -> "bool"
   | Type_int (I8 | I16 | U8 | U16) -> "int"
@@ -33,13 +33,17 @@ let ocaml_type_of_fpp_type (tn : Ast.type_name) =
   | Type_float (F32 | F64) -> "float"
   | Type_string _ -> "string"
   | Type_qual qi -> (
-      let parts = List.map Ast.unnode (Ast.qual_ident_to_list qi.data) in
-      match List.rev parts with
-      | [] -> "unit"
-      | [ single ] -> camel_to_snake single
-      | last :: prefix ->
-          let modules = List.rev_map constructor_name prefix in
-          String.concat "." (modules @ [ camel_to_snake last ]))
+      let name = Ast.qual_ident_to_string qi.data in
+      match List.assoc_opt name type_env with
+      | Some t -> t
+      | None -> (
+          let parts = List.map Ast.unnode (Ast.qual_ident_to_list qi.data) in
+          match List.rev parts with
+          | [] -> "unit"
+          | [ single ] -> camel_to_snake single
+          | last :: prefix ->
+              let modules = List.rev_map constructor_name prefix in
+              String.concat "." (modules @ [ camel_to_snake last ])))
 
 let ocaml_keywords =
   [
@@ -840,6 +844,38 @@ let component_annots tu comp_name =
   in
   Option.value ~default:[] (search tu.Ast.tu_members)
 
+(** Collect a type environment from abstract type definitions in the translation
+    unit. Each [type Foo] becomes [("Foo", "Foo.t")] by default. An
+    [@ ocaml.type Path.t] annotation overrides the OCaml type. *)
+let collect_type_env tu =
+  let env = ref [] in
+  let process (pre, (node : Ast.module_member Ast.node), _) =
+    match node.Ast.data with
+    | Ast.Mod_def_abs_type at ->
+        let ocaml_type =
+          List.find_map
+            (fun s ->
+              let s = String.trim s in
+              if starts_with ~prefix:"ocaml.type " s then
+                Some (String.trim (String.sub s 11 (String.length s - 11)))
+              else None)
+            pre
+        in
+        let t =
+          match ocaml_type with Some t -> t | None -> at.abs_name.data ^ ".t"
+        in
+        env := (at.abs_name.data, t) :: !env
+    | _ -> ()
+  in
+  List.iter process tu.Ast.tu_members;
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_module m -> List.iter process m.Ast.module_members
+      | _ -> ())
+    tu.Ast.tu_members;
+  List.rev !env
+
 (* ── Topology code generation ────────────────────────────────────── *)
 
 (** Resolve a topology instance name to its component instance definition. *)
@@ -953,17 +989,17 @@ let resolve_port_def tu port_qi =
 
 (** Generate OCaml type string for a port's formal parameters and return type.
     Returns [(param_types, return_type)]. *)
-let port_type_parts (port_def : Ast.def_port) =
+let port_type_parts ~type_env (port_def : Ast.def_port) =
   let params =
     List.map
       (fun ann ->
         let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
-        ocaml_type_of_fpp_type fp.fp_type.data)
+        ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
       port_def.port_params
   in
   let ret =
     match port_def.port_return with
-    | Some tn -> ocaml_type_of_fpp_type tn.data
+    | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
     | None -> "unit"
   in
   (params, ret)
@@ -971,7 +1007,7 @@ let port_type_parts (port_def : Ast.def_port) =
 (** Pretty-print a module type generated from a component's input ports. For
     each [sync input port name: PortType], generates
     [val name : t -> param_types -> return_type]. *)
-let pp_port_module_type ppf tu (comp : Ast.def_component) =
+let pp_port_module_type ppf tu ~type_env (comp : Ast.def_component) =
   let name = String.uppercase_ascii (camel_to_snake comp.comp_name.data) in
   pf ppf "@,@,module type %s = sig" name;
   pf ppf "@,  type t";
@@ -988,7 +1024,7 @@ let pp_port_module_type ppf tu (comp : Ast.def_component) =
       | Some port_qi -> (
           match resolve_port_def tu port_qi.data with
           | Some port_def ->
-              let param_types, ret = port_type_parts port_def in
+              let param_types, ret = port_type_parts ~type_env port_def in
               pf ppf "@,  val %s : t" port_name;
               List.iter (fun t -> pf ppf " -> %s" t) param_types;
               pf ppf " -> %s" ret
@@ -1452,6 +1488,7 @@ let collect_topologies tu =
 (** Emit module types for leaf components in annotated topologies. The module
     type is generated from the component's input ports. *)
 let pp_module_types tu ppf =
+  let type_env = collect_type_env tu in
   let seen = Hashtbl.create 8 in
   let comps = ref [] in
   (* Collect leaf components from all annotated topologies. *)
@@ -1476,5 +1513,5 @@ let pp_module_types tu ppf =
   let comps = List.rev !comps in
   if comps <> [] then (
     pf ppf "@[<v>(* Module types generated by ofpp to-ml *)";
-    List.iter (pp_port_module_type ppf tu) comps;
+    List.iter (pp_port_module_type ppf tu ~type_env) comps;
     pf ppf "@]@.@.")

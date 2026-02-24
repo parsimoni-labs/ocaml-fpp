@@ -311,6 +311,55 @@ let test_annotated_default_functor () =
     "module Foo = Foo.Make(Bar)" true
     (contains ~substr:"module Foo = Foo.Make(Bar)" ml)
 
+(* ── External types ──────────────────────────────────────────────── *)
+
+let render_module_types s =
+  let tu = parse s in
+  let buf = Buffer.create 256 in
+  let ppf = Format.formatter_of_buffer buf in
+  Fpp.Gen_ml.pp_module_types tu ppf;
+  Format.pp_print_flush ppf ();
+  Buffer.contents buf
+
+let test_external_types () =
+  let ml =
+    render_module_types
+      {|
+    @ ocaml.type Cstruct.t
+    type Buffer
+    type Macaddr
+    port Write(data: Buffer)
+    port GetMac -> Macaddr
+    active component Net {
+      sync input port write: Write
+      sync input port mac: GetMac
+    }
+    active component Eth {
+      output port net: Write
+      sync input port write: Write
+    }
+    instance net: Net base id 0x100
+    instance eth: Eth base id 0x200
+    topology T {
+      instance net
+      instance eth
+      connections C { eth.net -> net.write }
+    }
+  |}
+  in
+  (* External type with @ ocaml.type annotation *)
+  Alcotest.(check bool)
+    "Cstruct.t in write" true
+    (contains ~substr:"Cstruct.t" ml);
+  (* External type with default Name.t convention *)
+  Alcotest.(check bool)
+    "Macaddr.t in mac" true
+    (contains ~substr:"Macaddr.t" ml);
+  (* Not the FPP-default camel_to_snake *)
+  Alcotest.(check bool)
+    "no buffer lowercase" false
+    (contains ~substr:"buffer" ml)
+
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
@@ -326,4 +375,5 @@ let suite =
       Alcotest.test_case "annotated_topology" `Quick test_annotated_topology;
       Alcotest.test_case "annotated_default_functor" `Quick
         test_annotated_default_functor;
+      Alcotest.test_case "external_types" `Quick test_external_types;
     ] )
