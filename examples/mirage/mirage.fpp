@@ -3,25 +3,40 @@
 @ Active components have runtime state (type t, connect).
 @ Passive components are module-only (functor applications only).
 
+@ ── Port types ─────────────────────────────────────────────
+
 port NetWrite(size: U32)
+port NetListen(header_size: U32)
+port MacAddr -> string
+port Mtu -> U32
+port Disconnect
 port EthWrite(dst: string, payload: string)
 port ArpQuery(ip: string) -> string
 port IpWrite(dst: string, payload: string)
 port IpConfig(prefix: string)
-port KvRead(key: string) -> string
+port KvGet(key: string) -> string
+port KvExists(key: string) -> bool
+port KvList(key: string) -> string
+port KvDigest(key: string) -> string
 port TlsFlow(payload: string)
 port HttpConn(uri: string)
 
 @ ── Leaf devices ────────────────────────────────────────────
 
-@ ocaml.sig Mirage_net.S
 active component Net {
+  sync input port disconnect: Disconnect
   sync input port write: NetWrite
+  sync input port listen: NetListen
+  sync input port mac: MacAddr
+  sync input port mtu: Mtu
 }
 
-@ ocaml.sig Mirage_kv.RO
 active component Kv {
-  sync input port read: KvRead
+  sync input port disconnect: Disconnect
+  sync input port get: KvGet
+  sync input port exists: KvExists
+  sync input port list: KvList
+  sync input port digest: KvDigest
 }
 
 @ ── Protocol layers ─────────────────────────────────────────
@@ -83,8 +98,8 @@ passive component Http_srv {
 
 @ ocaml.functor Server.HTTPS
 active component Server {
-  output port data_read: KvRead
-  output port certs_read: KvRead
+  output port data_read: KvGet
+  output port certs_read: KvGet
   output port http: HttpConn
 }
 
@@ -148,8 +163,8 @@ topology StaticWebsite {
     tls.tcp -> tcp.write
     https_srv.tls -> tls.flow
     http_srv.tcp -> tcp.write
-    server.data_read -> data.read
-    server.certs_read -> certs.read
+    server.data_read -> data.get
+    server.certs_read -> certs.get
     server.http -> https_srv.serve
   }
 }

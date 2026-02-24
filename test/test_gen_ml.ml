@@ -232,7 +232,6 @@ let test_annotated_topology () =
     render_topo
       {|
     port P
-    @ ocaml.sig Mirage_net.S
     active component Net { sync input port write: P }
     @ ocaml.functor Eth.Make
     active component Ethernet {
@@ -305,10 +304,8 @@ let test_annotated_default_functor () =
     }
   |}
   in
-  (* Bar has no annotation → default constraint sig type t end *)
-  Alcotest.(check bool)
-    "Bar : sig type t end" true
-    (contains ~substr:"(Bar : sig type t end)" ml);
+  (* Bar's constraint is generated from its ports *)
+  Alcotest.(check bool) "Bar : BAR" true (contains ~substr:"(Bar : BAR)" ml);
   (* Foo uses explicit annotation *)
   Alcotest.(check bool)
     "module Foo = Foo.Make(Bar)" true
