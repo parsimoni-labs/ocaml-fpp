@@ -1838,27 +1838,26 @@ let is_unseen_leaf_comp seen inst_annots connections sorted inst_name
   && instance_bound_module inst_annots inst_name = None
   && not (Hashtbl.mem seen comp.comp_name.data)
 
+let collect_leaf_comps_from_topo tu seen comps (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let inst_annots = instance_annotations topo in
+  let resolved = resolve_topology_instances tu topo in
+  let connections = all_connections (collect_direct_connections topo) in
+  let sorted = topo_sort_instances resolved connections in
+  if is_functor_mode tu sorted connections then
+    List.iter
+      (fun (inst_name, _ci, comp) ->
+        if
+          is_unseen_leaf_comp seen inst_annots connections sorted inst_name comp
+        then (
+          Hashtbl.add seen comp.comp_name.data ();
+          comps := comp :: !comps))
+      sorted
+
 let collect_leaf_comps tu topos =
   let seen = Hashtbl.create 8 in
   let comps = ref [] in
-  List.iter
-    (fun (topo : Ast.def_topology) ->
-      let topo = flatten_topology tu topo in
-      let inst_annots = instance_annotations topo in
-      let resolved = resolve_topology_instances tu topo in
-      let connections = all_connections (collect_direct_connections topo) in
-      let sorted = topo_sort_instances resolved connections in
-      if is_functor_mode tu sorted connections then
-        List.iter
-          (fun (inst_name, _ci, comp) ->
-            if
-              is_unseen_leaf_comp seen inst_annots connections sorted inst_name
-                comp
-            then (
-              Hashtbl.add seen comp.comp_name.data ();
-              comps := comp :: !comps))
-          sorted)
-    topos;
+  List.iter (collect_leaf_comps_from_topo tu seen comps) topos;
   List.rev !comps
 
 let pp_module_types tu topos ppf =
