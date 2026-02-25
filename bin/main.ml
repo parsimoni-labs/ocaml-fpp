@@ -668,7 +668,7 @@ let to_ml_cmd =
 
 let cmd =
   let info =
-    Cmd.info "ofpp" ~version:"%%VERSION%%"
+    Cmd.info "ofpp" ~version:Git_info.version
       ~doc:"Static analysis and test generation for F Prime FPP models."
       ~man:
         [

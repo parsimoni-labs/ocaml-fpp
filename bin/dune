@@ -3,3 +3,27 @@
  (public_name ofpp)
  (package fpp)
  (libraries fpp cmdliner fmt tty))
+
+; Dev builds: version is "dev"
+
+(rule
+ (target git_info.ml)
+ (enabled_if
+  (<> %{profile} release))
+ (action
+  (with-stdout-to
+   %{target}
+   (echo "let version = \"dev\""))))
+
+; Release builds: version is "<date>-<short-hash>"
+
+(rule
+ (target git_info.ml)
+ (deps (universe))
+ (enabled_if
+  (= %{profile} release))
+ (action
+  (with-stdout-to
+   %{target}
+   (bash
+    "echo 'let version = \"'$(git log -1 --format=%cd --date=short)-$(git rev-parse --short HEAD)'\"'"))))
