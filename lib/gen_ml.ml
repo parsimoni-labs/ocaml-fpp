@@ -477,6 +477,35 @@ let choices_need_rec all_choices =
         c.choice_members)
     all_choices
 
+(** Whether a choice references any typed action or guard (needs a value
+    parameter so the signal payload can be forwarded). *)
+let choice_needs_value ~action_types ~guard_types (c : Ast.def_choice) =
+  List.exists
+    (fun cm ->
+      let guard_typed =
+        match cm with
+        | Ast.Choice_if (Some g, _) -> (
+            match List.assoc_opt g.data guard_types with
+            | Some true -> true
+            | _ -> false)
+        | _ -> false
+      in
+      let acts =
+        match cm with
+        | Ast.Choice_if (_, te) -> te.data.trans_actions
+        | Ast.Choice_else te -> te.data.trans_actions
+      in
+      let act_typed =
+        List.exists
+          (fun (act : Ast.ident Ast.node) ->
+            match List.assoc_opt act.data action_types with
+            | Some true -> true
+            | _ -> false)
+          acts
+      in
+      guard_typed || act_typed)
+    c.choice_members
+
 let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
     ~has_ctx ~needs_rec ~first (c : Ast.def_choice) =
   let name = camel_to_snake c.choice_name.data in
@@ -486,7 +515,10 @@ let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
       if needs_rec then "let rec" else "let")
     else "and"
   in
-  pf ppf "@,@,  %s enter_%s t =" keyword name;
+  let needs_val = choice_needs_value ~action_types ~guard_types c in
+  if needs_val then pf ppf "@,@,  %s enter_%s t v =" keyword name
+  else pf ppf "@,@,  %s enter_%s t =" keyword name;
+  let sig_var = if needs_val then Some "v" else None in
   List.iter
     (fun cm ->
       match cm with
@@ -501,26 +533,38 @@ let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
                 | _ -> false
               in
               if has_type then
-                pf ppf "@,    if G.%s t.ctx (* TODO: value *) then ("
-                  (camel_to_snake g.data)
+                pf ppf "@,    if G.%s t.ctx v then (" (camel_to_snake g.data)
               else pf ppf "@,    if G.%s t.ctx then (" (camel_to_snake g.data)
           | None -> pf ppf "@,    (");
-          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx
-            ~sig_var:None acts tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~guard_types
+            ~has_ctx ~sig_var acts tgt;
           pf ppf ")"
       | Ast.Choice_else te ->
           let tgt = target_name te.data.trans_target in
           let acts = te.data.trans_actions in
           pf ppf "@,    else (";
-          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx
-            ~sig_var:None acts tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~guard_types
+            ~has_ctx ~sig_var acts tgt;
           pf ppf ")")
     c.choice_members
 
-and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-    ~indent tgt =
+and pp_enter_target ppf all_states all_choices ~action_types ~guard_types
+    ~has_ctx ~sig_var ~indent tgt =
   match resolve_target all_states all_choices tgt with
-  | Choice c -> pf ppf "@,%senter_%s t" indent (camel_to_snake c)
+  | Choice c ->
+      let needs_val =
+        match
+          List.find_opt
+            (fun (ch : Ast.def_choice) -> ch.choice_name.data = c)
+            all_choices
+        with
+        | Some ch -> choice_needs_value ~action_types ~guard_types ch
+        | None -> false
+      in
+      if needs_val then
+        let v = match sig_var with Some v -> v | None -> "(* TODO *)" in
+        pf ppf "@,%senter_%s t %s" indent (camel_to_snake c) v
+      else pf ppf "@,%senter_%s t" indent (camel_to_snake c)
   | Leaf leaf ->
       let entry_acts =
         match
@@ -550,8 +594,8 @@ and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
       if has_ctx then pf ppf "@,%s{ t with state = State %s }" indent ctor
       else pf ppf "@,%s{ state = State %s }" indent ctor
 
-and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-    acts tgt =
+and pp_choice_body ppf all_states all_choices ~action_types ~guard_types
+    ~has_ctx ~sig_var acts tgt =
   List.iter
     (fun (act : Ast.ident Ast.node) ->
       let has_type =
@@ -560,11 +604,13 @@ and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx ~sig_var
         | _ -> false
       in
       let name = camel_to_snake act.data in
-      if has_type then pf ppf "@,      A.%s t.ctx (* TODO: value *);" name
+      if has_type then
+        let v = match sig_var with Some v -> v | None -> "(* TODO *)" in
+        pf ppf "@,      A.%s t.ctx %s;" name v
       else pf ppf "@,      A.%s t.ctx;" name)
     acts;
-  pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-    ~indent:"      " tgt
+  pp_enter_target ppf all_states all_choices ~action_types ~guard_types ~has_ctx
+    ~sig_var ~indent:"      " tgt
 
 (* ── Action list helper ───────────────────────────────────────────── *)
 
@@ -647,8 +693,8 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
         else
           match unguarded with
           | [ tr ] ->
-              pp_transition ppf all_states all_choices ~action_types ~has_ctx
-                ~sig_var tr
+              pp_transition ppf all_states all_choices ~action_types
+                ~guard_types ~has_ctx ~sig_var tr
           | _ -> ()))
     signals;
   let n_handled =
@@ -683,27 +729,27 @@ and pp_guarded ppf all_states all_choices ~action_types ~guard_types ~has_ctx
           (camel_to_snake g.data) v
       else
         pf ppf "@,        %s G.%s t.ctx then begin" kw (camel_to_snake g.data);
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-        tr;
+      pp_transition ppf all_states all_choices ~action_types ~guard_types
+        ~has_ctx ~sig_var tr;
       pf ppf "@,        end")
     guarded;
   match unguarded with
   | [ tr ] ->
       pf ppf "@,        else begin";
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-        tr;
+      pp_transition ppf all_states all_choices ~action_types ~guard_types
+        ~has_ctx ~sig_var tr;
       pf ppf "@,        end"
   | _ -> pf ppf "@,        else t"
 
-and pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-    (tr : Ast.spec_state_transition) =
+and pp_transition ppf all_states all_choices ~action_types ~guard_types ~has_ctx
+    ~sig_var (tr : Ast.spec_state_transition) =
   match tr.st_action with
   | Ast.Transition te ->
       let tgt = target_name te.data.trans_target in
       pp_action_list ppf ~action_types ~sig_var ~indent:"        "
         te.data.trans_actions;
-      pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
-        ~indent:"        " tgt
+      pp_enter_target ppf all_states all_choices ~action_types ~guard_types
+        ~has_ctx ~sig_var ~indent:"        " tgt
   | Ast.Do acts ->
       pp_action_list ppf ~action_types ~sig_var ~indent:"        " acts;
       pf ppf "@,        t"
