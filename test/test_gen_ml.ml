@@ -1280,110 +1280,6 @@ module Make = struct
     Lwt.return { stack; srv }
 end|}
 
-(* ── Entry point generation ──────────────────────────────────────── *)
-
-let test_main_bare () =
-  let src =
-    {|
-    port P
-    port Dep
-    @ ocaml.functor Srv.Make
-    active component Srv {
-      output port kv: Dep
-    }
-    active component Kv { sync input port get: P }
-    instance kv: Kv base id 0x100
-    instance srv: Srv base id 0x200
-    @ ocaml.main
-    topology T {
-      @ ocaml.module Embedded_data
-      instance kv
-      instance srv
-      connections W { srv.kv -> kv.get }
-    } |}
-  in
-  (* --main generates only the entry point *)
-  let tu = parse src in
-  let topos = Fpp.topologies tu in
-  let buf = Buffer.create 256 in
-  let ppf = Format.formatter_of_buffer buf in
-  List.iter
-    (fun (t : Fpp.Ast.def_topology) ->
-      let annots = Fpp.Gen_ml.topology_annotations tu t in
-      match Fpp.Gen_ml.parse_main_annotation annots with
-      | Some start_fn ->
-          let topo_name = String.capitalize_ascii t.topo_name.data in
-          let qualified = "Lib." ^ topo_name in
-          Fpp.Gen_ml.pp_main_entry ppf ~wrap:true qualified start_fn
-      | None -> ())
-    topos;
-  Format.pp_print_flush ppf ();
-  check_output ~msg:"@ ocaml.main generates Lwt_main.run entry point"
-    (Buffer.contents buf)
-    {|let () =
-  Lwt_main.run (Lib.T.Make.connect () |> Lwt.map ignore)|}
-
-let test_main_with_start () =
-  let src =
-    {|
-    port P
-    port Dep
-    @ ocaml.functor Srv.Make
-    active component Srv {
-      output port kv: Dep
-    }
-    active component Kv { sync input port get: P }
-    instance kv: Kv base id 0x100
-    instance srv: Srv base id 0x200
-    @ ocaml.main App.start
-    topology T {
-      @ ocaml.module Embedded_data
-      instance kv
-      instance srv
-      connections W { srv.kv -> kv.get }
-    } |}
-  in
-  let tu = parse src in
-  let topos = Fpp.topologies tu in
-  let buf = Buffer.create 256 in
-  let ppf = Format.formatter_of_buffer buf in
-  List.iter
-    (fun (t : Fpp.Ast.def_topology) ->
-      let annots = Fpp.Gen_ml.topology_annotations tu t in
-      match Fpp.Gen_ml.parse_main_annotation annots with
-      | Some start_fn ->
-          let topo_name = String.capitalize_ascii t.topo_name.data in
-          let qualified = "Lib." ^ topo_name in
-          Fpp.Gen_ml.pp_main_entry ppf ~wrap:true qualified start_fn
-      | None -> ())
-    topos;
-  Format.pp_print_flush ppf ();
-  check_output ~msg:"@ ocaml.main App.start passes result to start function"
-    (Buffer.contents buf)
-    {|let () =
-  Lwt_main.run begin
-    let open Lwt.Syntax in
-    let* t = Lib.T.Make.connect () in
-    App.start t
-  end|}
-
-(* ── Multi-topology entry point ──────────────────────────────────── *)
-
-let test_main_multi () =
-  let buf = Buffer.create 256 in
-  let ppf = Format.formatter_of_buffer buf in
-  Fpp.Gen_ml.pp_main_entry_multi ppf ~prefix:"Lib"
-    [ ("DnsStack", None); ("UnixWebsite", Some "App.start") ];
-  Format.pp_print_flush ppf ();
-  check_output ~msg:"multi-topology combined entry point" (Buffer.contents buf)
-    {|let () =
-  Lwt_main.run begin
-    let open Lwt.Syntax in
-    let* dns_stack = DnsStack.Make.connect () in
-    let* unix_website = UnixWebsite.Make.connect () in
-    App.start dns_stack unix_website
-  end|}
-
 (* ── Suite ───────────────────────────────────────────────────────── *)
 
 let suite =
@@ -1427,10 +1323,6 @@ let suite =
       Alcotest.test_case "external_types" `Quick test_external_types;
       (* Topology — bound non-leaf instances *)
       Alcotest.test_case "bound_nonleaf" `Quick test_bound_nonleaf;
-      (* Topology — entry point generation *)
-      Alcotest.test_case "main_bare" `Quick test_main_bare;
-      Alcotest.test_case "main_with_start" `Quick test_main_with_start;
-      Alcotest.test_case "main_multi" `Quick test_main_multi;
       (* Topology — empty *)
       Alcotest.test_case "empty_topology" `Quick test_empty_topology;
       (* Topology — multiple groups *)

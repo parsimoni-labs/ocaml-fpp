@@ -30,29 +30,54 @@ val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
     code. Returns [false] for import-only topologies where every instance is
     passive. *)
 
+val topology_is_fully_bound : Ast.translation_unit -> Ast.def_topology -> bool
+(** [topology_is_fully_bound tu topo] is [true] when every leaf instance in
+    [topo] is bound via [@ ocaml.module]. A fully-bound topology has no functor
+    parameters and its [Make.connect] can be called with [()]. *)
+
 val pp_module_types :
   Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> unit
 (** [pp_module_types tu topos ppf] emits port-based module types for leaf
     components in [topos]. *)
 
-val topology_annotations :
+val topology_connect_names :
   Ast.translation_unit -> Ast.def_topology -> string list
-(** [topology_annotations tu topo] extracts pre-annotations from the topology
-    definition wrapper (e.g. [@ ocaml.main]). *)
+(** [topology_connect_names tu topo] returns the connection group names for
+    [topo] (already lowercased by {!collect_direct_connections}). *)
 
-val parse_main_annotation : string list -> string option option
-(** [parse_main_annotation annots] extracts [@ ocaml.main] from an annotation
-    list. Returns [Some (Some fn)] for [@ ocaml.main fn], [Some None] for bare
-    [@ ocaml.main], or [None] if not present. *)
+val pp_main_entry_multi : Format.formatter -> (string * string) list -> unit
+(** [pp_main_entry_multi ppf topos] emits a [let () = Lwt_main.run (...)] entry
+    point. Each element is [(topo_module_name, func_name)] where [func_name] is
+    a connection group name. *)
 
-val pp_main_entry :
-  Format.formatter -> wrap:bool -> string -> string option -> unit
-(** [pp_main_entry ppf ~wrap topo_name start_fn] emits
-    [let () = Lwt_main.run (...)] using the topology's [Make.connect]. When
-    [start_fn] is [Some fn], the connect result is passed to [fn]. *)
+(** {2 Topology Helpers} *)
 
-val pp_main_entry_multi :
-  Format.formatter -> prefix:string -> (string * string option) list -> unit
-(** [pp_main_entry_multi ppf ~prefix topos] emits a combined entry point. Each
-    element is [(topo_name, start_fn_opt)]. The [prefix] is the OCaml module
-    containing the topology definitions (inferred from filename). *)
+val collect_topologies : Ast.translation_unit -> Ast.def_topology list
+(** [collect_topologies tu] collects all topology definitions from [tu],
+    including those nested in modules. *)
+
+val flatten_topology :
+  Ast.translation_unit -> Ast.def_topology -> Ast.def_topology
+(** [flatten_topology tu topo] resolves [import] directives recursively. Public
+    instances and connections from imported topologies are merged into the
+    result. *)
+
+val resolve_topology_instances :
+  Ast.translation_unit ->
+  Ast.def_topology ->
+  (string * Ast.def_component_instance * Ast.def_component) list
+(** [resolve_topology_instances tu topo] is the list of
+    [(instance_name, component_instance, component)] triples for all component
+    instances in [topo]. *)
+
+val collect_direct_connections :
+  Ast.def_topology -> (string * Ast.connection list) list
+(** [collect_direct_connections topo] is the direct connections in [topo],
+    grouped by graph name. Groups with the same name are merged. *)
+
+val all_connections : (string * Ast.connection list) list -> Ast.connection list
+(** [all_connections groups] merges all connection groups into a flat list. *)
+
+val pid_inst_name : Ast.port_instance_id -> string
+(** [pid_inst_name pid] extracts the instance name from a port instance
+    identifier. *)

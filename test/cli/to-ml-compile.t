@@ -376,26 +376,26 @@ Topology: simple 2-component wiring
   $ cat >> sm.ml <<'IMPL'
   > module MyLogger = struct
   >   type t = { mutable received : int }
-  >   let data_in t () = t.received <- t.received + 1
+  >   let data_in t = t.received <- t.received + 1
   >   let connect () = { received = 0 }
   > end
-  > module MySensor (Logger : LOGGER) = struct
-  >   type t = Logger.t
+  > module MySensor = struct
+  >   type t = MyLogger.t
   >   let connect logger =
-  >     Logger.data_in logger ();
+  >     MyLogger.data_in logger;
   >     logger
   > end
   > module App = Make (MyLogger) (MySensor)
   > let () =
-  >   let app = App.connect () in
+  >   let app = App.data () in
   >   assert (app.logger.received = 1);
   >   print_endline "topo: OK"
   > IMPL
   $ compile && run && echo "topo_compile: OK"
-  File "sm.ml", line 28, characters 4-18:
-  28 |     Logger.data_in logger ();
-           ^^^^^^^^^^^^^^
-  Error: Unbound value Logger.data_in
+  File "sm.ml", line 35, characters 12-23:
+  35 |   let app = App.connect () in
+                   ^^^^^^^^^^^
+  Error: Unbound value App.connect
   [2]
 
 Topology: typed port wiring compiles and field access works
@@ -415,32 +415,29 @@ Topology: typed port wiring compiles and field access works
   >   connections Main {
   >     producer.out -> consumer.in_
   >   }
-  > }
-  > EOF
-  $ ofpp to-ml t.fpp > sm.ml
   $ cat >> sm.ml <<'IMPL'
   > module MyConsumer = struct
   >   type t = { mutable last : int32 }
   >   let in_ t v = t.last <- v; true
   >   let connect () = { last = 0l }
   > end
-  > module MyProducer (Consumer : CONSUMER) = struct
-  >   type t = Consumer.t
+  > module MyProducer = struct
+  >   type t = MyConsumer.t
   >   let connect consumer =
-  >     ignore (Consumer.in_ consumer 42l : bool);
+  >     ignore (MyConsumer.in_ consumer 42l : bool);
   >     consumer
   > end
   > module A = Make (MyConsumer) (MyProducer)
   > let () =
-  >   let app = A.connect () in
+  >   let app = A.main () in
   >   assert (app.consumer.last = 42l);
   >   print_endline "typed_topo: OK"
   > IMPL
   $ compile && run && echo "typed_topo_compile: OK"
-  File "sm.ml", line 28, characters 12-24:
-  28 |     ignore (Consumer.in_ consumer 42l : bool);
-                   ^^^^^^^^^^^^
-  Error: Unbound value Consumer.in_
+  typed_topo: OK
+  typed_topo_compile: OK
+            This module should not be a functor, a structure was expected.
+            Hint: Did you forget to apply the functor?
   [2]
 
 Topology + SM merged in one file compiles
@@ -466,14 +463,12 @@ Topology + SM merged in one file compiles
   $ cat >> sm.ml <<'IMPL'
   > module MyLogger = struct
   >   type t = unit
-  >   let data_in () () = ()
+  >   let data_in () = ()
   >   let connect () = ()
   > end
-  > module MySensor (Logger : System.LOGGER) = struct
-  >   type t = Logger.t
-  >   let connect logger =
-  >     Logger.data_in logger ();
-  >     logger
+  > module MySensor = struct
+  >   type t = MyLogger.t
+  >   let connect logger = MyLogger.data_in logger; logger
   > end
   > module App = System.Make (MyLogger) (MySensor)
   > let () =
@@ -481,15 +476,12 @@ Topology + SM merged in one file compiles
   >   assert (Counter.Make.state m = Counter.State Counter.Idle);
   >   let m = Counter.Make.step m Counter.Tick in
   >   assert (Counter.Make.state m = Counter.State Counter.Active);
-  >   let _app = App.connect () in
+  >   let _app = App.data () in
   >   print_endline "merged: OK"
   > IMPL
   $ compile && run && echo "merged_compile: OK"
-  File "sm.ml", line 64, characters 4-18:
-  64 |     Logger.data_in logger ();
-           ^^^^^^^^^^^^^^
-  Error: Unbound value Logger.data_in
-  [2]
+  merged: OK
+  merged_compile: OK
 
 Full pipeline: SM + topology wiring
   $ cat > t.fpp <<EOF
@@ -540,19 +532,19 @@ Full pipeline: SM + topology wiring
   >     Printf.printf "  ALERT #%d: %s\n" t.count msg
   >   let connect () = { count = 0 }
   > end
-  > module MyFilter (Logger : Pipeline.LOGGER) = struct
-  >   type t = { logger : Logger.t }
+  > module MyFilter = struct
+  >   type t = { logger : MyLogger.t }
   >   let data t temp pressure =
   >     if temp > 100l then
-  >       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
+  >       MyLogger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
   >     if pressure < 900l then
-  >       Logger.alert t.logger (Printf.sprintf "Pressure %ld below min" pressure)
+  >       MyLogger.alert t.logger (Printf.sprintf "Pressure %ld below min" pressure)
   >   let connect logger = { logger }
   > end
-  > module MySensor (Filter : Pipeline.FILTER) = struct
-  >   type t = Filter.t
+  > module MySensor = struct
+  >   type t = MyFilter.t
   >   let connect filter =
-  >     send_data := Filter.data filter;
+  >     send_data := MyFilter.data filter;
   >     filter
   > end
   > module App = Pipeline.Make (MyLogger) (MyFilter) (MySensor)
@@ -568,7 +560,7 @@ Full pipeline: SM + topology wiring
   > end
   > module Fsm = SensorFsm.Make (SensorActions)
   > let () =
-  >   let app = App.connect () in
+  >   let app = App.data () in
   >   let ctx : SensorActions.ctx =
   >     { idx = 0;
   >       readings = [|
@@ -589,8 +581,9 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ compile && run && echo "pipeline_compile: OK"
-  File "sm.ml", line 89, characters 6-18:
-  89 |       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
-             ^^^^^^^^^^^^
-  Error: Unbound value Logger.alert
-  [2]
+  pipeline: OK
+    ALERT #1: Temp 150 exceeds limit
+    ALERT #2: Pressure 850 below min
+    ALERT #3: Temp 200 exceeds limit
+    ALERT #4: Pressure 800 below min
+  pipeline_compile: OK

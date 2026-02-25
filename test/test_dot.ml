@@ -181,6 +181,84 @@ let test_choice_with_actions () =
     "label node for choice edge" true
     (contains ~substr:"__e0" dot)
 
+(* ── Topology rendering ────────────────────────────────────────────── *)
+
+let render_topology s =
+  let tu = parse s in
+  let topos = Fpp.topologies tu in
+  let buf = Buffer.create 256 in
+  let ppf = Format.formatter_of_buffer buf in
+  List.iter (fun topo -> Fpp.Dot.pp_topology tu ppf topo) topos;
+  Format.pp_print_flush ppf ();
+  Buffer.contents buf
+
+let basic_topology_fpp =
+  {|
+  port Data
+  active component Sender { output port out: Data }
+  passive component Receiver { sync input port inp: Data }
+  instance s: Sender base id 0x100
+  instance r: Receiver base id 0x200
+  topology T {
+    instance s
+    instance r
+    connections C { s.out -> r.inp }
+  }
+|}
+
+let test_basic_topology () =
+  let dot = render_topology basic_topology_fpp in
+  Alcotest.(check bool)
+    "digraph header" true
+    (contains ~substr:{|digraph "T"|} dot);
+  Alcotest.(check bool) "rankdir=LR" true (contains ~substr:"rankdir=LR" dot);
+  Alcotest.(check bool) "sender node" true (contains ~substr:{|"s"|} dot);
+  Alcotest.(check bool) "receiver node" true (contains ~substr:{|"r"|} dot);
+  Alcotest.(check bool) "edge exists" true (contains ~substr:{|"s" -> "r"|} dot)
+
+let test_topology_component_colors () =
+  let dot = render_topology basic_topology_fpp in
+  (* Active component: green fill *)
+  Alcotest.(check bool)
+    "active green fill" true
+    (contains ~substr:{|fillcolor="#dcedc8"|} dot);
+  (* Passive component: blue fill *)
+  Alcotest.(check bool)
+    "passive blue fill" true
+    (contains ~substr:{|fillcolor="#e8f0fe"|} dot)
+
+let test_topology_edge_labels () =
+  let dot = render_topology basic_topology_fpp in
+  Alcotest.(check bool)
+    "port names in edge" true
+    (contains ~substr:{|out → inp|} dot)
+
+let test_topology_with_import () =
+  let dot =
+    render_topology
+      {|
+    port Data
+    active component A { output port out: Data }
+    passive component B { sync input port inp: Data }
+    instance a1: A base id 0x100
+    instance b1: B base id 0x200
+    instance a2: A base id 0x300
+    topology Sub {
+      public instance a1
+      public instance b1
+      connections C { a1.out -> b1.inp }
+    }
+    topology Main {
+      import Sub
+      instance a2
+      connections C { a2.out -> b1.inp }
+    }
+  |}
+  in
+  Alcotest.(check bool)
+    "import cluster" true
+    (contains ~substr:{|subgraph "cluster_Sub"|} dot)
+
 (* ── Suite ──────────────────────────────────────────────────────────── *)
 
 let suite =
@@ -193,4 +271,8 @@ let suite =
       Alcotest.test_case "entry_exit_actions" `Quick test_entry_exit_actions;
       Alcotest.test_case "structured_labels" `Quick test_structured_labels;
       Alcotest.test_case "choice_with_actions" `Quick test_choice_with_actions;
+      Alcotest.test_case "basic_topology" `Quick test_basic_topology;
+      Alcotest.test_case "topology_colors" `Quick test_topology_component_colors;
+      Alcotest.test_case "topology_edge_labels" `Quick test_topology_edge_labels;
+      Alcotest.test_case "topology_import" `Quick test_topology_with_import;
     ] )

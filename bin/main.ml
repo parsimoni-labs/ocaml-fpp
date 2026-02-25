@@ -296,46 +296,75 @@ let run_dot dot_text output_path =
       Fmt.epr "%a dot failed to render %s@." pp_err () output_path;
       false
 
-let dot ~output ~sm_name files =
-  let ok = ref true in
-  let buf = Buffer.create 4096 in
-  let ppf = Fmt.with_buffer buf in
+let emit_dot_text output ok dot_text =
+  match output with
+  | Some path when is_image_output path ->
+      if not (run_dot dot_text path) then ok := false
+  | Some path ->
+      let oc = open_out path in
+      Fun.protect
+        ~finally:(fun () -> close_out oc)
+        (fun () -> output_string oc dot_text)
+  | None -> Fmt.pr "%s" dot_text
+
+let dot_render_sms buf ppf output ok tu ~sm_name =
+  let sms = Fpp.state_machines tu in
+  let sms =
+    match sm_name with
+    | None -> sms
+    | Some name ->
+        List.filter
+          (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
+          sms
+  in
   List.iter
-    (fun file ->
-      match Fpp.parse_file file with
-      | tu ->
-          let sms = Fpp.state_machines tu in
-          let sms =
-            match sm_name with
-            | None -> sms
-            | Some name ->
-                List.filter
-                  (fun (sm : Fpp.Ast.def_state_machine) ->
-                    sm.sm_name.data = name)
-                  sms
-          in
-          List.iter
-            (fun sm ->
-              Buffer.clear buf;
-              Fpp.Dot.pp ppf sm;
-              Fmt.flush ppf ();
-              let dot_text = Buffer.contents buf in
-              match output with
-              | Some path when is_image_output path ->
-                  if not (run_dot dot_text path) then ok := false
-              | Some path ->
-                  (* Write DOT text to file *)
-                  let oc = open_out path in
-                  Fun.protect
-                    ~finally:(fun () -> close_out oc)
-                    (fun () -> output_string oc dot_text)
-              | None -> Fmt.pr "%s" dot_text)
-            sms
-      | exception Fpp.Parse_error e ->
-          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
-          ok := false)
-    files;
-  if !ok then 0 else 1
+    (fun sm ->
+      Buffer.clear buf;
+      Fpp.Dot.pp ppf sm;
+      Fmt.flush ppf ();
+      emit_dot_text output ok (Buffer.contents buf))
+    sms
+
+let dot_render_topos buf ppf output ok tu ~topo_name =
+  let topos = Fpp.topologies tu in
+  let topos =
+    match topo_name with
+    | None -> topos
+    | Some name ->
+        List.filter
+          (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data = name)
+          topos
+  in
+  List.iter
+    (fun topo ->
+      Buffer.clear buf;
+      Fpp.Dot.pp_topology tu ppf topo;
+      Fmt.flush ppf ();
+      emit_dot_text output ok (Buffer.contents buf))
+    topos
+
+let dot ~output ~sm_name ~topo_name files =
+  if sm_name <> None && topo_name <> None then begin
+    Fmt.epr "%a --sm and --topology are mutually exclusive@." pp_err ();
+    1
+  end
+  else
+    let ok = ref true in
+    let buf = Buffer.create 4096 in
+    let ppf = Fmt.with_buffer buf in
+    List.iter
+      (fun file ->
+        match Fpp.parse_file file with
+        | tu ->
+            if topo_name = None then
+              dot_render_sms buf ppf output ok tu ~sm_name;
+            if sm_name = None then
+              dot_render_topos buf ppf output ok tu ~topo_name
+        | exception Fpp.Parse_error e ->
+            Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
+            ok := false)
+      files;
+    if !ok then 0 else 1
 
 let output_t =
   let doc =
@@ -358,24 +387,38 @@ let dot_files_t =
     non_empty & pos_all file []
     & info [] ~docv:"FILE" ~doc:"FPP files to render.")
 
+let topo_name_t =
+  Arg.(
+    value
+    & opt (some string) None
+    & info [ "topology" ] ~docv:"NAME"
+        ~doc:"Only output the topology named $(docv).")
+
 let dot_term =
-  let dot output sm_name files = dot ~output ~sm_name files in
-  Term.(const dot $ output_t $ sm_name_t $ dot_files_t)
+  let dot output sm_name topo_name files =
+    dot ~output ~sm_name ~topo_name files
+  in
+  Term.(const dot $ output_t $ sm_name_t $ topo_name_t $ dot_files_t)
 
 let dot_cmd =
   let info =
-    Cmd.info "dot" ~doc:"Render state machines as diagrams."
+    Cmd.info "dot" ~doc:"Render state machines and topologies as diagrams."
       ~man:
         [
           `S "DESCRIPTION";
           `P
-            "Parse FPP files and output state machine diagrams in Graphviz DOT \
-             format. With $(b,-o), renders directly to SVG, PNG, or PDF \
-             (requires $(b,dot) to be installed).";
+            "Parse FPP files and output state machine and topology diagrams in \
+             Graphviz DOT format. With $(b,-o), renders directly to SVG, PNG, \
+             or PDF (requires $(b,dot) to be installed).";
+          `P
+            "By default, all state machines and topologies are rendered. Use \
+             $(b,--sm) to render only a named state machine, or \
+             $(b,--topology) to render only a named topology.";
           `S "EXAMPLES";
           `P "$(iname) model.fpp                    # DOT to stdout";
           `P "$(iname) -o sm.svg model.fpp          # render to SVG";
-          `P "$(iname) -o sm.png model.fpp          # render to PNG";
+          `P "$(iname) --topology T model.fpp       # topology only";
+          `P "$(iname) --sm M model.fpp             # state machine only";
           `P "$(iname) model.fpp | dot -Tsvg -o sm.svg  # manual pipe";
         ]
   in
@@ -392,79 +435,67 @@ let write_output output text =
         (fun () -> output_string oc text)
   | None -> print_string text
 
-let module_of_file file =
-  Filename.basename file |> Filename.chop_extension |> String.capitalize_ascii
+let pp_wrapped_topo ppf tu ~wrap t =
+  if Fpp.Gen_ml.topology_has_output tu t then begin
+    if wrap then
+      Fmt.pf ppf "@[<v>module %s = struct@,"
+        (String.capitalize_ascii (t : Fpp.Ast.def_topology).topo_name.data);
+    Fpp.Gen_ml.pp_topology tu ppf t;
+    if wrap then Fmt.pf ppf "end@]@."
+  end
 
-let gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only ~file =
-  if types_only then begin
-    let topos = Fpp.topologies tu in
-    if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf
-  end
-  else if topologies <> [] then begin
-    let all_topos = Fpp.topologies tu in
-    let topos =
-      List.filter
-        (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
-        all_topos
-    in
-    List.iter
+let gen_ml_types_only ppf tu =
+  let topos = Fpp.topologies tu in
+  if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf
+
+let gen_ml_topologies ppf tu topologies =
+  let all_topos = Fpp.topologies tu in
+  let topos =
+    List.filter
+      (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
+      all_topos
+  in
+  let wrap = List.length topos > 1 in
+  List.iter (pp_wrapped_topo ppf tu ~wrap) topos;
+  let entry_topos =
+    List.filter_map
       (fun (t : Fpp.Ast.def_topology) ->
-        if Fpp.Gen_ml.topology_has_output tu t then begin
-          let wrap = List.length topos > 1 in
-          if wrap then
-            Fmt.pf ppf "@[<v>module %s = struct@,"
-              (String.capitalize_ascii t.topo_name.data);
-          Fpp.Gen_ml.pp_topology tu ppf t;
-          if wrap then Fmt.pf ppf "end@]@."
-        end)
-      topos;
-    (* Always emit entry point when --topologies is used *)
-    let entry_topos =
-      List.filter_map
-        (fun (t : Fpp.Ast.def_topology) ->
-          if Fpp.Gen_ml.topology_has_output tu t then
-            Some (String.capitalize_ascii t.topo_name.data, None)
-          else None)
-        topos
-    in
-    if entry_topos <> [] then begin
-      let prefix = module_of_file file in
-      Fpp.Gen_ml.pp_main_entry_multi ppf ~prefix entry_topos
-    end
-  end
-  else begin
-    let sms = Fpp.state_machines tu in
-    let sms =
-      match sm_name with
-      | None -> sms
-      | Some name ->
-          List.filter
-            (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
-            sms
-    in
-    let topos = Fpp.topologies tu in
-    (* Emit module type aliases before topologies *)
-    if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf;
-    let wrap = List.length sms + List.length topos > 1 in
-    List.iter
-      (fun (sm : Fpp.Ast.def_state_machine) ->
-        if wrap then
-          Fmt.pf ppf "@[<v>module %s = struct@,"
-            (String.capitalize_ascii sm.sm_name.data);
-        Fpp.Gen_ml.pp ppf sm;
-        if wrap then Fmt.pf ppf "end@]@.")
-      sms;
-    List.iter
-      (fun (t : Fpp.Ast.def_topology) ->
-        if Fpp.Gen_ml.topology_has_output tu t then begin
-          if wrap then
-            Fmt.pf ppf "@[<v>module %s = struct@,"
-              (String.capitalize_ascii t.topo_name.data);
-          Fpp.Gen_ml.pp_topology tu ppf t;
-          if wrap then Fmt.pf ppf "end@]@."
-        end)
+        if Fpp.Gen_ml.topology_is_fully_bound tu t then
+          let names = Fpp.Gen_ml.topology_connect_names tu t in
+          let func_name = match names with n :: _ -> n | [] -> "connect" in
+          Some (String.capitalize_ascii t.topo_name.data, func_name)
+        else None)
       topos
-  end
+  in
+  if entry_topos <> [] then Fpp.Gen_ml.pp_main_entry_multi ppf entry_topos
+
+let gen_ml_all ppf tu ~sm_name =
+  let sms = Fpp.state_machines tu in
+  let sms =
+    match sm_name with
+    | None -> sms
+    | Some name ->
+        List.filter
+          (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
+          sms
+  in
+  let topos = Fpp.topologies tu in
+  if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf;
+  let wrap = List.length sms + List.length topos > 1 in
+  List.iter
+    (fun (sm : Fpp.Ast.def_state_machine) ->
+      if wrap then
+        Fmt.pf ppf "@[<v>module %s = struct@,"
+          (String.capitalize_ascii sm.sm_name.data);
+      Fpp.Gen_ml.pp ppf sm;
+      if wrap then Fmt.pf ppf "end@]@.")
+    sms;
+  List.iter (pp_wrapped_topo ppf tu ~wrap) topos
+
+let gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only =
+  if types_only then gen_ml_types_only ppf tu
+  else if topologies <> [] then gen_ml_topologies ppf tu topologies
+  else gen_ml_all ppf tu ~sm_name
 
 let to_ml ~output ~sm_name ~topologies ~types_only files =
   let buf = Buffer.create 4096 in
@@ -476,7 +507,7 @@ let to_ml ~output ~sm_name ~topologies ~types_only files =
       | tu ->
           Buffer.clear buf;
           Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-          gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only ~file;
+          gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only;
           Fmt.flush ppf ();
           let text = Buffer.contents buf in
           if text <> "" then write_output output text

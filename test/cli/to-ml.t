@@ -187,6 +187,7 @@ Simple topology (2 components, 1 connection)
   
   module type LOGGER = sig
     type t
+    val data_in : t -> unit
   end
   
   module type SENSOR = sig
@@ -194,10 +195,11 @@ Simple topology (2 components, 1 connection)
   end
   
   module Make
-    (Logger : LOGGER)
+    (Logger : sig include LOGGER val connect : unit -> t end)
     (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
-    let data logger =
+    let data () =
+      let logger = Logger.connect () in
       let sensor = Sensor.connect logger in
       { logger; sensor }
   end
@@ -237,6 +239,7 @@ Typed port topology
   
   module type CONSUMER = sig
     type t
+    val in_ : t -> int32 -> bool
   end
   
   module type PRODUCER = sig
@@ -244,10 +247,11 @@ Typed port topology
   end
   
   module Make
-    (Consumer : CONSUMER)
+    (Consumer : sig include CONSUMER val connect : unit -> t end)
     (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
     type t = { consumer : Consumer.t; producer : Producer.t; }
-    let main consumer =
+    let main () =
+      let consumer = Consumer.connect () in
       let producer = Producer.connect consumer in
       { consumer; producer }
   end
@@ -286,6 +290,7 @@ Filter by topology name
   
   module type B = sig
     type t
+    val in_ : t -> unit
   end
   
   module type A = sig
@@ -293,15 +298,16 @@ Filter by topology name
   end
   
   module Make
-    (B : B)
+    (B : sig include B val connect : unit -> t end)
     (A : sig include A val connect : B.t -> t end) = struct
     type t = { b : B.t; a : A.t; }
-    let c b =
+    let c () =
+      let b = B.connect () in
       let a = A.connect b in
       { b; a }
   end
   let () =
-    Lwt_main.run (Make.connect () |> Lwt.map ignore)
+    Lwt_main.run (Make.c () |> Lwt.map ignore)
 
 
 
@@ -359,6 +365,7 @@ SM + topology merged in one file (wrapped in named modules)
   
   module type LOGGER = sig
     type t
+    val data_in : t -> unit
   end
   
   module type SENSOR = sig
@@ -366,10 +373,11 @@ SM + topology merged in one file (wrapped in named modules)
   end
   
   module Make
-    (Logger : LOGGER)
+    (Logger : sig include LOGGER val connect : unit -> t end)
     (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
-    let data logger =
+    let data () =
+      let logger = Logger.connect () in
       let sensor = Sensor.connect logger in
       { logger; sensor }
   end
@@ -579,7 +587,7 @@ Entry point generation (--topologies generates topology + entry point)
       Lwt.return { kv; srv }
   end
   let () =
-    Lwt_main.run (Make.connect () |> Lwt.map ignore)
+    Lwt_main.run (Make.w () |> Lwt.map ignore)
 
 
 

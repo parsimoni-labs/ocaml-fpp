@@ -162,6 +162,58 @@ Render to SVG via -o
   $ test -f sm.svg && echo "SVG created"
   SVG created
 
+Basic topology (DOT to stdout)
+  $ cat > topo.fpp <<EOF
+  > port Data
+  > active component Sender { output port out: Data }
+  > passive component Receiver { sync input port inp: Data }
+  > instance s: Sender base id 0x100
+  > instance r: Receiver base id 0x200
+  > topology T {
+  >   instance s
+  >   instance r
+  >   connections C { s.out -> r.inp }
+  > }
+  > EOF
+  $ ofpp dot --topology T topo.fpp
+  digraph "T" {
+    compound=true;
+    rankdir=LR;
+    bgcolor=white;
+    pad="0.4";
+    node [fontname="Helvetica" fontsize=11];
+    edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
+    "s" [shape=box style="rounded,filled" fillcolor="#dcedc8" color="#558b2f" fontcolor="#1a1a2e" label=<s<br/><font point-size="9">&lt;Sender&gt;</font>>];
+    "r" [shape=box style="rounded,filled" fillcolor="#e8f0fe" color="#4285f4" fontcolor="#1a1a2e" label=<r<br/><font point-size="9">&lt;Receiver&gt;</font>>];
+    "s" -> "r" [label=<out → inp> fontsize=9];
+  }
+
+Filter by --topology name
+  $ cat > both.fpp <<EOF
+  > state machine M {
+  >   initial enter S
+  >   state S
+  > }
+  > port Data
+  > active component Sender { output port out: Data }
+  > passive component Receiver { sync input port inp: Data }
+  > instance s: Sender base id 0x100
+  > instance r: Receiver base id 0x200
+  > topology T {
+  >   instance s
+  >   instance r
+  >   connections C { s.out -> r.inp }
+  > }
+  > EOF
+  $ ofpp dot --topology T both.fpp | grep -c "digraph"
+  1
+  $ ofpp dot --topology T both.fpp | grep "digraph"
+  digraph "T" {
+
+File with both SM and topology renders both by default
+  $ ofpp dot both.fpp | grep -c "digraph"
+  2
+
 DOT output compiles for all upstream state machines
   $ for f in "$TESTDIR"/../upstream/state_machine/*.fpp; do
   >   dotout=$(ofpp dot "$f" 2>/dev/null)

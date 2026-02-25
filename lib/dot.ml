@@ -292,6 +292,129 @@ and emit_state_node ppf ids ~depth ~prefix (st : Ast.def_state) =
       | _ -> ())
     st.state_members
 
+(* ── Topology rendering ────────────────────────────────────────────── *)
+
+let pp_topo_preamble ppf name =
+  Fmt.pf ppf {|digraph "%s" {@.|} (escape_dot name);
+  Fmt.pf ppf
+    {|  compound=true;
+  rankdir=LR;
+  bgcolor=white;
+  pad="0.4";
+  node [fontname="Helvetica" fontsize=11];
+  edge [fontname="Helvetica" fontsize=9 color="#5f6368" fontcolor="#1a1a2e"];
+|}
+
+let instance_style (kind : Ast.component_kind) =
+  match kind with
+  | Active -> ("#dcedc8", "#558b2f")
+  | Passive -> ("#e8f0fe", "#4285f4")
+  | Queued -> ("#fff3e0", "#e65100")
+
+let emit_instance ppf ~ind name comp_name (kind : Ast.component_kind) =
+  let fill, border = instance_style kind in
+  indent ppf ind;
+  if name = comp_name then
+    Fmt.pf ppf
+      {|"%s" [shape=box style="rounded,filled" fillcolor="%s" color="%s" fontcolor="#1a1a2e" label="%s"];@.|}
+      (escape_dot name) fill border (escape_dot name)
+  else
+    Fmt.pf ppf
+      {|"%s" [shape=box style="rounded,filled" fillcolor="%s" color="%s" fontcolor="#1a1a2e" label=<%s<br/><font point-size="9">&lt;%s&gt;</font>>];@.|}
+      (escape_dot name) fill border (escape_html name) (escape_html comp_name)
+
+(** Collect import names from the original (unflattened) topology. *)
+let import_names (topo : Ast.def_topology) =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Topo_spec_top_import qi -> (
+          match qi.data with
+          | Ast.Unqualified id -> Some id.data
+          | Ast.Qualified _ -> Some (Ast.qual_ident_to_string qi.data))
+      | _ -> None)
+    topo.Ast.topo_members
+
+(** Collect public instance names from a sub-topology (after flattening). *)
+let sub_topology_instances tu name =
+  let topos = Gen_ml.collect_topologies tu in
+  match List.find_opt (fun t -> t.Ast.topo_name.data = name) topos with
+  | None -> SSet.empty
+  | Some sub ->
+      let flat = Gen_ml.flatten_topology tu sub in
+      List.fold_left
+        (fun acc ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Topo_spec_comp_instance ci -> (
+              match ci.ci_instance.data with
+              | Ast.Unqualified id -> SSet.add id.data acc
+              | Ast.Qualified _ ->
+                  SSet.add (Ast.qual_ident_to_string ci.ci_instance.data) acc)
+          | _ -> acc)
+        SSet.empty flat.Ast.topo_members
+
+let pp_import_cluster ppf instances inst_import imp_name =
+  let imp_instances =
+    List.filter (fun (n, _, _) -> inst_import n = Some imp_name) instances
+  in
+  if imp_instances <> [] then begin
+    Fmt.pf ppf {|  subgraph "cluster_%s" {@.|} (escape_dot imp_name);
+    Fmt.pf ppf {|    label="%s";@.|} (escape_dot imp_name);
+    Fmt.pf ppf {|    style="rounded,filled";@.|};
+    Fmt.pf ppf {|    fillcolor="#f8f9fa";@.|};
+    Fmt.pf ppf {|    color="#5f6368";@.|};
+    Fmt.pf ppf {|    fontname="Helvetica";@.|};
+    List.iter
+      (fun (n, _inst, comp) ->
+        emit_instance ppf ~ind:2 n comp.Ast.comp_name.data comp.comp_kind)
+      imp_instances;
+    Fmt.pf ppf "  }@."
+  end
+
+let add_connection_edges connections =
+  List.iter
+    (fun (conn : Ast.connection) ->
+      let from_inst = Gen_ml.pid_inst_name conn.conn_from_port.data in
+      let to_inst = Gen_ml.pid_inst_name conn.conn_to_port.data in
+      let from_port = conn.conn_from_port.data.pid_port.data in
+      let to_port = conn.conn_to_port.data.pid_port.data in
+      add_edge from_inst to_inst
+        (Fmt.str "%s → %s" (escape_html from_port) (escape_html to_port)))
+    connections
+
+let pp_topology tu ppf (topo : Ast.def_topology) =
+  let imports = import_names topo in
+  let import_inst_sets =
+    List.map (fun name -> (name, sub_topology_instances tu name)) imports
+  in
+  let flat = Gen_ml.flatten_topology tu topo in
+  let instances = Gen_ml.resolve_topology_instances tu flat in
+  let groups = Gen_ml.collect_direct_connections flat in
+  let connections = Gen_ml.all_connections groups in
+  edges := [];
+  pp_topo_preamble ppf topo.Ast.topo_name.data;
+  let inst_import name =
+    List.find_map
+      (fun (imp, set) -> if SSet.mem name set then Some imp else None)
+      import_inst_sets
+  in
+  List.iter (pp_import_cluster ppf instances inst_import) imports;
+  List.iter
+    (fun (n, _inst, comp) ->
+      if inst_import n = None then
+        emit_instance ppf ~ind:1 n comp.Ast.comp_name.data comp.comp_kind)
+    instances;
+  add_connection_edges connections;
+  List.iter
+    (fun e ->
+      if e.label = "" then
+        Fmt.pf ppf {|  "%s" -> "%s";@.|} (escape_dot e.src) (escape_dot e.dst)
+      else
+        Fmt.pf ppf {|  "%s" -> "%s" [label=<%s> fontsize=9];@.|}
+          (escape_dot e.src) (escape_dot e.dst) e.label)
+    (List.rev !edges);
+  Fmt.pf ppf "}@."
+
 (* ── Public API ────────────────────────────────────────────────────── *)
 
 let pp ppf (sm : Ast.def_state_machine) =
