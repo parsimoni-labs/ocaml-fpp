@@ -392,11 +392,8 @@ Topology: simple 2-component wiring
   >   print_endline "topo: OK"
   > IMPL
   $ compile && run && echo "topo_compile: OK"
-  File "sm.ml", line 35, characters 12-23:
-  35 |   let app = App.connect () in
-                   ^^^^^^^^^^^
-  Error: Unbound value App.connect
-  [2]
+  topo: OK
+  topo_compile: OK
 
 Topology: typed port wiring compiles and field access works
   $ cat > t.fpp <<EOF
@@ -415,6 +412,9 @@ Topology: typed port wiring compiles and field access works
   >   connections Main {
   >     producer.out -> consumer.in_
   >   }
+  > }
+  > EOF
+  $ ofpp to-ml t.fpp > sm.ml
   $ cat >> sm.ml <<'IMPL'
   > module MyConsumer = struct
   >   type t = { mutable last : int32 }
@@ -436,9 +436,6 @@ Topology: typed port wiring compiles and field access works
   $ compile && run && echo "typed_topo_compile: OK"
   typed_topo: OK
   typed_topo_compile: OK
-            This module should not be a functor, a structure was expected.
-            Hint: Did you forget to apply the functor?
-  [2]
 
 Topology + SM merged in one file compiles
   $ cat > t.fpp <<EOF
@@ -581,9 +578,9 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ compile && run && echo "pipeline_compile: OK"
-  pipeline: OK
     ALERT #1: Temp 150 exceeds limit
     ALERT #2: Pressure 850 below min
     ALERT #3: Temp 200 exceeds limit
     ALERT #4: Pressure 800 below min
+  pipeline: OK
   pipeline_compile: OK

@@ -795,6 +795,7 @@ let test_simple_topology () =
 
 module type LOGGER = sig
   type t
+  val data_in : t -> unit
 end
 
 module type SENSOR = sig
@@ -802,10 +803,11 @@ module type SENSOR = sig
 end
 
 module Make
-  (Logger : LOGGER)
+  (Logger : sig include LOGGER val connect : unit -> t end)
   (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
   type t = { logger : Logger.t; sensor : Sensor.t; }
-  let data logger =
+  let data () =
+    let logger = Logger.connect () in
     let sensor = Sensor.connect logger in
     { logger; sensor }
 end|}
@@ -828,6 +830,7 @@ let test_typed_port_topology () =
 
 module type CONSUMER = sig
   type t
+  val in_ : t -> int32 -> bool
 end
 
 module type PRODUCER = sig
@@ -835,10 +838,11 @@ module type PRODUCER = sig
 end
 
 module Make
-  (Consumer : CONSUMER)
+  (Consumer : sig include CONSUMER val connect : unit -> t end)
   (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
   type t = { consumer : Consumer.t; producer : Producer.t; }
-  let main consumer =
+  let main () =
+    let consumer = Consumer.connect () in
     let producer = Producer.connect consumer in
     { consumer; producer }
 end|}
@@ -1203,10 +1207,12 @@ let test_multi_group () =
 
 module type C = sig
   type t
+  val in_ : t -> unit
 end
 
 module type B = sig
   type t
+  val in_ : t -> unit
 end
 
 module type A = sig
@@ -1214,15 +1220,17 @@ module type A = sig
 end
 
 module Make
-  (C : C)
+  (C : sig include C val connect : unit -> t end)
   (B : sig include B val connect : C.t -> t end)
   (A : sig include A val connect : B.t -> t end) = struct
   type connect = { b : B.t; a : A.t; }
-  let connect b =
+  let connect () =
+    let b = B.connect () in
     let a = A.connect b in
     { b; a }
   type start = { c : C.t; b : B.t; }
-  let start c =
+  let start () =
+    let c = C.connect () in
     let b = B.connect c in
     { c; b }
 end|}
