@@ -353,9 +353,19 @@ let sub_topology_instances tu name =
           | _ -> acc)
         SSet.empty flat.Ast.topo_members
 
-let pp_import_cluster ppf instances inst_import imp_name =
+let connected_instances connections =
+  List.fold_left
+    (fun acc (conn : Ast.connection) ->
+      let from = Gen_ml.pid_inst_name conn.conn_from_port.data in
+      let to_ = Gen_ml.pid_inst_name conn.conn_to_port.data in
+      SSet.add from (SSet.add to_ acc))
+    SSet.empty connections
+
+let pp_import_cluster ppf instances connected inst_import imp_name =
   let imp_instances =
-    List.filter (fun (n, _, _) -> inst_import n = Some imp_name) instances
+    List.filter
+      (fun (n, _, _) -> inst_import n = Some imp_name && SSet.mem n connected)
+      instances
   in
   if imp_instances <> [] then begin
     Fmt.pf ppf {|  subgraph "cluster_%s" {@.|} (escape_dot imp_name);
@@ -391,6 +401,7 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
   let instances = Gen_ml.resolve_topology_instances tu flat in
   let groups = Gen_ml.collect_direct_connections flat in
   let connections = Gen_ml.all_connections groups in
+  let connected = connected_instances connections in
   edges := [];
   pp_topo_preamble ppf topo.Ast.topo_name.data;
   let inst_import name =
@@ -398,10 +409,10 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
       (fun (imp, set) -> if SSet.mem name set then Some imp else None)
       import_inst_sets
   in
-  List.iter (pp_import_cluster ppf instances inst_import) imports;
+  List.iter (pp_import_cluster ppf instances connected inst_import) imports;
   List.iter
     (fun (n, _inst, comp) ->
-      if inst_import n = None then
+      if inst_import n = None && SSet.mem n connected then
         emit_instance ppf ~ind:1 n comp.Ast.comp_name.data comp.comp_kind)
     instances;
   add_connection_edges connections;
