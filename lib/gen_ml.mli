@@ -32,9 +32,8 @@ val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
 
 val pp_module_types :
   Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> unit
-(** [pp_module_types tu topos ppf] emits module type aliases for leaf components
-    in [topos]. Components annotated with [@ ocaml.sig] produce aliases (e.g.
-    [module type NET = Mirage_net.S]); others get port-based module types. *)
+(** [pp_module_types tu topos ppf] emits port-based module types for leaf
+    components in [topos]. *)
 
 val topology_annotations :
   Ast.translation_unit -> Ast.def_topology -> string list

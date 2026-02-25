@@ -439,7 +439,6 @@ Annotated topology (functor-application mode)
   > }
   > active component Ipv4 {
   >   output port eth: P
-  >   @ ocaml.param
   >   sync input port cidr: P
   > }
   > instance net: Net base id 0x100

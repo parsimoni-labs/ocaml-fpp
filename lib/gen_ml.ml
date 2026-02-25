@@ -898,14 +898,7 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type functor_param = Literal of string | Placeholder
-
-type ocaml_annots = {
-  functor_path : string option;
-  functor_params : functor_param list option;
-  sig_path : string option;
-  connect_args : string option;
-}
+type ocaml_annots = { functor_path : string option }
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -917,37 +910,14 @@ let parse_ocaml_annotations annots =
       let s = String.trim s in
       if starts_with ~prefix:"ocaml.functor " s then
         let v = String.trim (String.sub s 14 (String.length s - 14)) in
-        match String.index_opt v '(' with
-        | None -> { acc with functor_path = Some v }
-        | Some i ->
-            let path = String.sub v 0 i in
-            let rest = String.sub v (i + 1) (String.length v - i - 2) in
-            let params =
-              String.split_on_char ',' rest
-              |> List.map (fun p ->
-                  let p = String.trim p in
-                  if p = "_" then Placeholder else Literal p)
-            in
-            {
-              functor_path = Some path;
-              functor_params = Some params;
-              sig_path = acc.sig_path;
-              connect_args = acc.connect_args;
-            }
-      else if starts_with ~prefix:"ocaml.sig " s then
-        let v = String.trim (String.sub s 10 (String.length s - 10)) in
-        { acc with sig_path = Some v }
-      else if starts_with ~prefix:"ocaml.connect_args " s then
-        let v = String.trim (String.sub s 19 (String.length s - 19)) in
-        { acc with connect_args = Some v }
+        let path =
+          match String.index_opt v '(' with
+          | None -> v
+          | Some i -> String.sub v 0 i
+        in
+        { functor_path = Some path }
       else acc)
-    {
-      functor_path = None;
-      functor_params = None;
-      sig_path = None;
-      connect_args = None;
-    }
-    annots
+    { functor_path = None } annots
 
 (** Extract pre-annotations for a component definition from tu_members. *)
 let component_annots tu comp_name =
@@ -1633,30 +1603,14 @@ let pp_functor_apps ppf tu inst_annots sorted connections =
               String.concat "." segments ^ ".Make"
         in
         pf ppf "@,  module %s = %s" mod_name functor_path;
-        match ca.functor_params with
-        | None ->
-            List.iter
-              (fun (target_inst, _) ->
-                pf ppf "(%s)" (constructor_name target_inst))
-              targets
-        | Some params ->
-            let targets_queue = ref targets in
-            List.iter
-              (fun p ->
-                match p with
-                | Literal name -> pf ppf "(%s)" name
-                | Placeholder -> (
-                    match !targets_queue with
-                    | (target_inst, _) :: rest ->
-                        pf ppf "(%s)" (constructor_name target_inst);
-                        targets_queue := rest
-                    | [] -> ()))
-              params))
+        List.iter
+          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
+          targets))
     sorted
 
 (** Emit individual connect calls for non-leaf, non-passive instances. Passive
     (module-only) components get functor applications but no connect. *)
-let pp_annotated_connect_calls ppf tu group_sorted connections =
+let pp_annotated_connect_calls ppf _tu group_sorted connections =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       if comp.comp_kind = Passive then ()
@@ -1672,13 +1626,7 @@ let pp_annotated_connect_calls ppf tu group_sorted connections =
           let config_ports =
             unconnected_input_ports inst_name comp connections
           in
-          let ca =
-            parse_ocaml_annotations (component_annots tu comp.comp_name.data)
-          in
           pf ppf "@,    %s%s = %s.connect" bind inst_var mod_name;
-          (match ca.connect_args with
-          | Some args -> pf ppf " %s" args
-          | None -> ());
           List.iter
             (fun (p : Ast.port_instance_general) ->
               pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1838,7 +1786,7 @@ let pp_topology_annotated ppf tu topo sorted groups =
 
 (** Whether a topology should use functor-application mode. Triggered when any
     component has an active non-leaf instance (the original rule) OR when any
-    component carries an [@ ocaml.functor] or [@ ocaml.sig] annotation. *)
+    component carries an [@ ocaml.functor] annotation. *)
 let is_functor_mode tu sorted connections =
   List.exists
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
@@ -1848,7 +1796,7 @@ let is_functor_mode tu sorted connections =
       let ca =
         parse_ocaml_annotations (component_annots tu comp.comp_name.data)
       in
-      Option.is_some ca.functor_path || Option.is_some ca.sig_path)
+      Option.is_some ca.functor_path)
     sorted
 
 (** Whether a topology would produce OCaml code. In functor-application mode,
@@ -1930,19 +1878,7 @@ let pp_module_types tu topos ppf =
   let comps = List.rev !comps in
   if comps <> [] then (
     pf ppf "@[<v>(* Module types generated by ofpp to-ml *)";
-    List.iter
-      (fun (comp : Ast.def_component) ->
-        let ca =
-          parse_ocaml_annotations (component_annots tu comp.comp_name.data)
-        in
-        match ca.sig_path with
-        | Some sig_path ->
-            let name =
-              String.uppercase_ascii (camel_to_snake comp.comp_name.data)
-            in
-            pf ppf "@,@,module type %s = %s" name sig_path
-        | None -> pp_port_module_type ppf tu ~type_env comp)
-      comps;
+    List.iter (fun comp -> pp_port_module_type ppf tu ~type_env comp) comps;
     pf ppf "@]@.@.")
 
 (** Emit a [let () = Lwt_main.run (...)] entry point. When [start_fn] is
