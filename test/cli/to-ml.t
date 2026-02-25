@@ -591,7 +591,6 @@ Entry point generation (--topologies generates topology + entry point)
 
 Types-only mode (--types emits only module type aliases)
   $ ofpp to-ml --types main_topo.fpp
-  [@@@ocamlformat "disable"]
 
 Types and topologies are mutually exclusive
   $ ofpp to-ml --types --topologies T main_topo.fpp

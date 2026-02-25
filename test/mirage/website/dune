@@ -73,9 +73,7 @@
   (:s ../../../examples/mirage/stacks.fpp)
   (:w ../../../examples/mirage/websites.fpp))
  (action
-  (with-stdout-to
-   %{target}
-   (run %{ofpp} to-ml --types %{t} %{d} %{s} %{w}))))
+  (run %{ofpp} to-ml --types -o %{target} %{t} %{d} %{s} %{w})))
 
 (executables
  (names test_unix_test test_unix_website test_multi_bound test_types)

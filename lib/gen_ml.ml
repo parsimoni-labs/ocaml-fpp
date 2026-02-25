@@ -2043,14 +2043,6 @@ let has_module_types tu topos =
   let comps = collect_leaf_comps tu topos in
   comps <> []
 
-let pp_module_types_raw tu topos ppf =
-  let comps = collect_leaf_comps tu topos in
-  if comps <> [] then (
-    let type_env = collect_type_env tu in
-    List.iter (fun comp -> pp_port_module_type ppf tu ~type_env comp) comps;
-    true)
-  else false
-
 let pp_module_types tu topos ppf =
   let comps = collect_leaf_comps tu topos in
   if comps <> [] then (

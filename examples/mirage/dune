@@ -14,9 +14,7 @@
  (target mirage.ml)
  (deps types.fpp devices.fpp stacks.fpp websites.fpp)
  (action
-  (with-stdout-to
-   %{target}
-   (run %{bin:ofpp} to-ml --types %{deps}))))
+  (run %{bin:ofpp} to-ml --types -o %{target} %{deps})))
 
 ; Generate topology + entry point for UnixWebsite
 
