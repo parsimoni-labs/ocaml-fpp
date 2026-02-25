@@ -392,48 +392,81 @@ let write_output output text =
         (fun () -> output_string oc text)
   | None -> print_string text
 
-let gen_ml_for_tu ppf tu ~sm_name ~topo_name =
-  let sms = Fpp.state_machines tu in
-  let sms =
-    match sm_name with
-    | None -> sms
-    | Some name ->
-        List.filter
-          (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
-          sms
-  in
-  let topos = Fpp.topologies tu in
-  let topos =
-    match topo_name with
-    | None -> topos
-    | Some name ->
-        List.filter
-          (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data = name)
-          topos
-  in
-  (* Emit module type aliases before topologies *)
-  if topos <> [] then Fpp.Gen_ml.pp_module_types tu ppf;
-  let wrap = List.length sms + List.length topos > 1 in
-  List.iter
-    (fun (sm : Fpp.Ast.def_state_machine) ->
-      if wrap then
-        Fmt.pf ppf "@[<v>module %s = struct@,"
-          (String.capitalize_ascii sm.sm_name.data);
-      Fpp.Gen_ml.pp ppf sm;
-      if wrap then Fmt.pf ppf "end@]@.")
-    sms;
-  List.iter
-    (fun (t : Fpp.Ast.def_topology) ->
-      if Fpp.Gen_ml.topology_has_output tu t then begin
+let module_of_file file =
+  Filename.basename file |> Filename.chop_extension |> String.capitalize_ascii
+
+let gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only ~file =
+  if types_only then begin
+    let topos = Fpp.topologies tu in
+    if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf
+  end
+  else if topologies <> [] then begin
+    let all_topos = Fpp.topologies tu in
+    let topos =
+      List.filter
+        (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
+        all_topos
+    in
+    List.iter
+      (fun (t : Fpp.Ast.def_topology) ->
+        if Fpp.Gen_ml.topology_has_output tu t then begin
+          let wrap = List.length topos > 1 in
+          if wrap then
+            Fmt.pf ppf "@[<v>module %s = struct@,"
+              (String.capitalize_ascii t.topo_name.data);
+          Fpp.Gen_ml.pp_topology tu ppf t;
+          if wrap then Fmt.pf ppf "end@]@."
+        end)
+      topos;
+    (* Always emit entry point when --topologies is used *)
+    let entry_topos =
+      List.filter_map
+        (fun (t : Fpp.Ast.def_topology) ->
+          if Fpp.Gen_ml.topology_has_output tu t then
+            Some (String.capitalize_ascii t.topo_name.data, None)
+          else None)
+        topos
+    in
+    if entry_topos <> [] then begin
+      let prefix = module_of_file file in
+      Fpp.Gen_ml.pp_main_entry_multi ppf ~prefix entry_topos
+    end
+  end
+  else begin
+    let sms = Fpp.state_machines tu in
+    let sms =
+      match sm_name with
+      | None -> sms
+      | Some name ->
+          List.filter
+            (fun (sm : Fpp.Ast.def_state_machine) -> sm.sm_name.data = name)
+            sms
+    in
+    let topos = Fpp.topologies tu in
+    (* Emit module type aliases before topologies *)
+    if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf;
+    let wrap = List.length sms + List.length topos > 1 in
+    List.iter
+      (fun (sm : Fpp.Ast.def_state_machine) ->
         if wrap then
           Fmt.pf ppf "@[<v>module %s = struct@,"
-            (String.capitalize_ascii t.topo_name.data);
-        Fpp.Gen_ml.pp_topology tu ppf t;
-        if wrap then Fmt.pf ppf "end@]@."
-      end)
-    topos
+            (String.capitalize_ascii sm.sm_name.data);
+        Fpp.Gen_ml.pp ppf sm;
+        if wrap then Fmt.pf ppf "end@]@.")
+      sms;
+    List.iter
+      (fun (t : Fpp.Ast.def_topology) ->
+        if Fpp.Gen_ml.topology_has_output tu t then begin
+          if wrap then
+            Fmt.pf ppf "@[<v>module %s = struct@,"
+              (String.capitalize_ascii t.topo_name.data);
+          Fpp.Gen_ml.pp_topology tu ppf t;
+          if wrap then Fmt.pf ppf "end@]@."
+        end)
+      topos
+  end
 
-let to_ml ~output ~sm_name ~topo_name files =
+let to_ml ~output ~sm_name ~topologies ~types_only files =
   let buf = Buffer.create 4096 in
   let ppf = Fmt.with_buffer buf in
   let ok = ref true in
@@ -442,7 +475,8 @@ let to_ml ~output ~sm_name ~topo_name files =
       match Fpp.parse_file file with
       | tu ->
           Buffer.clear buf;
-          gen_ml_for_tu ppf tu ~sm_name ~topo_name;
+          Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
+          gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only ~file;
           Fmt.flush ppf ();
           let text = Buffer.contents buf in
           if text <> "" then write_output output text
@@ -462,18 +496,41 @@ let to_ml_files_t =
     non_empty & pos_all file []
     & info [] ~docv:"FILE" ~doc:"FPP files to generate OCaml from.")
 
-let topo_name_t =
+let topologies_t =
+  let parse s =
+    Ok (String.split_on_char ',' s |> List.filter (fun s -> s <> ""))
+  in
+  let pp ppf names = Fmt.(list ~sep:comma string) ppf names in
+  let topo_conv = Arg.conv (parse, pp) in
   Arg.(
-    value
-    & opt (some string) None
-    & info [ "topology" ] ~docv:"NAME"
-        ~doc:"Only output the topology named $(docv).")
+    value & opt_all topo_conv []
+    & info [ "topologies" ] ~docv:"NAMES"
+        ~doc:
+          "Output only the named topologies and their entry points. \
+           Comma-separated names (e.g. $(b,--topologies T1,T2)). Module prefix \
+           for entry points is inferred from the input filename.")
+
+let types_only_t =
+  Arg.(
+    value & flag
+    & info [ "types" ]
+        ~doc:
+          "Output only module type aliases. Mutually exclusive with \
+           $(b,--topologies).")
 
 let to_ml_term =
-  let to_ml output sm_name topo_name files =
-    to_ml ~output ~sm_name ~topo_name files
+  let to_ml output sm_name topologies_lists types_only files =
+    if types_only && List.concat topologies_lists <> [] then begin
+      Fmt.epr "%a --types and --topologies are mutually exclusive@." pp_err ();
+      1
+    end
+    else
+      let topologies = List.concat topologies_lists in
+      to_ml ~output ~sm_name ~topologies ~types_only files
   in
-  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ topo_name_t $ to_ml_files_t)
+  Term.(
+    const to_ml $ to_ml_output_t $ sm_name_t $ topologies_t $ types_only_t
+    $ to_ml_files_t)
 
 let to_ml_cmd =
   let info =
@@ -489,10 +546,13 @@ let to_ml_cmd =
              dependency injection. Topologies become OCaml functors with typed \
              wiring.";
           `S "EXAMPLES";
-          `P "$(iname) model.fpp                        # OCaml to stdout";
-          `P "$(iname) -o out.ml model.fpp              # write to file";
+          `P "$(iname) model.fpp                        # everything to stdout";
+          `P "$(iname) --types model.fpp                # module types only";
+          `P
+            "$(iname) --topologies T1 model.fpp         # one topology + entry \
+             point";
+          `P "$(iname) --topologies T1,T2 model.fpp      # multiple topologies";
           `P "$(iname) --sm Thermostat model.fpp        # select one SM";
-          `P "$(iname) --topology System model.fpp      # select one topology";
         ]
   in
   Cmd.v info to_ml_term

@@ -1,4 +1,4 @@
-; Generate OCaml module types and functor wiring from mirage.fpp
+; Generate module type aliases from mirage.fpp
 
 (rule
  (mode
@@ -8,7 +8,19 @@
  (action
   (with-stdout-to
    %{target}
-   (run %{bin:ofpp} to-ml %{deps}))))
+   (run %{bin:ofpp} to-ml --types %{deps}))))
+
+; Generate topology + entry point for UnixWebsite
+
+(rule
+ (mode
+  (promote (until-clean)))
+ (target main.ml)
+ (deps mirage.fpp)
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{bin:ofpp} to-ml --topologies UnixWebsite %{deps}))))
 
 ; Crunch static assets into Mirage_kv.RO-compatible modules
 
@@ -34,6 +46,7 @@
  (name main)
  (modules main mirage server htdocs_data tls_data)
  (libraries
+  mirage-block
   mirage-vnetif
   ethernet
   arp.mirage

@@ -903,8 +903,8 @@ type functor_param = Literal of string | Placeholder
 type ocaml_annots = {
   functor_path : string option;
   functor_params : functor_param list option;
-  connect_args : string option;
   sig_path : string option;
+  connect_args : string option;
 }
 
 let starts_with ~prefix s =
@@ -928,19 +928,24 @@ let parse_ocaml_annotations annots =
                   let p = String.trim p in
                   if p = "_" then Placeholder else Literal p)
             in
-            { acc with functor_path = Some path; functor_params = Some params }
-      else if starts_with ~prefix:"ocaml.connect_args " s then
-        let v = String.trim (String.sub s 19 (String.length s - 19)) in
-        { acc with connect_args = Some v }
+            {
+              functor_path = Some path;
+              functor_params = Some params;
+              sig_path = acc.sig_path;
+              connect_args = acc.connect_args;
+            }
       else if starts_with ~prefix:"ocaml.sig " s then
         let v = String.trim (String.sub s 10 (String.length s - 10)) in
         { acc with sig_path = Some v }
+      else if starts_with ~prefix:"ocaml.connect_args " s then
+        let v = String.trim (String.sub s 19 (String.length s - 19)) in
+        { acc with connect_args = Some v }
       else acc)
     {
       functor_path = None;
       functor_params = None;
-      connect_args = None;
       sig_path = None;
+      connect_args = None;
     }
     annots
 
@@ -1003,6 +1008,33 @@ let instance_annotations (topo : Ast.def_topology) =
           Some (inst_name, pre)
       | _ -> None)
     topo.topo_members
+
+(** Extract topology-level annotations (e.g. [@ ocaml.main]). *)
+let topology_annotations tu (topo : Ast.def_topology) =
+  let rec search members =
+    List.find_map
+      (fun ((pre, node, _) : Ast.module_member Ast.node Ast.annotated) ->
+        match node.Ast.data with
+        | Ast.Mod_def_topology t when t.topo_name.data = topo.topo_name.data ->
+            Some pre
+        | Ast.Mod_def_module m -> search m.Ast.module_members
+        | _ -> None)
+      members
+  in
+  Option.value ~default:[] (search tu.Ast.tu_members)
+
+(** Parse [@ ocaml.main] or [@ ocaml.main App.start] from an annotation list.
+    Returns [Some (Some fn)] for a start function, [Some None] for bare main, or
+    [None] if no [@ ocaml.main] annotation is present. *)
+let parse_main_annotation annots =
+  List.find_map
+    (fun s ->
+      let s = String.trim s in
+      if s = "ocaml.main" then Some None
+      else if starts_with ~prefix:"ocaml.main " s then
+        Some (Some (String.trim (String.sub s 11 (String.length s - 11))))
+      else None)
+    annots
 
 (** Extract the concrete module name from an [@ ocaml.module X] annotation. *)
 let instance_bound_module inst_annots inst_name =
@@ -1546,19 +1578,24 @@ let pp_topology_functor ppf topo sorted groups =
 
 (* ── Annotated (functor-application) topology mode ───────────────── *)
 
-(** Input ports on [comp] that have no incoming connection for [inst_name] AND
-    are annotated with [@ ocaml.param]. Only these surface as labeled parameters
-    of the generated [connect] function — plain data-flow ports that happen to
-    be unconnected are silently ignored. *)
+(** Whether a port is a dependency-only marker ([port Dep]). Dep ports model
+    functor arguments in the connection graph but should not surface as labeled
+    connect parameters. *)
+let is_dep_port (p : Ast.port_instance_general) =
+  match p.gen_port with
+  | Some qi -> (
+      match qi.data with Ast.Unqualified id -> id.data = "Dep" | _ -> false)
+  | None -> false
+
+(** Input ports on [comp] that have no incoming connection for [inst_name].
+    These surface as labeled parameters of the generated [connect] function.
+    Dependency-only ports ([Dep]) are excluded — they model functor arguments,
+    not connect parameters. *)
 let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
-  let annotated_input_ports =
+  let input_ports =
     List.filter_map
-      (fun (pre, (p : Ast.port_instance_general)) ->
-        if
-          p.gen_kind <> Output
-          && List.exists (fun s -> String.trim s = "ocaml.param") pre
-        then Some p
-        else None)
+      (fun (_pre, (p : Ast.port_instance_general)) ->
+        if p.gen_kind <> Output && not (is_dep_port p) then Some p else None)
       (collect_general_ports_annotated comp)
   in
   List.filter
@@ -1570,14 +1607,17 @@ let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
              pid_inst_name conn.conn_to_port.data = inst_name
              && camel_to_snake conn.conn_to_port.data.pid_port.data = port_name)
            connections))
-    annotated_input_ports
+    input_ports
 
-(** Emit functor applications for non-leaf instances inside the Make struct. *)
-let pp_functor_apps ppf tu sorted connections =
+(** Emit functor applications for non-leaf instances inside the Make struct.
+    Bound instances (with [@ ocaml.module]) are skipped — they already have
+    module aliases. *)
+let pp_functor_apps ppf tu inst_annots sorted connections =
   List.iter
-    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp connections sorted in
-      if targets <> [] then (
+      if targets <> [] && instance_bound_module inst_annots inst_name = None
+      then (
         let mod_name = constructor_name inst_name in
         let ca =
           parse_ocaml_annotations (component_annots tu comp.comp_name.data)
@@ -1585,7 +1625,12 @@ let pp_functor_apps ppf tu sorted connections =
         let functor_path =
           match ca.functor_path with
           | Some s -> s
-          | None -> constructor_name comp.comp_name.data ^ ".Make"
+          | None ->
+              let parts = Ast.qual_ident_to_list ci.Ast.inst_component.data in
+              let segments =
+                List.map (fun n -> constructor_name n.Ast.data) parts
+              in
+              String.concat "." segments ^ ".Make"
         in
         pf ppf "@,  module %s = %s" mod_name functor_path;
         match ca.functor_params with
@@ -1759,19 +1804,15 @@ let pp_topology_annotated ppf tu topo sorted groups =
         pf ppf "@,  (%s : %s)" mod_name constraint_)
     concrete;
   pf ppf " = struct";
-  (* Emit module aliases for bound leaves *)
+  (* Emit module aliases for all bound instances *)
   List.iter
     (fun (inst_name, _ci, _comp) ->
-      let targets = target_instances inst_name _comp all_conns sorted in
-      if targets = [] then
-        match instance_bound_module inst_annots inst_name with
-        | Some concrete_mod ->
-            pf ppf "@,  module %s = %s"
-              (constructor_name inst_name)
-              concrete_mod
-        | None -> ())
+      match instance_bound_module inst_annots inst_name with
+      | Some concrete_mod ->
+          pf ppf "@,  module %s = %s" (constructor_name inst_name) concrete_mod
+      | None -> ())
     concrete;
-  pp_functor_apps ppf tu sorted all_conns;
+  pp_functor_apps ppf tu inst_annots sorted all_conns;
   List.iteri
     (fun i (name, conns) ->
       let gs = group_instances sorted conns in
@@ -1859,12 +1900,10 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
 
 (** Emit module types for leaf components in annotated topologies. The module
     type is generated from the component's input ports. *)
-let pp_module_types tu ppf =
+let pp_module_types tu topos ppf =
   let type_env = collect_type_env tu in
   let seen = Hashtbl.create 8 in
   let comps = ref [] in
-  (* Collect leaf components from all annotated topologies. *)
-  let topos = collect_topologies tu in
   List.iter
     (fun (topo : Ast.def_topology) ->
       let topo = flatten_topology tu topo in
@@ -1905,3 +1944,60 @@ let pp_module_types tu ppf =
         | None -> pp_port_module_type ppf tu ~type_env comp)
       comps;
     pf ppf "@]@.@.")
+
+(** Emit a [let () = Lwt_main.run (...)] entry point. When [start_fn] is
+    [Some fn], the connect result is passed to [fn]; otherwise it is discarded.
+    Uses [@.] (print_newline) instead of [@,] because this is called outside any
+    formatting box. *)
+let pp_main_entry ppf ~wrap topo_name start_fn =
+  let prefix = if wrap then topo_name ^ "." else "" in
+  match start_fn with
+  | None ->
+      pf ppf "let () =@.  Lwt_main.run (%sMake.connect () |> Lwt.map ignore)@."
+        prefix
+  | Some fn ->
+      pf ppf "let () =@.  Lwt_main.run begin@.";
+      pf ppf "    let open Lwt.Syntax in@.";
+      pf ppf "    let* t = %sMake.connect () in@." prefix;
+      pf ppf "    %s t@." fn;
+      pf ppf "  end@."
+
+let pp_main_entry_multi ppf ~prefix topos =
+  let has_start = List.exists (fun (_, s) -> s <> None) topos in
+  let wrap = List.length topos > 1 in
+  match topos with
+  | [] -> ()
+  | [ (_, start_fn) ] ->
+      (* Single topology, emitted locally without wrapping module *)
+      pp_main_entry ppf ~wrap:false "" start_fn
+  | _ ->
+      pf ppf "let () =@.  Lwt_main.run begin@.";
+      pf ppf "    let open Lwt.Syntax in@.";
+      List.iter
+        (fun (topo_name, _) ->
+          let var = camel_to_snake topo_name in
+          let mod_prefix =
+            if wrap then topo_name ^ "." else prefix ^ "." ^ topo_name ^ "."
+          in
+          pf ppf "    let* %s = %s%s () in@." var mod_prefix "Make.connect")
+        topos;
+      let start_fns = List.filter_map (fun (_, s) -> s) topos in
+      begin match start_fns with
+      | [ fn ] ->
+          let args = List.map (fun (name, _) -> camel_to_snake name) topos in
+          pf ppf "    %s %s@." fn (String.concat " " args)
+      | _ ->
+          if not has_start then pf ppf "    Lwt.return ()@."
+          else begin
+            List.iter
+              (fun (topo_name, start_fn) ->
+                match start_fn with
+                | Some fn ->
+                    let var = camel_to_snake topo_name in
+                    pf ppf "    let* () = %s %s in@." fn var
+                | None -> ())
+              topos;
+            pf ppf "    Lwt.return ()@."
+          end
+      end;
+      pf ppf "  end@."

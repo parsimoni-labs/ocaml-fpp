@@ -30,7 +30,30 @@ val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
     code. Returns [false] for import-only topologies where every instance is
     passive. *)
 
-val pp_module_types : Ast.translation_unit -> Format.formatter -> unit
-(** [pp_module_types tu ppf] emits module type aliases from components annotated
-    with [@ ocaml.sig]. For example, a component [Net] with
-    [@ ocaml.sig Mirage_net.S] produces [module type NET = Mirage_net.S]. *)
+val pp_module_types :
+  Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> unit
+(** [pp_module_types tu topos ppf] emits module type aliases for leaf components
+    in [topos]. Components annotated with [@ ocaml.sig] produce aliases (e.g.
+    [module type NET = Mirage_net.S]); others get port-based module types. *)
+
+val topology_annotations :
+  Ast.translation_unit -> Ast.def_topology -> string list
+(** [topology_annotations tu topo] extracts pre-annotations from the topology
+    definition wrapper (e.g. [@ ocaml.main]). *)
+
+val parse_main_annotation : string list -> string option option
+(** [parse_main_annotation annots] extracts [@ ocaml.main] from an annotation
+    list. Returns [Some (Some fn)] for [@ ocaml.main fn], [Some None] for bare
+    [@ ocaml.main], or [None] if not present. *)
+
+val pp_main_entry :
+  Format.formatter -> wrap:bool -> string -> string option -> unit
+(** [pp_main_entry ppf ~wrap topo_name start_fn] emits
+    [let () = Lwt_main.run (...)] using the topology's [Make.connect]. When
+    [start_fn] is [Some fn], the connect result is passed to [fn]. *)
+
+val pp_main_entry_multi :
+  Format.formatter -> prefix:string -> (string * string option) list -> unit
+(** [pp_main_entry_multi ppf ~prefix topos] emits a combined entry point. Each
+    element is [(topo_name, start_fn_opt)]. The [prefix] is the OCaml module
+    containing the topology definitions (inferred from filename). *)

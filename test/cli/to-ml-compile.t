@@ -392,8 +392,8 @@ Topology: simple 2-component wiring
   >   print_endline "topo: OK"
   > IMPL
   $ compile && run && echo "topo_compile: OK"
-  File "sm.ml", line 27, characters 4-18:
-  27 |     Logger.data_in logger ();
+  File "sm.ml", line 28, characters 4-18:
+  28 |     Logger.data_in logger ();
            ^^^^^^^^^^^^^^
   Error: Unbound value Logger.data_in
   [2]
@@ -437,8 +437,8 @@ Topology: typed port wiring compiles and field access works
   >   print_endline "typed_topo: OK"
   > IMPL
   $ compile && run && echo "typed_topo_compile: OK"
-  File "sm.ml", line 27, characters 12-24:
-  27 |     ignore (Consumer.in_ consumer 42l : bool);
+  File "sm.ml", line 28, characters 12-24:
+  28 |     ignore (Consumer.in_ consumer 42l : bool);
                    ^^^^^^^^^^^^
   Error: Unbound value Consumer.in_
   [2]
@@ -485,8 +485,8 @@ Topology + SM merged in one file compiles
   >   print_endline "merged: OK"
   > IMPL
   $ compile && run && echo "merged_compile: OK"
-  File "sm.ml", line 63, characters 4-18:
-  63 |     Logger.data_in logger ();
+  File "sm.ml", line 64, characters 4-18:
+  64 |     Logger.data_in logger ();
            ^^^^^^^^^^^^^^
   Error: Unbound value Logger.data_in
   [2]
@@ -589,8 +589,8 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ compile && run && echo "pipeline_compile: OK"
-  File "sm.ml", line 88, characters 6-18:
-  88 |       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
+  File "sm.ml", line 89, characters 6-18:
+  89 |       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
              ^^^^^^^^^^^^
   Error: Unbound value Logger.alert
   [2]

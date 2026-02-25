@@ -165,10 +165,11 @@ active component Udp {
   output port ip_write: IpWrite
 }
 
-@ ocaml.functor Tcp.Flow.Make
-active component Tcp {
-  output port ip_write: IpWrite
-  sync input port write: IpWrite
+module Tcp {
+  active component Flow {
+    output port ip_write: IpWrite
+    sync input port write: IpWrite
+  }
 }
 
 @ ── Stack assembly ───────────────────────────────────────
@@ -207,10 +208,11 @@ passive component Conduit {
   sync input port connect: Dep
 }
 
-@ ocaml.functor Cohttp_mirage.Server.Make
-passive component Http {
-  output port conduit: Dep
-  sync input port listen: HttpConn
+module Cohttp_mirage {
+  passive component Server {
+    output port conduit: Dep
+    sync input port listen: HttpConn
+  }
 }
 
 @ ── DNS ─────────────────────────────────────────────────
@@ -219,14 +221,12 @@ passive component Http {
 @ establishment.  The DNS client layers on top.  Both depend
 @ on the TCP/IP stack; the parent topology wires them.
 
-@ ocaml.functor Happy_eyeballs_mirage.Make
-active component Happy_eyeballs {
+active component Happy_eyeballs_mirage {
   output port stack: Dep
   sync input port provide: Dep
 }
 
-@ ocaml.functor Dns_client_mirage.Make
-active component Dns_client {
+active component Dns_client_mirage {
   output port stack: Dep
   output port happy_eyeballs: Dep
   sync input port resolve: Dep
@@ -247,7 +247,7 @@ instance ipv6: Ipv6 base id 0x450
 instance ip: Ip base id 0x460
 instance icmp: Icmpv4 base id 0x500
 instance udp: Udp base id 0x600
-instance tcp: Tcp base id 0x700
+instance tcp: Tcp.Flow base id 0x700
 instance stack: TcpipStack base id 0xC00
 
 @ Key-value stores (leaf parameters or bound modules)
@@ -265,11 +265,11 @@ instance fat_certs: Fat_kv_ro base id 0x860
 @ HTTP
 instance conduit_tcp: Conduit_tcp base id 0xA00
 instance conduit: Conduit base id 0xA10
-instance http: Http base id 0xA20
+instance http: Cohttp_mirage.Server base id 0xA20
 
 @ DNS
-instance happy_eyeballs: Happy_eyeballs base id 0xE00
-instance dns_client: Dns_client base id 0xE10
+instance happy_eyeballs: Happy_eyeballs_mirage base id 0xE00
+instance dns_client: Dns_client_mirage base id 0xE10
 
 @ ── Topologies ───────────────────────────────────────────
 @
@@ -413,9 +413,8 @@ topology FatWebsite {
 @ ── Unix topologies ─────────────────────────────────────
 @
 @ Unix socket stack, crunch KV bound to concrete modules.
-@ ocaml.main
 topology UnixWebsite {
-  @ ocaml.module Tcpip_stack_socket.V4V6
+  @ ocaml.module Server.Unix_socket_stack
   instance socket_stack
   import HttpStack
   @ ocaml.module Htdocs_data
@@ -430,7 +429,7 @@ topology UnixWebsite {
 
 @ Unix socket stack, crunch KV, with DNS.
 topology UnixWebsiteWithDns {
-  @ ocaml.module Tcpip_stack_socket.V4V6
+  @ ocaml.module Server.Unix_socket_stack
   instance socket_stack
   import HttpStack
   import DnsStack
@@ -448,7 +447,7 @@ topology UnixWebsiteWithDns {
 
 @ Unix socket stack, in-memory KV (for testing).
 topology UnixTestWebsite {
-  @ ocaml.module Tcpip_stack_socket.V4V6
+  @ ocaml.module Server.Unix_socket_stack
   instance socket_stack
   import HttpStack
   @ ocaml.module Mirage_kv_mem

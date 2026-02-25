@@ -2,7 +2,6 @@ port P
 @ ocaml.functor Srv.Make
 active component Srv {
   output port kv: P
-  sync input port serve: P
 }
 active component Kv { sync input port get: P }
 instance kv: Kv base id 0x100
