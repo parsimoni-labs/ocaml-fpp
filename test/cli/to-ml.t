@@ -198,8 +198,7 @@ Simple topology (2 components, 1 connection)
     (Logger : sig include LOGGER val connect : unit -> t end)
     (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
-    let data () =
-      let logger = Logger.connect () in
+    let data logger =
       let sensor = Sensor.connect logger in
       { logger; sensor }
   end
@@ -250,8 +249,7 @@ Typed port topology
     (Consumer : sig include CONSUMER val connect : unit -> t end)
     (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
     type t = { consumer : Consumer.t; producer : Producer.t; }
-    let main () =
-      let consumer = Consumer.connect () in
+    let main consumer =
       let producer = Producer.connect consumer in
       { consumer; producer }
   end
@@ -301,13 +299,10 @@ Filter by topology name
     (B : sig include B val connect : unit -> t end)
     (A : sig include A val connect : B.t -> t end) = struct
     type t = { b : B.t; a : A.t; }
-    let c () =
-      let b = B.connect () in
+    let c b =
       let a = A.connect b in
       { b; a }
   end
-  let () =
-    Lwt_main.run (Make.c () |> Lwt.map ignore)
 
 
 
@@ -376,8 +371,7 @@ SM + topology merged in one file (wrapped in named modules)
     (Logger : sig include LOGGER val connect : unit -> t end)
     (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
-    let data () =
-      let logger = Logger.connect () in
+    let data logger =
       let sensor = Sensor.connect logger in
       { logger; sensor }
   end

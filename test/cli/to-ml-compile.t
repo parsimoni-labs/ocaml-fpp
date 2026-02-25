@@ -387,7 +387,8 @@ Topology: simple 2-component wiring
   > end
   > module App = Make (MyLogger) (MySensor)
   > let () =
-  >   let app = App.data () in
+  >   let logger = MyLogger.connect () in
+  >   let app = App.data logger in
   >   assert (app.logger.received = 1);
   >   print_endline "topo: OK"
   > IMPL
@@ -429,7 +430,8 @@ Topology: typed port wiring compiles and field access works
   > end
   > module A = Make (MyConsumer) (MyProducer)
   > let () =
-  >   let app = A.main () in
+  >   let consumer = MyConsumer.connect () in
+  >   let app = A.main consumer in
   >   assert (app.consumer.last = 42l);
   >   print_endline "typed_topo: OK"
   > IMPL
@@ -473,7 +475,8 @@ Topology + SM merged in one file compiles
   >   assert (Counter.Make.state m = Counter.State Counter.Idle);
   >   let m = Counter.Make.step m Counter.Tick in
   >   assert (Counter.Make.state m = Counter.State Counter.Active);
-  >   let _app = App.data () in
+  >   let logger = MyLogger.connect () in
+  >   let _app = App.data logger in
   >   print_endline "merged: OK"
   > IMPL
   $ compile && run && echo "merged_compile: OK"
@@ -557,7 +560,8 @@ Full pipeline: SM + topology wiring
   > end
   > module Fsm = SensorFsm.Make (SensorActions)
   > let () =
-  >   let app = App.data () in
+  >   let logger = MyLogger.connect () in
+  >   let app = App.data logger in
   >   let ctx : SensorActions.ctx =
   >     { idx = 0;
   >       readings = [|

@@ -1401,20 +1401,31 @@ let pp_topo_connect_body ppf ~func_name group_sorted connections =
       (fun (_, _, (comp : Ast.def_component)) -> is_active_component comp)
       group_sorted
   in
+  (* Leaf instances (no outgoing connections) become function parameters;
+     non-leaf instances are bound via their [connect] call. *)
+  let leaf_params =
+    List.filter_map
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        if target_instances inst_name comp connections group_sorted = [] then
+          Some (sanitize_ident inst_name)
+        else None)
+      group_sorted
+  in
+  let params =
+    match leaf_params with [] -> "()" | _ -> String.concat " " leaf_params
+  in
   if has_active then (
-    pf ppf "@,  let %s () =" func_name;
+    pf ppf "@,  let %s %s =" func_name params;
     pf ppf "@,    let open Lwt.Syntax in")
-  else pf ppf "@,  let %s () =" func_name;
+  else pf ppf "@,  let %s %s =" func_name params;
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-      let inst_var = sanitize_ident inst_name in
-      let mod_name = constructor_name inst_name in
       let targets = target_instances inst_name comp connections group_sorted in
-      let active = is_active_component comp in
-      let bind = if active then "let* " else "let " in
-      if targets = [] then
-        pf ppf "@,    %s%s = %s.connect () in" bind inst_var mod_name
-      else (
+      if targets <> [] then (
+        let inst_var = sanitize_ident inst_name in
+        let mod_name = constructor_name inst_name in
+        let active = is_active_component comp in
+        let bind = if active then "let* " else "let " in
         pf ppf "@,    %s%s = %s.connect" bind inst_var mod_name;
         List.iter
           (fun (target_inst, _) -> pf ppf " %s" (sanitize_ident target_inst))
@@ -1782,12 +1793,13 @@ let topology_is_fully_bound tu (topo : Ast.def_topology) =
       (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
       sorted
   in
-  not
-    (List.exists
-       (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-         let targets = target_instances inst_name comp connections sorted in
-         targets = [] && instance_bound_module inst_annots inst_name = None)
-       concrete)
+  concrete <> []
+  && not
+       (List.exists
+          (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+            let targets = target_instances inst_name comp connections sorted in
+            targets = [] && instance_bound_module inst_annots inst_name = None)
+          concrete)
 
 (** Return connect function names for a topology (one per connection group). *)
 let topology_connect_names tu (topo : Ast.def_topology) =

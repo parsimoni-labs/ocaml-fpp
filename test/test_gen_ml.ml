@@ -806,8 +806,7 @@ module Make
   (Logger : sig include LOGGER val connect : unit -> t end)
   (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
   type t = { logger : Logger.t; sensor : Sensor.t; }
-  let data () =
-    let logger = Logger.connect () in
+  let data logger =
     let sensor = Sensor.connect logger in
     { logger; sensor }
 end|}
@@ -841,8 +840,7 @@ module Make
   (Consumer : sig include CONSUMER val connect : unit -> t end)
   (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
   type t = { consumer : Consumer.t; producer : Producer.t; }
-  let main () =
-    let consumer = Consumer.connect () in
+  let main consumer =
     let producer = Producer.connect consumer in
     { consumer; producer }
 end|}
@@ -1224,13 +1222,11 @@ module Make
   (B : sig include B val connect : C.t -> t end)
   (A : sig include A val connect : B.t -> t end) = struct
   type connect = { b : B.t; a : A.t; }
-  let connect () =
-    let b = B.connect () in
+  let connect b =
     let a = A.connect b in
     { b; a }
   type start = { c : C.t; b : B.t; }
-  let start () =
-    let c = C.connect () in
+  let start c =
     let b = B.connect c in
     { c; b }
 end|}
