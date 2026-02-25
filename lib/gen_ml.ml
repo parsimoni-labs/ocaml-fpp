@@ -1751,6 +1751,108 @@ let pp_topology_annotated ppf tu topo sorted groups =
     groups;
   pf ppf "@,end"
 
+(* ── Fully-bound topology mode ────────────────────────────────────── *)
+
+(** Emit a single top-level lazy binding for an active instance. Leaf instances
+    (no deps) emit [let x = lazy (X.connect ())]. Non-leaf instances force
+    active dependencies and pass non-passive values to [connect]. *)
+let pp_lazy_binding ppf inst_name (comp : Ast.def_component) connections sorted
+    =
+  let inst_var = sanitize_ident inst_name in
+  let mod_name = constructor_name inst_name in
+  let targets = target_instances inst_name comp connections sorted in
+  if targets = [] then pf ppf "let %s = lazy (%s.connect ())" inst_var mod_name
+  else
+    let active_targets =
+      List.filter
+        (fun (_, (tc : Ast.def_component)) -> tc.comp_kind <> Passive)
+        targets
+    in
+    let config_ports = unconnected_input_ports inst_name comp connections in
+    pf ppf "let %s = lazy (" inst_var;
+    pf ppf "@,  let open Lwt.Syntax in";
+    List.iter
+      (fun (target_inst, _) ->
+        pf ppf "@,  let* %s = Lazy.force %s in"
+          (sanitize_ident target_inst)
+          (sanitize_ident target_inst))
+      active_targets;
+    pf ppf "@,  %s.connect" mod_name;
+    List.iter
+      (fun (p : Ast.port_instance_general) ->
+        pf ppf " ~%s" (sanitize_ident p.gen_name.data))
+      config_ports;
+    List.iter
+      (fun (target_inst, (tc : Ast.def_component)) ->
+        if tc.comp_kind <> Passive then
+          pf ppf " %s" (sanitize_ident target_inst))
+      targets;
+    pf ppf ")"
+
+(** Pretty-print a flat topology for fully-bound annotated mode. Module aliases
+    and functor applications are at top level (no [Make] struct wrapper). Active
+    instances get [lazy] bindings. *)
+let pp_topology_flat ppf tu topo sorted groups =
+  let all_conns = all_connections groups in
+  let inst_annots = instance_annotations topo in
+  let first_module = ref true in
+  let module_break () =
+    if !first_module then (
+      pf ppf "@,";
+      first_module := false);
+    pf ppf "@,"
+  in
+  (* Phase 1: Module aliases for bound instances *)
+  List.iter
+    (fun (inst_name, _ci, _comp) ->
+      match instance_bound_module inst_annots inst_name with
+      | Some concrete_mod ->
+          module_break ();
+          pf ppf "module %s = %s" (constructor_name inst_name) concrete_mod
+      | None -> ())
+    sorted;
+  (* Phase 2: Functor applications for non-leaf, non-bound instances *)
+  List.iter
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
+      let targets = target_instances inst_name comp all_conns sorted in
+      if targets <> [] && instance_bound_module inst_annots inst_name = None
+      then (
+        module_break ();
+        let mod_name = constructor_name inst_name in
+        let ca =
+          parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+        in
+        let functor_path =
+          match ca.functor_path with
+          | Some s -> s
+          | None ->
+              let parts = Ast.qual_ident_to_list ci.Ast.inst_component.data in
+              let segments =
+                List.map (fun n -> constructor_name n.Ast.data) parts
+              in
+              String.concat "." segments ^ ".Make"
+        in
+        pf ppf "module %s = %s" mod_name functor_path;
+        List.iter
+          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
+          targets))
+    sorted;
+  (* Phase 3: Lazy bindings for active instances *)
+  let concrete =
+    List.filter
+      (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
+      sorted
+  in
+  ignore
+    (List.fold_left
+       (fun prev_leaf (inst_name, _ci, (comp : Ast.def_component)) ->
+         let targets = target_instances inst_name comp all_conns sorted in
+         let is_leaf = targets = [] in
+         if prev_leaf && is_leaf then pf ppf "@," else pf ppf "@,@,";
+         pp_lazy_binding ppf inst_name comp all_conns sorted;
+         is_leaf)
+       false concrete)
+
 (** Whether a topology should use functor-application mode. Triggered when any
     component has an active non-leaf instance (the original rule) OR when any
     component carries an [@ ocaml.functor] annotation. *)
@@ -1782,12 +1884,8 @@ let topology_has_output tu (topo : Ast.def_topology) =
   in
   has_concrete || not (is_functor_mode tu sorted connections)
 
-let topology_is_fully_bound tu (topo : Ast.def_topology) =
-  let topo = flatten_topology tu topo in
-  let inst_annots = instance_annotations topo in
-  let resolved = resolve_topology_instances tu topo in
-  let connections = all_connections (collect_direct_connections topo) in
-  let sorted = topo_sort_instances resolved connections in
+(** Internal: check fully-bound with pre-computed values. *)
+let is_fully_bound inst_annots sorted connections =
   let concrete =
     List.filter
       (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
@@ -1801,6 +1899,14 @@ let topology_is_fully_bound tu (topo : Ast.def_topology) =
             targets = [] && instance_bound_module inst_annots inst_name = None)
           concrete)
 
+let topology_is_fully_bound tu (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let inst_annots = instance_annotations topo in
+  let resolved = resolve_topology_instances tu topo in
+  let connections = all_connections (collect_direct_connections topo) in
+  let sorted = topo_sort_instances resolved connections in
+  is_fully_bound inst_annots sorted connections
+
 (** Return connect function names for a topology (one per connection group). *)
 let topology_connect_names tu (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
@@ -1809,7 +1915,8 @@ let topology_connect_names tu (topo : Ast.def_topology) =
 
 (** Pretty-print a full topology as OCaml code. In functor-application mode,
     topologies with no concrete (non-passive) instances are import-only
-    sub-topologies and produce no output. *)
+    sub-topologies and produce no output. Fully-bound annotated topologies use
+    top-level lazy bindings (no [Make] struct wrapper). *)
 let pp_topology tu ppf (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
@@ -1821,7 +1928,10 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
       topo.topo_name.data;
     (if is_functor_mode tu sorted connections then
-       pp_topology_annotated ppf tu topo sorted groups
+       let inst_annots = instance_annotations topo in
+       if is_fully_bound inst_annots sorted connections then
+         pp_topology_flat ppf tu topo sorted groups
+       else pp_topology_annotated ppf tu topo sorted groups
      else
        let type_env = collect_type_env tu in
        let seen = Hashtbl.create 8 in
@@ -1901,4 +2011,69 @@ let pp_main_entry_multi ppf topos =
           pf ppf "    let* _%s = %sMake.%s () in@." var prefix func_name)
         topos;
       pf ppf "    Lwt.return ()@.";
+      pf ppf "  end@."
+
+(** Return [(var_name, module_name)] pairs for active instances that get lazy
+    bindings, in topo-sorted order. *)
+let topology_active_instance_names tu (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let resolved = resolve_topology_instances tu topo in
+  let connections = all_connections (collect_direct_connections topo) in
+  let sorted = topo_sort_instances resolved connections in
+  List.filter_map
+    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+      if comp.comp_kind <> Passive then
+        Some (sanitize_ident inst_name, constructor_name inst_name)
+      else None)
+    sorted
+
+(** Return [Some (module_name, var_names)] when the last active instance is a
+    non-leaf (has dependencies), indicating it should receive a [.start] call.
+    Returns [None] when all active instances are leaves. *)
+let topology_start_info tu (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let resolved = resolve_topology_instances tu topo in
+  let connections = all_connections (collect_direct_connections topo) in
+  let sorted = topo_sort_instances resolved connections in
+  let active =
+    List.filter_map
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        if comp.comp_kind <> Passive then
+          let targets = target_instances inst_name comp connections sorted in
+          Some
+            (sanitize_ident inst_name, constructor_name inst_name, targets <> [])
+        else None)
+      sorted
+  in
+  match List.rev active with
+  | (_, mod_name, true) :: _ ->
+      Some (mod_name, List.map (fun (v, _, _) -> v) active)
+  | _ -> None
+
+(** Emit a [let () = Lwt_main.run (...)] entry point that forces each lazy
+    binding. When [~start] is [Some (mod_name, args)], the entry point calls
+    [Mod_name.start arg1 arg2 ...]; otherwise it returns [()]. Each element of
+    [names] is [(var_name, module_name)]. Uses [@.] (print_newline) because this
+    is called outside any formatting box. *)
+let pp_flat_entry_point ppf names ~start =
+  match names with
+  | [] -> ()
+  | _ ->
+      pf ppf "let () =@.  Lwt_main.run begin@.";
+      pf ppf "    let open Lwt.Syntax in@.";
+      (match start with
+      | Some _ ->
+          List.iter
+            (fun (var, _) -> pf ppf "    let* %s = Lazy.force %s in@." var var)
+            names
+      | None ->
+          List.iter
+            (fun (var, _) -> pf ppf "    let* _ = Lazy.force %s in@." var)
+            names);
+      (match start with
+      | Some (mod_name, args) ->
+          pf ppf "    %s.start" mod_name;
+          List.iter (fun a -> pf ppf " %s" a) args;
+          pf ppf "@."
+      | None -> pf ppf "    Lwt.return ()@.");
       pf ppf "  end@."

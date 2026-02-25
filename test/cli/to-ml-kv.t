@@ -108,8 +108,8 @@ functor implementations, and a concrete module for the bound case.
   >   let v = M.c 42 in
   >   assert (v.data = 42);
   >   print_endline "leaf_kv: OK";
-  >   let v = BoundKv.Make.c () in
-  >   assert (v.data.mem_id = 1);
+  >   let data = Lazy.force BoundKv.data in
+  >   assert (data.mem_id = 1);
   >   print_endline "bound_kv: OK";
   >   let module T = TarKv.Make(struct
   >     type t = string

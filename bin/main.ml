@@ -457,17 +457,34 @@ let gen_ml_topologies ppf tu topologies =
   in
   let wrap = List.length topos > 1 in
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos;
-  let entry_topos =
-    List.filter_map
+  let flat_names =
+    List.concat_map
       (fun (t : Fpp.Ast.def_topology) ->
         if Fpp.Gen_ml.topology_is_fully_bound tu t then
-          let names = Fpp.Gen_ml.topology_connect_names tu t in
-          let func_name = match names with n :: _ -> n | [] -> "connect" in
-          Some (String.capitalize_ascii t.topo_name.data, func_name)
-        else None)
+          let prefix =
+            if wrap then String.capitalize_ascii t.topo_name.data ^ "." else ""
+          in
+          List.map
+            (fun (var, mod_name) -> (prefix ^ var, prefix ^ mod_name))
+            (Fpp.Gen_ml.topology_active_instance_names tu t)
+        else [])
       topos
   in
-  if entry_topos <> [] then Fpp.Gen_ml.pp_main_entry_multi ppf entry_topos
+  let start =
+    List.fold_left
+      (fun _acc (t : Fpp.Ast.def_topology) ->
+        if Fpp.Gen_ml.topology_is_fully_bound tu t then
+          let prefix =
+            if wrap then String.capitalize_ascii t.topo_name.data ^ "." else ""
+          in
+          match Fpp.Gen_ml.topology_start_info tu t with
+          | Some (mod_name, args) ->
+              Some (prefix ^ mod_name, List.map (fun a -> prefix ^ a) args)
+          | None -> None
+        else None)
+      None topos
+  in
+  if flat_names <> [] then Fpp.Gen_ml.pp_flat_entry_point ppf flat_names ~start
 
 let gen_ml_all ppf tu ~sm_name =
   let sms = Fpp.state_machines tu in
