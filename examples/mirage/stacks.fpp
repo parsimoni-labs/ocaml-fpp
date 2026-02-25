@@ -55,6 +55,21 @@ topology HttpStack {
   }
 }
 
+@ Unix socket stack: Udpv4v6_socket + Tcpv4v6_socket → V4V6.
+@ The composition is value-level: [V4V6.connect udp tcp], not
+@ a functor application.  Parent topologies bind the three
+@ instances to concrete (wrapper) modules via [@ ocaml.module].
+topology SocketStack {
+  instance udp_socket
+  instance tcp_socket
+  instance socket_stack
+
+  connections Connect {
+    socket_stack.udp -> udp_socket.provide
+    socket_stack.tcp -> tcp_socket.provide
+  }
+}
+
 @ Happy Eyeballs + DNS client.  The parent must wire both
 @ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
 topology DnsStack {

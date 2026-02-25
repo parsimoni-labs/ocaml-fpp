@@ -38,7 +38,16 @@ val topology_is_fully_bound : Ast.translation_unit -> Ast.def_topology -> bool
 val pp_module_types :
   Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> unit
 (** [pp_module_types tu topos ppf] emits port-based module types for leaf
-    components in [topos]. *)
+    components in [topos], preceded by a comment header. *)
+
+val has_module_types : Ast.translation_unit -> Ast.def_topology list -> bool
+(** [has_module_types tu topos] is [true] if [topos] have leaf component module
+    types to emit. *)
+
+val pp_module_types_raw :
+  Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> bool
+(** [pp_module_types_raw tu topos ppf] emits port-based module types without a
+    header comment. Returns [true] if any types were emitted. *)
 
 val topology_connect_names :
   Ast.translation_unit -> Ast.def_topology -> string list

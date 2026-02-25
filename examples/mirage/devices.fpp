@@ -15,10 +15,22 @@ active component Backend {
 }
 
 @ ── Socket stack ────────────────────────────────────────
+@
+@ Unix targets use OS sockets directly rather than the
+@ direct protocol stack.  The composition is:
+@   [Udpv4v6_socket] + [Tcpv4v6_socket] -> [Tcpip_stack_socket.V4V6]
 
-@ A pre-built OS socket stack for Unix targets.
+active component Udpv4v6_socket {
+  sync input port provide: Dep
+}
+
+active component Tcpv4v6_socket {
+  sync input port provide: Dep
+}
 
 active component SocketStack {
+  output port udp: Dep
+  output port tcp: Dep
   sync input port provide: Dep
 }
 
@@ -187,7 +199,9 @@ active component Dns_client_mirage {
 @ Network
 instance backend: Backend base id 0x050
 instance net: Vnetif base id 0x100
-instance socket_stack: SocketStack base id 0xD00
+instance udp_socket: Udpv4v6_socket base id 0xD00
+instance tcp_socket: Tcpv4v6_socket base id 0xD10
+instance socket_stack: SocketStack base id 0xD20
 
 @ Protocol stack
 instance eth: Ethernet base id 0x200

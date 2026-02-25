@@ -7,8 +7,7 @@
 @ device-usage/network: plain socket stack, no HTTP.
 @ Mirage: [Unikernel.Main(Tcpip_stack_socket.V4V6)]
 topology UnixNetwork {
-  @ ocaml.module Tcpip_stack_socket.V4V6
-  instance socket_stack
+  import SocketStack
 
   connections Connect {}
 }
@@ -27,8 +26,7 @@ topology UnixKv {
 @         [Dns_client_mirage.Make(Stack)(HE)]
 @         [Unikernel.Make(Dns)]
 topology UnixDnsResolver {
-  @ ocaml.module Tcpip_stack_socket.V4V6
-  instance socket_stack
+  import SocketStack
   import DnsStack
 
   connections Connect {
@@ -43,8 +41,7 @@ topology UnixDnsResolver {
 @         [Cohttp_mirage.Server.Make(Conduit_tls)]
 @         [Dispatch.HTTPS(Static_htdocs)(Static_tls)(Server)]
 topology UnixStaticWebsiteTls {
-  @ ocaml.module Tcpip_stack_socket.V4V6
-  instance socket_stack
+  import SocketStack
   import HttpStack
   @ ocaml.module Static_htdocs
   instance data

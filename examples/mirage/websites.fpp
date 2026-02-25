@@ -73,7 +73,12 @@ topology FatWebsite {
 
 @ Unix socket stack, crunch KV bound to concrete modules.
 topology UnixWebsite {
-  @ ocaml.module Server.Unix_socket_stack
+  import SocketStack
+  @ ocaml.module Server.Udp_socket
+  instance udp_socket
+  @ ocaml.module Server.Tcp_socket
+  instance tcp_socket
+  @ ocaml.module Server.Socket_stack
   instance socket_stack
   import HttpStack
   @ ocaml.module Htdocs_data
@@ -88,7 +93,12 @@ topology UnixWebsite {
 
 @ Unix socket stack, crunch KV, with DNS.
 topology UnixWebsiteWithDns {
-  @ ocaml.module Server.Unix_socket_stack
+  import SocketStack
+  @ ocaml.module Server.Udp_socket
+  instance udp_socket
+  @ ocaml.module Server.Tcp_socket
+  instance tcp_socket
+  @ ocaml.module Server.Socket_stack
   instance socket_stack
   import HttpStack
   import DnsStack
@@ -106,7 +116,12 @@ topology UnixWebsiteWithDns {
 
 @ Unix socket stack, in-memory KV (for testing).
 topology UnixTestWebsite {
-  @ ocaml.module Server.Unix_socket_stack
+  import SocketStack
+  @ ocaml.module Server.Udp_socket
+  instance udp_socket
+  @ ocaml.module Server.Tcp_socket
+  instance tcp_socket
+  @ ocaml.module Server.Socket_stack
   instance socket_stack
   import HttpStack
   @ ocaml.module Mirage_kv_mem

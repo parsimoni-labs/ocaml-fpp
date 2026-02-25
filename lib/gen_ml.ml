@@ -898,7 +898,10 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = { functor_path : string option }
+type ocaml_annots = {
+  functor_path : string option;
+  module_path : string option;
+}
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -915,9 +918,13 @@ let parse_ocaml_annotations annots =
           | None -> v
           | Some i -> String.sub v 0 i
         in
-        { functor_path = Some path }
+        { acc with functor_path = Some path }
+      else if starts_with ~prefix:"ocaml.module " s then
+        let v = String.trim (String.sub s 13 (String.length s - 13)) in
+        { acc with module_path = Some v }
       else acc)
-    { functor_path = None } annots
+    { functor_path = None; module_path = None }
+    annots
 
 (** Extract pre-annotations for a component definition from tu_members. *)
 let component_annots tu comp_name =
@@ -979,18 +986,25 @@ let instance_annotations (topo : Ast.def_topology) =
       | _ -> None)
     topo.topo_members
 
-(** Extract the concrete module name from an [@ ocaml.module X] annotation. *)
+(** Find [@ ocaml.module X] on an instance. When the same instance appears more
+    than once (e.g. from import then redeclared in parent), the LAST entry wins,
+    letting a parent topology override the imported binding. *)
 let instance_bound_module inst_annots inst_name =
-  match List.assoc_opt inst_name inst_annots with
-  | None -> None
-  | Some annots ->
-      List.find_map
-        (fun s ->
-          let s = String.trim s in
-          if starts_with ~prefix:"ocaml.module " s then
-            Some (String.trim (String.sub s 13 (String.length s - 13)))
-          else None)
-        annots
+  let extract annots =
+    List.find_map
+      (fun s ->
+        let s = String.trim s in
+        if starts_with ~prefix:"ocaml.module " s then
+          Some (String.trim (String.sub s 13 (String.length s - 13)))
+        else None)
+      annots
+  in
+  List.fold_left
+    (fun acc (n, annots) ->
+      if n = inst_name then
+        match extract annots with Some _ as v -> v | None -> acc
+      else acc)
+    None inst_annots
 
 (* ── Topology code generation ────────────────────────────────────── *)
 
@@ -1167,9 +1181,19 @@ let collect_topologies tu =
       | _ -> None)
     tu.Ast.tu_members
 
+(** Instance name for a topology member, or [None] for non-instance members. *)
+let topo_member_inst_name ann =
+  match (Ast.unannotate ann).Ast.data with
+  | Ast.Topo_spec_comp_instance ci -> (
+      match ci.ci_instance.data with
+      | Ast.Unqualified id -> Some id.data
+      | Ast.Qualified _ -> Some (Ast.qual_ident_to_string ci.ci_instance.data))
+  | _ -> None
+
 (** Flatten a topology by resolving [import] directives recursively. Public
     instances and connections from imported topologies are merged into the
-    result. *)
+    result. When a parent redeclares an imported instance (e.g. to override
+    annotations), the imported entry is dropped. *)
 let rec flatten_topology tu (topo : Ast.def_topology) =
   let members =
     List.concat_map
@@ -1198,6 +1222,23 @@ let rec flatten_topology tu (topo : Ast.def_topology) =
         | _ -> [ ann ])
       topo.Ast.topo_members
   in
+  (* Deduplicate: when an instance appears more than once, keep the last
+     occurrence so parent redeclarations override imported entries. *)
+  let seen = Hashtbl.create 8 in
+  let members = List.rev members in
+  let members =
+    List.filter
+      (fun ann ->
+        match topo_member_inst_name ann with
+        | None -> true
+        | Some n ->
+            if Hashtbl.mem seen n then false
+            else (
+              Hashtbl.add seen n ();
+              true))
+      members
+  in
+  let members = List.rev members in
   { topo with Ast.topo_members = members }
 
 (** Resolve topology instances to (instance_name, component_instance, component)
@@ -1557,25 +1598,33 @@ let pp_functor_apps ppf tu inst_annots sorted connections =
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp connections sorted in
       if targets <> [] && instance_bound_module inst_annots inst_name = None
-      then (
+      then
         let mod_name = constructor_name inst_name in
         let ca =
           parse_ocaml_annotations (component_annots tu comp.comp_name.data)
         in
-        let functor_path =
-          match ca.functor_path with
-          | Some s -> s
-          | None ->
-              let parts = Ast.qual_ident_to_list ci.Ast.inst_component.data in
-              let segments =
-                List.map (fun n -> constructor_name n.Ast.data) parts
-              in
-              String.concat "." segments ^ ".Make"
-        in
-        pf ppf "@,  module %s = %s" mod_name functor_path;
-        List.iter
-          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
-          targets))
+        match ca.module_path with
+        | Some path ->
+            (* Concrete module alias — no functor application *)
+            pf ppf "@,  module %s = %s" mod_name path
+        | None ->
+            let functor_path =
+              match ca.functor_path with
+              | Some s -> s
+              | None ->
+                  let parts =
+                    Ast.qual_ident_to_list ci.Ast.inst_component.data
+                  in
+                  let segments =
+                    List.map (fun n -> constructor_name n.Ast.data) parts
+                  in
+                  String.concat "." segments ^ ".Make"
+            in
+            pf ppf "@,  module %s = %s" mod_name functor_path;
+            List.iter
+              (fun (target_inst, _) ->
+                pf ppf "(%s)" (constructor_name target_inst))
+              targets)
     sorted
 
 (** Emit individual connect calls for non-leaf, non-passive instances. Passive
@@ -1816,26 +1865,34 @@ let pp_topology_flat ppf tu topo sorted groups =
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp all_conns sorted in
       if targets <> [] && instance_bound_module inst_annots inst_name = None
-      then (
-        module_break ();
+      then
         let mod_name = constructor_name inst_name in
         let ca =
           parse_ocaml_annotations (component_annots tu comp.comp_name.data)
         in
-        let functor_path =
-          match ca.functor_path with
-          | Some s -> s
-          | None ->
-              let parts = Ast.qual_ident_to_list ci.Ast.inst_component.data in
-              let segments =
-                List.map (fun n -> constructor_name n.Ast.data) parts
-              in
-              String.concat "." segments ^ ".Make"
-        in
-        pf ppf "module %s = %s" mod_name functor_path;
-        List.iter
-          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
-          targets))
+        match ca.module_path with
+        | Some path ->
+            module_break ();
+            pf ppf "module %s = %s" mod_name path
+        | None ->
+            module_break ();
+            let functor_path =
+              match ca.functor_path with
+              | Some s -> s
+              | None ->
+                  let parts =
+                    Ast.qual_ident_to_list ci.Ast.inst_component.data
+                  in
+                  let segments =
+                    List.map (fun n -> constructor_name n.Ast.data) parts
+                  in
+                  String.concat "." segments ^ ".Make"
+            in
+            pf ppf "module %s = %s" mod_name functor_path;
+            List.iter
+              (fun (target_inst, _) ->
+                pf ppf "(%s)" (constructor_name target_inst))
+              targets)
     sorted;
   (* Phase 3: Lazy bindings for active instances *)
   let concrete =
@@ -1855,7 +1912,7 @@ let pp_topology_flat ppf tu topo sorted groups =
 
 (** Whether a topology should use functor-application mode. Triggered when any
     component has an active non-leaf instance (the original rule) OR when any
-    component carries an [@ ocaml.functor] annotation. *)
+    component carries an [@ ocaml.functor] or [@ ocaml.module] annotation. *)
 let is_functor_mode tu sorted connections =
   List.exists
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
@@ -1865,7 +1922,7 @@ let is_functor_mode tu sorted connections =
       let ca =
         parse_ocaml_annotations (component_annots tu comp.comp_name.data)
       in
-      Option.is_some ca.functor_path)
+      Option.is_some ca.functor_path || Option.is_some ca.module_path)
     sorted
 
 (** Whether a topology would produce OCaml code. In functor-application mode,
@@ -1981,6 +2038,18 @@ let collect_leaf_comps tu topos =
   let comps = ref [] in
   List.iter (collect_leaf_comps_from_topo tu seen comps) topos;
   List.rev !comps
+
+let has_module_types tu topos =
+  let comps = collect_leaf_comps tu topos in
+  comps <> []
+
+let pp_module_types_raw tu topos ppf =
+  let comps = collect_leaf_comps tu topos in
+  if comps <> [] then (
+    let type_env = collect_type_env tu in
+    List.iter (fun comp -> pp_port_module_type ppf tu ~type_env comp) comps;
+    true)
+  else false
 
 let pp_module_types tu topos ppf =
   let comps = collect_leaf_comps tu topos in

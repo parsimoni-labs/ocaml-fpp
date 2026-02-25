@@ -68,18 +68,26 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.make ~conn_closed ~callback ()
 end
 
-module Unix_socket_stack = struct
-  include Tcpip_stack_socket.V4V6
+module Udp_socket = struct
+  include Udpv4v6_socket
 
   let connect () =
-    let open Lwt.Syntax in
     let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
-    let* tcp =
-      Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
-    in
-    let* udp =
-      Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
-    in
+    Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
+end
+
+module Tcp_socket = struct
+  include Tcpv4v6_socket
+
+  let connect () =
+    let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
+    Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
+end
+
+module Socket_stack = struct
+  include Tcpip_stack_socket.V4V6
+
+  let connect (udp : Udp_socket.t) (tcp : Tcp_socket.t) =
     Tcpip_stack_socket.V4V6.connect udp tcp
 end
 
