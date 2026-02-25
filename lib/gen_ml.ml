@@ -501,20 +501,20 @@ let rec pp_choice_fn ppf all_states all_choices ~action_types ~guard_types
                   (camel_to_snake g.data)
               else pf ppf "@,    if G.%s t.ctx then (" (camel_to_snake g.data)
           | None -> pf ppf "@,    (");
-          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts
-            tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx
+            ~sig_var:None acts tgt;
           pf ppf ")"
       | Ast.Choice_else te ->
           let tgt = target_name te.data.trans_target in
           let acts = te.data.trans_actions in
           pf ppf "@,    else (";
-          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts
-            tgt;
+          pp_choice_body ppf all_states all_choices ~action_types ~has_ctx
+            ~sig_var:None acts tgt;
           pf ppf ")")
     c.choice_members
 
-and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~indent
-    tgt =
+and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
+    ~indent tgt =
   match resolve_target all_states all_choices tgt with
   | Choice c -> pf ppf "@,%senter_%s t" indent (camel_to_snake c)
   | Leaf leaf ->
@@ -535,14 +535,19 @@ and pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~indent
             | _ -> false
           in
           let n = camel_to_snake act.data in
-          if has_type then pf ppf "@,%sA.%s t.ctx _v;" indent n
+          if has_type then
+            let v =
+              match sig_var with Some v -> v | None -> "(* TODO: value *)"
+            in
+            pf ppf "@,%sA.%s t.ctx %s;" indent n v
           else pf ppf "@,%sA.%s t.ctx;" indent n)
         entry_acts;
       let ctor = constructor_name leaf in
       if has_ctx then pf ppf "@,%s{ t with state = State %s }" indent ctor
       else pf ppf "@,%s{ state = State %s }" indent ctor
 
-and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts tgt =
+and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx ~sig_var
+    acts tgt =
   List.iter
     (fun (act : Ast.ident Ast.node) ->
       let has_type =
@@ -554,17 +559,21 @@ and pp_choice_body ppf all_states all_choices ~action_types ~has_ctx acts tgt =
       if has_type then pf ppf "@,      A.%s t.ctx (* TODO: value *);" name
       else pf ppf "@,      A.%s t.ctx;" name)
     acts;
-  pp_enter_target ppf all_states all_choices ~action_types ~has_ctx
+  pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
     ~indent:"      " tgt
 
 (* ── Action list helper ───────────────────────────────────────────── *)
 
-let pp_action_list ppf ~action_types ~indent acts =
+let pp_action_list ppf ~action_types ~sig_var ~indent acts =
   List.iter
     (fun (act : Ast.ident Ast.node) ->
       let n = camel_to_snake act.data in
       match List.assoc_opt act.data action_types with
-      | Some true -> pf ppf "@,%sA.%s t.ctx _v;" indent n
+      | Some true ->
+          let v =
+            match sig_var with Some v -> v | None -> "(* TODO: value *)"
+          in
+          pf ppf "@,%sA.%s t.ctx %s;" indent n v
       | _ -> pf ppf "@,%sA.%s t.ctx;" indent n)
     acts
 
@@ -610,13 +619,18 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
       in
       if matching <> [] then (
         let sig_ctor = constructor_name s.signal_name.data in
-        let sig_pat =
+        let sig_var =
           match s.signal_type with
+          | None -> None
+          | Some _ -> Some (sanitize_ident s.signal_name.data)
+        in
+        let sig_pat =
+          match sig_var with
           | None -> sig_ctor
-          | Some _ -> Fmt.str "%s _v" sig_ctor
+          | Some v -> Fmt.str "%s %s" sig_ctor v
         in
         pf ppf "@,    | State %s, %s ->" leaf_ctor sig_pat;
-        pp_action_list ppf ~action_types ~indent:"        " exit_acts;
+        pp_action_list ppf ~action_types ~sig_var ~indent:"        " exit_acts;
         let guarded =
           List.filter (fun tr -> Option.is_some tr.Ast.st_guard) matching
         in
@@ -625,11 +639,12 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
         in
         if guarded <> [] then
           pp_guarded ppf all_states all_choices ~action_types ~guard_types
-            ~has_ctx guarded unguarded
+            ~has_ctx ~sig_var guarded unguarded
         else
           match unguarded with
           | [ tr ] ->
-              pp_transition ppf all_states all_choices ~action_types ~has_ctx tr
+              pp_transition ppf all_states all_choices ~action_types ~has_ctx
+                ~sig_var tr
           | _ -> ()))
     signals;
   let n_handled =
@@ -646,7 +661,7 @@ and pp_step_leaf ppf all_states all_choices signals ~action_types ~guard_types
     pf ppf "@,    | State %s, _ -> t" leaf_ctor
 
 and pp_guarded ppf all_states all_choices ~action_types ~guard_types ~has_ctx
-    guarded unguarded =
+    ~sig_var guarded unguarded =
   List.iteri
     (fun i (tr : Ast.spec_state_transition) ->
       let g = Option.get tr.st_guard in
@@ -657,31 +672,36 @@ and pp_guarded ppf all_states all_choices ~action_types ~guard_types ~has_ctx
       in
       let kw = if i = 0 then "if" else "else if" in
       if has_type then
-        pf ppf "@,        %s G.%s t.ctx _v then begin" kw
-          (camel_to_snake g.data)
+        let v =
+          match sig_var with Some v -> v | None -> "(* TODO: value *)"
+        in
+        pf ppf "@,        %s G.%s t.ctx %s then begin" kw
+          (camel_to_snake g.data) v
       else
         pf ppf "@,        %s G.%s t.ctx then begin" kw (camel_to_snake g.data);
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr;
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
+        tr;
       pf ppf "@,        end")
     guarded;
   match unguarded with
   | [ tr ] ->
       pf ppf "@,        else begin";
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr;
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
+        tr;
       pf ppf "@,        end"
   | _ -> pf ppf "@,        else t"
 
-and pp_transition ppf all_states all_choices ~action_types ~has_ctx
+and pp_transition ppf all_states all_choices ~action_types ~has_ctx ~sig_var
     (tr : Ast.spec_state_transition) =
   match tr.st_action with
   | Ast.Transition te ->
       let tgt = target_name te.data.trans_target in
-      pp_action_list ppf ~action_types ~indent:"          "
+      pp_action_list ppf ~action_types ~sig_var ~indent:"          "
         te.data.trans_actions;
-      pp_enter_target ppf all_states all_choices ~action_types ~has_ctx
+      pp_enter_target ppf all_states all_choices ~action_types ~has_ctx ~sig_var
         ~indent:"          " tgt
   | Ast.Do acts ->
-      pp_action_list ppf ~action_types ~indent:"          " acts;
+      pp_action_list ppf ~action_types ~sig_var ~indent:"          " acts;
       pf ppf "@,          t"
 
 (* ── Create function ──────────────────────────────────────────────── *)
@@ -1332,12 +1352,14 @@ let pp_topo_connect_body ppf sorted connections =
           targets;
         pf ppf " in"))
     sorted;
-  let fields =
-    List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) sorted
-  in
-  if has_active then
-    pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
-  else pf ppf "@,    { %s }" (String.concat "; " fields)
+  if sorted = [] then pf ppf "@,    ()"
+  else
+    let fields =
+      List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) sorted
+    in
+    if has_active then
+      pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
+    else pf ppf "@,    { %s }" (String.concat "; " fields)
 
 (** Pretty-print a topology functor. Each instance becomes a module parameter.
     Leaf instances (no outgoing connections) use their named module type
@@ -1364,13 +1386,15 @@ let pp_topology_functor ppf topo sorted connections =
         pf ppf " %s end)" connect_ret)
     sorted;
   pf ppf " = struct";
-  pf ppf "@,  type t = {";
-  List.iter
-    (fun (inst_name, _ci, _comp) ->
-      let mod_name = constructor_name inst_name in
-      pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
-    sorted;
-  pf ppf " }";
+  if sorted = [] then pf ppf "@,  type t = unit"
+  else (
+    pf ppf "@,  type t = {";
+    List.iter
+      (fun (inst_name, _ci, _comp) ->
+        let mod_name = constructor_name inst_name in
+        pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
+      sorted;
+    pf ppf " }");
   pp_topo_connect_body ppf sorted connections;
   (* Pattern connections as comments *)
   let patterns = collect_pattern_connections topo in
@@ -1558,12 +1582,15 @@ let pp_annotated_connect ppf tu inst_annots sorted connections =
         | None -> ())
     concrete;
   pp_annotated_connect_calls ppf tu sorted connections;
-  let fields =
-    List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) concrete
-  in
-  if has_active then
-    pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
-  else pf ppf "@,    { %s }" (String.concat "; " fields)
+  if concrete = [] then
+    if has_active then pf ppf "@,    Lwt.return ()" else pf ppf "@,    ()"
+  else
+    let fields =
+      List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) concrete
+    in
+    if has_active then
+      pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
+    else pf ppf "@,    { %s }" (String.concat "; " fields)
 
 (** Pretty-print an annotated topology in functor-application mode. Passive
     components are module-only: they get functor applications but no record
@@ -1602,13 +1629,15 @@ let pp_topology_annotated ppf tu topo sorted connections =
         | None -> ())
     concrete;
   pp_functor_apps ppf tu sorted connections;
-  pf ppf "@,@,  type t = {";
-  List.iter
-    (fun (inst_name, _ci, _comp) ->
-      let mod_name = constructor_name inst_name in
-      pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
-    concrete;
-  pf ppf " }";
+  if concrete = [] then pf ppf "@,@,  type t = unit"
+  else (
+    pf ppf "@,@,  type t = {";
+    List.iter
+      (fun (inst_name, _ci, _comp) ->
+        let mod_name = constructor_name inst_name in
+        pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
+      concrete;
+    pf ppf " }");
   pp_annotated_connect ppf tu inst_annots sorted connections;
   pf ppf "@,end"
 
