@@ -92,10 +92,12 @@ Door example (guards, actions, signals)
     let step t signal =
       match t.state, signal with
       | State Closed, Open ->
-          if G.locked t.ctx then
+          if G.locked t.ctx then begin
             { t with state = State Closed }
-          else
+          end
+          else begin
             { t with state = State Opened }
+          end
       | State Closed, _ -> t
       | State Opened, Close ->
             A.lock t.ctx;

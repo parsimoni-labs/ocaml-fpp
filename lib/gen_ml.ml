@@ -657,14 +657,18 @@ and pp_guarded ppf all_states all_choices ~action_types ~guard_types ~has_ctx
       in
       let kw = if i = 0 then "if" else "else if" in
       if has_type then
-        pf ppf "@,        %s G.%s t.ctx _v then" kw (camel_to_snake g.data)
-      else pf ppf "@,        %s G.%s t.ctx then" kw (camel_to_snake g.data);
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr)
+        pf ppf "@,        %s G.%s t.ctx _v then begin" kw
+          (camel_to_snake g.data)
+      else
+        pf ppf "@,        %s G.%s t.ctx then begin" kw (camel_to_snake g.data);
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr;
+      pf ppf "@,        end")
     guarded;
   match unguarded with
   | [ tr ] ->
-      pf ppf "@,        else";
-      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr
+      pf ppf "@,        else begin";
+      pp_transition ppf all_states all_choices ~action_types ~has_ctx tr;
+      pf ppf "@,        end"
   | _ -> pf ppf "@,        else t"
 
 and pp_transition ppf all_states all_choices ~action_types ~has_ctx

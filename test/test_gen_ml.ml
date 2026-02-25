@@ -292,10 +292,12 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State Closed, Open ->
-        if G.locked t.ctx then
+        if G.locked t.ctx then begin
           { t with state = State Closed }
-        else
+        end
+        else begin
           { t with state = State Opened }
+        end
     | State Closed, _ -> t
     | State Opened, Close ->
           A.lock t.ctx;
@@ -452,11 +454,13 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State Idle, Reading _v ->
-        if G.over_limit t.ctx _v then
+        if G.over_limit t.ctx _v then begin
           A.report t.ctx _v;
           { t with state = State Idle }
-        else
+        end
+        else begin
           { t with state = State Idle }
+        end
 
   let create ctx =
     { state = State Idle; ctx }
