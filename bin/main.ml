@@ -424,11 +424,13 @@ let gen_ml_for_tu ppf tu ~sm_name ~topo_name =
     sms;
   List.iter
     (fun (t : Fpp.Ast.def_topology) ->
-      if wrap then
-        Fmt.pf ppf "@[<v>module %s = struct@,"
-          (String.capitalize_ascii t.topo_name.data);
-      Fpp.Gen_ml.pp_topology tu ppf t;
-      if wrap then Fmt.pf ppf "end@]@.")
+      if Fpp.Gen_ml.topology_has_output tu t then begin
+        if wrap then
+          Fmt.pf ppf "@[<v>module %s = struct@,"
+            (String.capitalize_ascii t.topo_name.data);
+        Fpp.Gen_ml.pp_topology tu ppf t;
+        if wrap then Fmt.pf ppf "end@]@."
+      end)
     topos
 
 let to_ml ~output ~sm_name ~topo_name files =

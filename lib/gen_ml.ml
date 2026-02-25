@@ -815,7 +815,14 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = { functor_path : string option }
+type functor_param = Literal of string | Placeholder
+
+type ocaml_annots = {
+  functor_path : string option;
+  functor_params : functor_param list option;
+  connect_args : string option;
+  sig_path : string option;
+}
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -827,9 +834,32 @@ let parse_ocaml_annotations annots =
       let s = String.trim s in
       if starts_with ~prefix:"ocaml.functor " s then
         let v = String.trim (String.sub s 14 (String.length s - 14)) in
-        { functor_path = Some v }
+        match String.index_opt v '(' with
+        | None -> { acc with functor_path = Some v }
+        | Some i ->
+            let path = String.sub v 0 i in
+            let rest = String.sub v (i + 1) (String.length v - i - 2) in
+            let params =
+              String.split_on_char ',' rest
+              |> List.map (fun p ->
+                  let p = String.trim p in
+                  if p = "_" then Placeholder else Literal p)
+            in
+            { acc with functor_path = Some path; functor_params = Some params }
+      else if starts_with ~prefix:"ocaml.connect_args " s then
+        let v = String.trim (String.sub s 19 (String.length s - 19)) in
+        { acc with connect_args = Some v }
+      else if starts_with ~prefix:"ocaml.sig " s then
+        let v = String.trim (String.sub s 10 (String.length s - 10)) in
+        { acc with sig_path = Some v }
       else acc)
-    { functor_path = None } annots
+    {
+      functor_path = None;
+      functor_params = None;
+      connect_args = None;
+      sig_path = None;
+    }
+    annots
 
 (** Extract pre-annotations for a component definition from tu_members. *)
 let component_annots tu comp_name =
@@ -1034,6 +1064,55 @@ let pp_port_module_type ppf tu ~type_env (comp : Ast.def_component) =
   pf ppf "@,end"
 
 (* ── Topology resolution ─────────────────────────────────────────── *)
+
+(** Collect topologies from a translation unit. *)
+let collect_topologies tu =
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_topology t -> Some t
+      | Ast.Mod_def_module m ->
+          List.find_map
+            (fun ann2 ->
+              match (Ast.unannotate ann2).Ast.data with
+              | Ast.Mod_def_topology t -> Some t
+              | _ -> None)
+            m.Ast.module_members
+      | _ -> None)
+    tu.Ast.tu_members
+
+(** Flatten a topology by resolving [import] directives recursively. Public
+    instances and connections from imported topologies are merged into the
+    result. *)
+let rec flatten_topology tu (topo : Ast.def_topology) =
+  let members =
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Topo_spec_top_import qi -> (
+            let name =
+              match qi.data with
+              | Ast.Unqualified id -> id.data
+              | Ast.Qualified _ -> Ast.qual_ident_to_string qi.data
+            in
+            let topos = collect_topologies tu in
+            match
+              List.find_opt (fun t -> t.Ast.topo_name.data = name) topos
+            with
+            | Some imported ->
+                let flat = flatten_topology tu imported in
+                List.filter
+                  (fun ann2 ->
+                    match (Ast.unannotate ann2).Ast.data with
+                    | Ast.Topo_spec_comp_instance ci ->
+                        ci.ci_visibility = `Public
+                    | _ -> true)
+                  flat.Ast.topo_members
+            | None -> [])
+        | _ -> [ ann ])
+      topo.Ast.topo_members
+  in
+  { topo with Ast.topo_members = members }
 
 (** Resolve topology instances to (instance_name, component_instance, component)
     triples. *)
@@ -1320,14 +1399,30 @@ let pp_functor_apps ppf tu sorted connections =
           | None -> constructor_name comp.comp_name.data ^ ".Make"
         in
         pf ppf "@,  module %s = %s" mod_name functor_path;
-        List.iter
-          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
-          targets))
+        match ca.functor_params with
+        | None ->
+            List.iter
+              (fun (target_inst, _) ->
+                pf ppf "(%s)" (constructor_name target_inst))
+              targets
+        | Some params ->
+            let targets_queue = ref targets in
+            List.iter
+              (fun p ->
+                match p with
+                | Literal name -> pf ppf "(%s)" name
+                | Placeholder -> (
+                    match !targets_queue with
+                    | (target_inst, _) :: rest ->
+                        pf ppf "(%s)" (constructor_name target_inst);
+                        targets_queue := rest
+                    | [] -> ()))
+              params))
     sorted
 
 (** Emit individual connect calls for non-leaf, non-passive instances. Passive
     (module-only) components get functor applications but no connect. *)
-let pp_annotated_connect_calls ppf sorted connections =
+let pp_annotated_connect_calls ppf tu sorted connections =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       if comp.comp_kind = Passive then ()
@@ -1341,7 +1436,13 @@ let pp_annotated_connect_calls ppf sorted connections =
           let config_ports =
             unconnected_input_ports inst_name comp connections
           in
+          let ca =
+            parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+          in
           pf ppf "@,    %s%s = %s.connect" bind inst_var mod_name;
+          (match ca.connect_args with
+          | Some args -> pf ppf " %s" args
+          | None -> ());
           List.iter
             (fun (p : Ast.port_instance_general) ->
               pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1358,7 +1459,7 @@ let pp_annotated_connect_calls ppf sorted connections =
 (** Emit the connect function for annotated topology mode. Passive (module-only)
     components are excluded from the connect body, record fields, and functor
     parameters. *)
-let pp_annotated_connect ppf sorted connections =
+let pp_annotated_connect ppf tu sorted connections =
   let concrete =
     List.filter
       (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
@@ -1366,7 +1467,9 @@ let pp_annotated_connect ppf sorted connections =
   in
   let has_active =
     List.exists
-      (fun (_, _, (comp : Ast.def_component)) -> is_active_component comp)
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        is_active_component comp
+        && target_instances inst_name comp connections sorted <> [])
       concrete
   in
   (* Collect labeled args: unconnected input ports from non-leaf instances *)
@@ -1395,7 +1498,7 @@ let pp_annotated_connect ppf sorted connections =
   List.iter (fun p -> pf ppf " %s" p) leaf_params;
   pf ppf " =";
   if has_active then pf ppf "@,    let open Lwt.Syntax in";
-  pp_annotated_connect_calls ppf sorted connections;
+  pp_annotated_connect_calls ppf tu sorted connections;
   let fields =
     List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) concrete
   in
@@ -1432,58 +1535,69 @@ let pp_topology_annotated ppf tu sorted connections =
       pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
     concrete;
   pf ppf " }";
-  pp_annotated_connect ppf sorted connections;
+  pp_annotated_connect ppf tu sorted connections;
   pf ppf "@,end"
 
-(** Whether a topology should use functor-application mode: any non-leaf
-    non-passive component triggers it. The [@ ocaml.functor] annotation is only
-    needed to override the default [ComponentName.Make] path. *)
-let is_functor_mode sorted connections =
+(** Whether a topology should use functor-application mode. Triggered when any
+    component has an active non-leaf instance (the original rule) OR when any
+    component carries an [@ ocaml.functor] or [@ ocaml.sig] annotation. *)
+let is_functor_mode tu sorted connections =
   List.exists
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       comp.comp_kind <> Passive
-      && connection_targets inst_name connections <> [])
+      && connection_targets inst_name connections <> []
+      ||
+      let ca =
+        parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+      in
+      Option.is_some ca.functor_path || Option.is_some ca.sig_path)
     sorted
 
-(** Pretty-print a full topology as OCaml code. *)
-let pp_topology tu ppf (topo : Ast.def_topology) =
+(** Whether a topology would produce OCaml code. In functor-application mode,
+    topologies with no concrete (non-passive) instances are import-only
+    sub-topologies and produce no output. Regular mode always produces output.
+*)
+let topology_has_output tu (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
   let connections = collect_direct_connections topo in
   let sorted = topo_sort_instances resolved connections in
-  pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
-    topo.topo_name.data;
-  (if is_functor_mode sorted connections then
-     pp_topology_annotated ppf tu sorted connections
-   else
-     let seen = Hashtbl.create 8 in
-     let unique_comps =
-       List.filter_map
-         (fun (_inst_name, _ci, (comp : Ast.def_component)) ->
-           if Hashtbl.mem seen comp.comp_name.data then None
-           else (
-             Hashtbl.add seen comp.comp_name.data ();
-             Some comp))
-         sorted
-     in
-     List.iter (pp_component_sig ppf) unique_comps;
-     pp_topology_functor ppf topo sorted connections);
-  pf ppf "@]@."
+  let has_concrete =
+    List.exists
+      (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
+      sorted
+  in
+  has_concrete || not (is_functor_mode tu sorted connections)
 
-(** Collect topologies from a translation unit. *)
-let collect_topologies tu =
-  List.filter_map
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Mod_def_topology t -> Some t
-      | Ast.Mod_def_module m ->
-          List.find_map
-            (fun ann2 ->
-              match (Ast.unannotate ann2).Ast.data with
-              | Ast.Mod_def_topology t -> Some t
-              | _ -> None)
-            m.Ast.module_members
-      | _ -> None)
-    tu.Ast.tu_members
+(** Pretty-print a full topology as OCaml code. In functor-application mode,
+    topologies with no concrete (non-passive) instances are import-only
+    sub-topologies and produce no output. *)
+let pp_topology tu ppf (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let resolved = resolve_topology_instances tu topo in
+  let connections = collect_direct_connections topo in
+  let sorted = topo_sort_instances resolved connections in
+  if not (topology_has_output tu topo) then ()
+  else begin
+    pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
+      topo.topo_name.data;
+    (if is_functor_mode tu sorted connections then
+       pp_topology_annotated ppf tu sorted connections
+     else
+       let seen = Hashtbl.create 8 in
+       let unique_comps =
+         List.filter_map
+           (fun (_inst_name, _ci, (comp : Ast.def_component)) ->
+             if Hashtbl.mem seen comp.comp_name.data then None
+             else (
+               Hashtbl.add seen comp.comp_name.data ();
+               Some comp))
+           sorted
+       in
+       List.iter (pp_component_sig ppf) unique_comps;
+       pp_topology_functor ppf topo sorted connections);
+    pf ppf "@]@."
+  end
 
 (** Emit module types for leaf components in annotated topologies. The module
     type is generated from the component's input ports. *)
@@ -1495,10 +1609,11 @@ let pp_module_types tu ppf =
   let topos = collect_topologies tu in
   List.iter
     (fun (topo : Ast.def_topology) ->
+      let topo = flatten_topology tu topo in
       let resolved = resolve_topology_instances tu topo in
       let connections = collect_direct_connections topo in
       let sorted = topo_sort_instances resolved connections in
-      if is_functor_mode sorted connections then
+      if is_functor_mode tu sorted connections then
         List.iter
           (fun (inst_name, _ci, (comp : Ast.def_component)) ->
             if comp.comp_kind <> Passive then
@@ -1513,5 +1628,17 @@ let pp_module_types tu ppf =
   let comps = List.rev !comps in
   if comps <> [] then (
     pf ppf "@[<v>(* Module types generated by ofpp to-ml *)";
-    List.iter (pp_port_module_type ppf tu ~type_env) comps;
+    List.iter
+      (fun (comp : Ast.def_component) ->
+        let ca =
+          parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+        in
+        match ca.sig_path with
+        | Some sig_path ->
+            let name =
+              String.uppercase_ascii (camel_to_snake comp.comp_name.data)
+            in
+            pf ppf "@,@,module type %s = %s" name sig_path
+        | None -> pp_port_module_type ppf tu ~type_env comp)
+      comps;
     pf ppf "@]@.@.")

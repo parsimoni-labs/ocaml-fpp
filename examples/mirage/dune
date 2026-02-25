@@ -1,6 +1,8 @@
 ; Generate OCaml module types and functor wiring from mirage.fpp
 
 (rule
+ (mode
+  (promote (until-clean)))
  (target mirage.ml)
  (deps mirage.fpp)
  (action
@@ -36,10 +38,16 @@
   ethernet
   arp.mirage
   tcpip.ipv4
+  tcpip.ipv6
   tcpip.icmpv4
   tcpip.udp
   tcpip
   tcpip.tcp
+  tcpip.stack-direct
+  tcpip.stack-socket
+  tcpip.tcpv4v6-socket
+  tcpip.udpv4v6-socket
+  conduit-mirage
   tls
   tls-mirage
   x509

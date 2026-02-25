@@ -22,7 +22,13 @@ val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
 
     In annotated (functor-application) mode, passive components are module-only:
     they get functor applications but no record fields, connect calls, or Make
-    parameters. *)
+    parameters. Import-only topologies (all instances passive) produce no
+    output. *)
+
+val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
+(** [topology_has_output tu topo] is [true] when [topo] would produce OCaml
+    code. Returns [false] for import-only topologies where every instance is
+    passive. *)
 
 val pp_module_types : Ast.translation_unit -> Format.formatter -> unit
 (** [pp_module_types tu ppf] emits module type aliases from components annotated

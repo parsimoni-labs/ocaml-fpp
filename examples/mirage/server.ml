@@ -1,7 +1,12 @@
+(* server.ml — HTTPS server with HTTP redirect.
+
+   Adapted from mirage-skeleton/static_website_tls/dispatch.ml.
+   Uses conduit for unified TLS/TCP transport, so one CoHTTP
+   server module handles both HTTPS dispatch and HTTP redirect. *)
+
 open Lwt.Infix
 
 module type HTTP = Cohttp_mirage.Server.S
-(** Common signature for http and https. *)
 
 (* Logging *)
 let https_src = Logs.Src.create "https" ~doc:"HTTPS server"
@@ -15,8 +20,7 @@ module Http_log = (val Logs.src_log http_src : Logs.LOG)
 module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
   let failf fmt = Fmt.kstr Lwt.fail_with fmt
 
-  (* given a URI, find the appropriate file,
-   * and construct a response with its contents. *)
+  (* Given a URI, find the appropriate file and construct a response. *)
   let rec dispatcher fs uri =
     match Uri.path uri with
     | "" | "/" -> dispatcher fs (Uri.with_path uri "index.html")
@@ -43,20 +47,30 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.respond ~headers ~status:`Moved_permanently ~body:`Empty ()
 
   let serve dispatch =
-    let callback _conn request _body =
+    let callback (_, cid) request _body =
       let uri = Cohttp.Request.uri request in
-      Https_log.info (fun f -> f "serving %s." (Uri.to_string uri));
+      let cid =
+        begin[@alert "-deprecated"]
+          Cohttp.Connection.to_string cid
+        end
+      in
+      Https_log.info (fun f -> f "[%s] serving %s." cid (Uri.to_string uri));
       dispatch uri
     in
-    let conn_closed _conn = Https_log.info (fun f -> f "closing connection") in
+    let conn_closed (_, cid) =
+      let cid =
+        begin[@alert "-deprecated"]
+          Cohttp.Connection.to_string cid
+        end
+      in
+      Https_log.info (fun f -> f "[%s] closing" cid)
+    in
     S.make ~conn_closed ~callback ()
 end
 
 module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
   module X509 = Tls_mirage.X509 (KEYS)
   module D = Dispatch (DATA) (Http)
-
-  type t = { data : DATA.t; keys : KEYS.t; tls_cfg : Tls.Config.server }
 
   let tls_init kv =
     X509.certificate kv `Default >>= fun cert ->
@@ -65,9 +79,17 @@ module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
     in
     Lwt.return conf
 
-  let connect data keys =
-    tls_init keys >>= fun tls_cfg -> Lwt.return { data; keys; tls_cfg }
-
-  let handler t = D.serve (D.dispatcher t.data)
-  let tls_config t = t.tls_cfg
+  let start data keys http =
+    tls_init keys >>= fun cfg ->
+    let tls = `TLS (cfg, `TCP 443) in
+    let tcp = `TCP 80 in
+    let https =
+      Https_log.info (fun f -> f "listening for HTTPS on 443/TCP");
+      http tls @@ D.serve (D.dispatcher data)
+    in
+    let http =
+      Http_log.info (fun f -> f "listening for HTTP on 80/TCP");
+      http tcp @@ D.serve (D.redirect 443)
+    in
+    Lwt.join [ https; http ]
 end
