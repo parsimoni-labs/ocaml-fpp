@@ -1,1 +1,0 @@
-../../../examples/mirage/mirage.fpp

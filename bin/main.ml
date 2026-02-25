@@ -514,25 +514,38 @@ let gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only =
   else if topologies <> [] then gen_ml_topologies ppf tu topologies
   else gen_ml_all ppf tu ~sm_name
 
-let to_ml ~output ~sm_name ~topologies ~types_only files =
-  let buf = Buffer.create 4096 in
-  let ppf = Fmt.with_buffer buf in
+let merge_files files =
+  let tus = ref [] in
   let ok = ref true in
   List.iter
     (fun file ->
       match Fpp.parse_file file with
-      | tu ->
-          Buffer.clear buf;
-          Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-          gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only;
-          Fmt.flush ppf ();
-          let text = Buffer.contents buf in
-          if text <> "" then write_output output text
+      | tu -> tus := tu :: !tus
       | exception Fpp.Parse_error e ->
           Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
           ok := false)
     files;
-  if !ok then 0 else 1
+  if not !ok then None
+  else
+    let members =
+      List.concat_map
+        (fun (tu : Fpp.Ast.translation_unit) -> tu.tu_members)
+        (List.rev !tus)
+    in
+    Some ({ Fpp.Ast.tu_members = members } : Fpp.Ast.translation_unit)
+
+let to_ml ~output ~sm_name ~topologies ~types_only files =
+  match merge_files files with
+  | None -> 1
+  | Some tu ->
+      let buf = Buffer.create 4096 in
+      let ppf = Fmt.with_buffer buf in
+      Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
+      gen_ml_for_tu ppf tu ~sm_name ~topologies ~types_only;
+      Fmt.flush ppf ();
+      let text = Buffer.contents buf in
+      if text <> "" then write_output output text;
+      0
 
 let to_ml_output_t =
   let doc = "Output file. If omitted, OCaml code is written to stdout." in

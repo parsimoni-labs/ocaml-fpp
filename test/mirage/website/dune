@@ -1,0 +1,95 @@
+; Compilation tests for fully-bound Unix topologies.
+; Generated code is compiled against real MirageOS library signatures.
+
+(library
+ (name website_support)
+ (modules server htdocs_data tls_data)
+ (wrapped false)
+ (libraries
+  lwt
+  lwt.unix
+  conduit-mirage
+  cohttp-mirage
+  tcpip.stack-socket
+  mirage-kv-mem))
+
+; FPP source files (split across themed files, merged by ofpp).
+; skeleton.fpp is excluded — its topologies bind directly to library
+; modules and are not compilable without connect() wrappers.
+
+(rule
+ (target test_unix_test.ml)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{ofpp} to-ml --topologies UnixTestWebsite %{t} %{d} %{s} %{w}))))
+
+(rule
+ (target test_unix_website.ml)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{ofpp} to-ml --topologies UnixWebsite %{t} %{d} %{s} %{w}))))
+
+(rule
+ (target test_multi_bound.ml)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (with-stdout-to
+   %{target}
+   (run
+    %{ofpp}
+    to-ml
+    --topologies
+    UnixWebsite,UnixTestWebsite
+    %{t}
+    %{d}
+    %{s}
+    %{w}))))
+
+(rule
+ (target test_types.ml)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{ofpp} to-ml --types %{t} %{d} %{s} %{w}))))
+
+(executables
+ (names test_unix_test test_unix_website test_multi_bound test_types)
+ (libraries website_support)
+ (ocamlopt_flags
+  (:standard -w -32))
+ (modules test_unix_test test_unix_website test_multi_bound test_types))
+
+(rule
+ (alias runtest)
+ (deps
+  test_unix_test.exe
+  test_unix_website.exe
+  test_multi_bound.exe
+  test_types.exe)
+ (action
+  (echo "website compilation tests: OK\n")))

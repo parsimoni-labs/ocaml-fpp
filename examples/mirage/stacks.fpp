@@ -1,0 +1,67 @@
+@ MirageOS infrastructure sub-topologies.
+@
+@ Reusable building blocks composed via [import] by
+@ deployment topologies.  Each sub-topology wires a
+@ layer of the stack; the parent provides missing
+@ connections (e.g. which network backend to use).
+
+@ Protocol stack: backend through [MakeV4V6].
+topology TcpipStack {
+  instance backend
+  instance net
+  instance eth
+  instance arp
+  instance ipv4
+  instance ipv6
+  instance ip
+  instance icmp
+  instance udp
+  instance tcp
+  instance stack
+
+  connections Connect {
+    net.backend -> backend.provide
+    eth.net_write -> net.write
+    arp.eth_write -> eth.write
+    ipv4.eth_write -> eth.write
+    ipv4.arp_query -> arp.query
+    ipv6.net_write -> net.write
+    ipv6.eth_write -> eth.write
+    ip.ipv4 -> ipv4.write
+    ip.ipv6 -> ipv6.write
+    icmp.ip_write -> ipv4.write
+    udp.ip_write -> ip.write
+    tcp.ip_write -> ip.write
+    stack.netif -> net.write
+    stack.ethernet -> eth.write
+    stack.arpv4 -> arp.query
+    stack.ipv4v6 -> ip.write
+    stack.icmpv4 -> icmp.ip_write
+    stack.udpv4v6 -> udp.ip_write
+    stack.tcpv4v6 -> tcp.write
+  }
+}
+
+@ HTTP server chain: Conduit TCP -> TLS -> CoHTTP.
+@ The parent must wire [conduit_tcp.stack] to a stack.
+topology HttpStack {
+  instance conduit_tcp
+  instance conduit
+  instance http
+
+  connections Connect {
+    conduit.transport -> conduit_tcp.connect
+    http.conduit -> conduit.connect
+  }
+}
+
+@ Happy Eyeballs + DNS client.  The parent must wire both
+@ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
+topology DnsStack {
+  instance happy_eyeballs
+  instance dns_client
+
+  connections Connect {
+    dns_client.happy_eyeballs -> happy_eyeballs.provide
+  }
+}

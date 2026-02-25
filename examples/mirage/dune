@@ -1,10 +1,18 @@
-; Generate module type aliases from mirage.fpp
+; Concatenate themed FPP files into mirage.fpp (used by tests)
+
+(rule
+ (target mirage.fpp)
+ (deps types.fpp devices.fpp stacks.fpp websites.fpp skeleton.fpp)
+ (action
+  (bash "cat %{deps} > %{target}")))
+
+; Generate module type aliases
 
 (rule
  (mode
   (promote (until-clean)))
  (target mirage.ml)
- (deps mirage.fpp)
+ (deps types.fpp devices.fpp stacks.fpp websites.fpp)
  (action
   (with-stdout-to
    %{target}
@@ -16,7 +24,7 @@
  (mode
   (promote (until-clean)))
  (target main.ml)
- (deps mirage.fpp)
+ (deps types.fpp devices.fpp stacks.fpp websites.fpp)
  (action
   (with-stdout-to
    %{target}

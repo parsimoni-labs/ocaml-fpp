@@ -1,0 +1,2 @@
+; Parent directory for MirageOS compilation tests.
+; Each subdirectory tests a different mirage-skeleton pattern.
