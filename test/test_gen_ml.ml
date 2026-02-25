@@ -104,7 +104,7 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State S1, S ->
-          { state = State S2 }
+        { state = State S2 }
     | _ -> t
 
   let create () =
@@ -144,7 +144,7 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State S, S s ->
-          { state = State S }
+        { state = State S }
 
   let create () =
     { state = State S }
@@ -293,15 +293,15 @@ end = struct
     match t.state, signal with
     | State Closed, Open ->
         if G.locked t.ctx then begin
-          { t with state = State Closed }
+        { t with state = State Closed }
         end
         else begin
-          { t with state = State Opened }
+        { t with state = State Opened }
         end
     | State Closed, _ -> t
     | State Opened, Close ->
-          A.lock t.ctx;
-          { t with state = State Closed }
+        A.lock t.ctx;
+        { t with state = State Closed }
     | State Opened, _ -> t
 
   let create ctx =
@@ -357,8 +357,8 @@ end = struct
     match t.state, signal with
     | State A, Go ->
         A.on_exit_a t.ctx;
-          A.on_enter_b t.ctx;
-          { t with state = State B }
+        A.on_enter_b t.ctx;
+        { t with state = State B }
     | _ -> t
 
   let create ctx =
@@ -405,8 +405,8 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State Running, Tick ->
-          A.bump t.ctx;
-          t
+        A.bump t.ctx;
+        t
 
   let create ctx =
     { state = State Running; ctx }
@@ -459,11 +459,11 @@ end = struct
     match t.state, signal with
     | State Idle, Reading reading ->
         if G.over_limit t.ctx reading then begin
-          A.report t.ctx reading;
-          { t with state = State Idle }
+        A.report t.ctx reading;
+        { t with state = State Idle }
         end
         else begin
-          { t with state = State Idle }
+        { t with state = State Idle }
         end
 
   let create ctx =
@@ -531,7 +531,7 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State S1, S ->
-          enter_c1 t
+        enter_c1 t
     | _ -> t
 
   let create ctx =
@@ -580,9 +580,9 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State Counting, Alarm ->
-          { state = State Stopped }
+        { state = State Stopped }
     | State Counting, Tick ->
-          { state = State Counting }
+        { state = State Counting }
     | _ -> t
 
   let create () =
@@ -767,7 +767,7 @@ end = struct
   let step t signal =
     match t.state, signal with
     | State S1, A ->
-          { state = State S2 }
+        { state = State S2 }
     | State S1, _ -> t
     | _ -> t
 
@@ -805,7 +805,7 @@ module Make
   (Logger : LOGGER)
   (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
   type t = { logger : Logger.t; sensor : Sensor.t; }
-  let connect logger =
+  let data logger =
     let sensor = Sensor.connect logger in
     { logger; sensor }
 end|}
@@ -838,7 +838,7 @@ module Make
   (Consumer : CONSUMER)
   (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
   type t = { consumer : Consumer.t; producer : Producer.t; }
-  let connect consumer =
+  let main consumer =
     let producer = Producer.connect consumer in
     { consumer; producer }
 end|}
@@ -884,7 +884,7 @@ module Make
 
   type t = { net : Net.t; eth : Eth.t; ipv4 : Ipv4.t; }
 
-  let connect ~cidr net =
+  let w ~cidr net =
     let open Lwt.Syntax in
     let* eth = Eth.connect net in
     let* ipv4 = Ipv4.connect ~cidr eth in
@@ -914,7 +914,7 @@ module Make
 
   type t = { bar : Bar.t; foo : Foo.t; }
 
-  let connect bar =
+  let c bar =
     let open Lwt.Syntax in
     let* foo = Foo.connect bar in
     Lwt.return { bar; foo }
@@ -946,7 +946,7 @@ module Make
 
   type t = { net : Net.t; arp : Arp.t; }
 
-  let connect net =
+  let c net =
     let open Lwt.Syntax in
     let* arp = Arp.connect net in
     Lwt.return { net; arp }
@@ -986,7 +986,7 @@ module Make
 
   type t = { v4 : V4.t; v6 : V6.t; ip : Ip.t; }
 
-  let connect v4 v6 =
+  let c v4 v6 =
     let open Lwt.Syntax in
     let* ip = Ip.connect ~ipv4_only:true ~ipv6_only:false v4 v6 in
     Lwt.return { v4; v6; ip }
@@ -1025,7 +1025,7 @@ module Make
 
   type t = { net : Net.t; eth : Eth.t; }
 
-  let connect net =
+  let w net =
     let open Lwt.Syntax in
     let* eth = Eth.connect net in
     Lwt.return { net; eth }
@@ -1039,7 +1039,7 @@ module Make
 
   type t = { net : Net.t; eth : Eth.t; srv : Srv.t; }
 
-  let connect net =
+  let w net =
     let open Lwt.Syntax in
     let* eth = Eth.connect net in
     let* srv = Srv.connect eth in
@@ -1069,7 +1069,7 @@ module Make
 
   type t = { http : Http.t; }
 
-  let connect http =
+  let c http =
     { http }
 end|}
 
@@ -1163,7 +1163,7 @@ module Make
 
   type t = { net : Net.t; eth : Eth.t; data : Data.t; }
 
-  let connect net =
+  let w net =
     let open Lwt.Syntax in
     let* data = Data.connect () in
     let* eth = Eth.connect net in
@@ -1204,7 +1204,7 @@ module Make
 
   type t = { kv : Kv.t; certs : Certs.t; srv : Srv.t; }
 
-  let connect certs =
+  let w certs =
     let open Lwt.Syntax in
     let* kv = Kv.connect () in
     let* srv = Srv.connect kv certs in
@@ -1238,7 +1238,7 @@ module Make = struct
 
   type t = { kv : Kv.t; srv : Srv.t; }
 
-  let connect () =
+  let w () =
     let open Lwt.Syntax in
     let* kv = Kv.connect () in
     let* srv = Srv.connect kv in

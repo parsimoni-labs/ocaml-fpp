@@ -215,7 +215,7 @@ topology TcpipStack {
   instance tcp
   instance stack
 
-  connections Wiring {
+  connections Connect {
     net.backend -> backend.provide
     eth.net_write -> net.write
     arp.eth_write -> eth.write
@@ -245,7 +245,7 @@ topology HttpStack {
   instance conduit
   instance http
 
-  connections Wiring {
+  connections Connect {
     conduit.transport -> conduit_tcp.connect
     http.conduit -> conduit.connect
   }
@@ -258,7 +258,7 @@ topology StaticWebsite {
   instance data
   instance certs
 
-  connections Wiring {
+  connections Connect {
     conduit_tcp.stack -> stack.provide
   }
 }
@@ -267,10 +267,12 @@ topology StaticWebsite {
 topology UnixWebsite {
   instance socket_stack
   import HttpStack
+  @ ocaml.module Htdocs_data
   instance data
+  @ ocaml.module Tls_data
   instance certs
 
-  connections Wiring {
+  connections Connect {
     conduit_tcp.stack -> socket_stack.provide
   }
 }

@@ -1,12 +1,8 @@
 Generated OCaml from state machines and topologies must compile and run correctly.
 
-Setup: create a dune-project so we can build with dune
-  $ cat > dune-project <<EOF
-  > (lang dune 3.0)
-  > EOF
-  $ cat > dune <<EOF
-  > (executable (name sm) (ocamlopt_flags (:standard -w -23-32)))
-  > EOF
+Setup: compile helper using ocamlopt directly (avoids nested dune deadlock)
+  $ compile() { ocamlopt -w -23-32 sm.ml -o sm.exe 2>&1; }
+  $ run() { ./sm.exe 2>&1; }
 
 Simple state machines (no actions or guards)
   $ cat > t.fpp <<EOF
@@ -22,7 +18,7 @@ Simple state machines (no actions or guards)
   >   let State _ = Make.state m in
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "state_ok: OK"
+  $ compile && run && echo "state_ok: OK"
   state_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -41,7 +37,7 @@ Simple state machines (no actions or guards)
   >   assert (Make.state m = State T);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "nested_state_ok: OK"
+  $ compile && run && echo "nested_state_ok: OK"
   nested_state_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -60,7 +56,7 @@ Simple state machines (no actions or guards)
   >   assert (Make.state m = State S1);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "state_shadow_ok: OK"
+  $ compile && run && echo "state_shadow_ok: OK"
   state_shadow_ok: OK
 
 Signal dispatch
@@ -79,7 +75,7 @@ Signal dispatch
   >   assert (Make.state m = State S);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "signal_ok: OK"
+  $ compile && run && echo "signal_ok: OK"
   signal_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -115,7 +111,7 @@ Signal dispatch
   >   assert (M.state m = State S2);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "cycle_ok: OK"
+  $ compile && run && echo "cycle_ok: OK"
   cycle_ok: OK
 
 Actions
@@ -140,7 +136,7 @@ Actions
   >   assert (M.state m = State S);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "action_ok: OK"
+  $ compile && run && echo "action_ok: OK"
   action_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -167,7 +163,7 @@ Actions
   >   assert (M.state m = State T);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "nested_action_ok: OK"
+  $ compile && run && echo "nested_action_ok: OK"
   nested_action_ok: OK
 
 Guards and choices
@@ -191,7 +187,7 @@ Guards and choices
   >   assert (M.state m = State S);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "choice_ok: OK"
+  $ compile && run && echo "choice_ok: OK"
   choice_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -217,7 +213,7 @@ Guards and choices
   >   assert (M.state m = State T);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "nested_choice_ok: OK"
+  $ compile && run && echo "nested_choice_ok: OK"
   nested_choice_ok: OK
 
   $ cat > t.fpp <<EOF
@@ -243,7 +239,7 @@ Guards and choices
   >   assert (M.state m = State T);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "nested_guard_ok: OK"
+  $ compile && run && echo "nested_guard_ok: OK"
   nested_guard_ok: OK
 
 Door (actions + guards + signals, full workflow)
@@ -283,7 +279,7 @@ Door (actions + guards + signals, full workflow)
   >   assert (D.state d = State Closed);
   >   ignore d
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "door: OK"
+  $ compile && run && echo "door: OK"
   door: OK
 
 Enum + array types used by signals and actions
@@ -319,7 +315,7 @@ Enum + array types used by signals and actions
   >   assert (Array.length h = 4);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "motor: OK"
+  $ compile && run && echo "motor: OK"
   motor: OK
 
 Struct types used by signals and actions
@@ -354,7 +350,7 @@ Struct types used by signals and actions
   >   assert (ctx.last = Some r2);
   >   ignore m
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "sensor: OK"
+  $ compile && run && echo "sensor: OK"
   sensor: OK
 
 Topology: simple 2-component wiring
@@ -395,12 +391,12 @@ Topology: simple 2-component wiring
   >   assert (app.logger.received = 1);
   >   print_endline "topo: OK"
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "topo_compile: OK"
+  $ compile && run && echo "topo_compile: OK"
   File "sm.ml", line 27, characters 4-18:
   27 |     Logger.data_in logger ();
            ^^^^^^^^^^^^^^
   Error: Unbound value Logger.data_in
-  [1]
+  [2]
 
 Topology: typed port wiring compiles and field access works
   $ cat > t.fpp <<EOF
@@ -440,12 +436,12 @@ Topology: typed port wiring compiles and field access works
   >   assert (app.consumer.last = 42l);
   >   print_endline "typed_topo: OK"
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "typed_topo_compile: OK"
+  $ compile && run && echo "typed_topo_compile: OK"
   File "sm.ml", line 27, characters 12-24:
   27 |     ignore (Consumer.in_ consumer 42l : bool);
                    ^^^^^^^^^^^^
   Error: Unbound value Consumer.in_
-  [1]
+  [2]
 
 Topology + SM merged in one file compiles
   $ cat > t.fpp <<EOF
@@ -488,12 +484,12 @@ Topology + SM merged in one file compiles
   >   let _app = App.connect () in
   >   print_endline "merged: OK"
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "merged_compile: OK"
+  $ compile && run && echo "merged_compile: OK"
   File "sm.ml", line 63, characters 4-18:
   63 |     Logger.data_in logger ();
            ^^^^^^^^^^^^^^
   Error: Unbound value Logger.data_in
-  [1]
+  [2]
 
 Full pipeline: SM + topology wiring
   $ cat > t.fpp <<EOF
@@ -592,9 +588,9 @@ Full pipeline: SM + topology wiring
   >   assert (app.logger.count = 4);
   >   print_endline "pipeline: OK"
   > IMPL
-  $ dune exec ./sm.exe 2>&1 && echo "pipeline_compile: OK"
+  $ compile && run && echo "pipeline_compile: OK"
   File "sm.ml", line 88, characters 6-18:
   88 |       Logger.alert t.logger (Printf.sprintf "Temp %ld exceeds limit" temp);
              ^^^^^^^^^^^^
   Error: Unbound value Logger.alert
-  [1]
+  [2]
