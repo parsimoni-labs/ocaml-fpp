@@ -203,6 +203,28 @@ Generate filled GTest test cases using standard F Prime test macros:
 - [ ] Generate OCaml types from FPP type definitions (structs, enums, arrays)
 - [ ] Generate test harness stubs
 
+### Topology codegen vs mirage-skeleton
+
+Comparison of `ofpp to-ml` output against Mirage's generated `main.ml`
+(see `examples/mirage/` and `~/git/mirage-skeleton/applications/static_website_tls/mirage/main.ml`).
+
+- [x] **Entry point calls user start function** -- the entry point should call
+      the last non-leaf active instance's `.start` method with its dependencies
+      as arguments, not just force lazy bindings and return `()`.
+- [x] **Passive component connect/listen calls** -- passive components (Conduit,
+      CoHTTP) need their connect or listen calls wired in the entry point, not
+      just functor applications. Mirage emits `Cohttp.listen conduit` and
+      `Conduit_mirage.TCP.connect stack`.
+- [ ] **Runtime configuration arguments** -- real MirageOS socket connect
+      signatures take `~ipv4_only` / `~ipv6_only` and network prefix arguments
+      from runtime keys. Currently ofpp relies on wrapper modules with hardcoded
+      defaults. Need a mechanism for connect-time arguments beyond the
+      connection graph.
+- [x] **User functor application** -- when the topology includes a user-facing
+      functor (e.g. `Dispatch.HTTPS(Data)(Certs)(Http)`), generate the
+      application and wire `.start`. Currently ofpp stops at the infrastructure
+      layer.
+
 ## Infrastructure
 
 - [ ] CI (GitHub Actions: Ubuntu, macOS; OCaml 4.14, 5.x)

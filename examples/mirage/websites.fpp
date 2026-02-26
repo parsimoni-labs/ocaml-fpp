@@ -12,9 +12,13 @@ topology StaticWebsite {
   import HttpStack
   instance data
   instance certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.http -> http.listen
   }
 }
 
@@ -25,11 +29,15 @@ topology StaticWebsiteWithDns {
   import DnsStack
   instance data
   instance certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> stack.provide
     happy_eyeballs.stack -> stack.provide
     dns_client.stack -> stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.http -> http.listen
   }
 }
 
@@ -43,6 +51,7 @@ topology TarWebsite {
   instance certs_block
   instance tar_data
   instance tar_certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> stack.provide
@@ -50,6 +59,9 @@ topology TarWebsite {
     dns_client.stack -> stack.provide
     tar_data.block -> data_block.provide
     tar_certs.block -> certs_block.provide
+    server.data -> tar_data.provide
+    server.certs -> tar_certs.provide
+    server.http -> http.listen
   }
 }
 
@@ -61,11 +73,15 @@ topology FatWebsite {
   instance certs_block
   instance fat_data
   instance fat_certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> stack.provide
     fat_data.block -> data_block.provide
     fat_certs.block -> certs_block.provide
+    server.data -> fat_data.provide
+    server.certs -> fat_certs.provide
+    server.http -> http.listen
   }
 }
 
@@ -85,9 +101,13 @@ topology UnixWebsite {
   instance data
   @ ocaml.module Tls_data
   instance certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> socket_stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.http -> http.listen
   }
 }
 
@@ -106,11 +126,15 @@ topology UnixWebsiteWithDns {
   instance data
   @ ocaml.module Tls_data
   instance certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> socket_stack.provide
     happy_eyeballs.stack -> socket_stack.provide
     dns_client.stack -> socket_stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.http -> http.listen
   }
 }
 
@@ -128,8 +152,12 @@ topology UnixTestWebsite {
   instance data
   @ ocaml.module Mirage_kv_mem
   instance certs
+  instance server
 
   connections Connect {
     conduit_tcp.stack -> socket_stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.http -> http.listen
   }
 }

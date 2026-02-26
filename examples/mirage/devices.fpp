@@ -177,6 +177,19 @@ module Cohttp_mirage {
   }
 }
 
+@ ── Application ────────────────────────────────────────
+@
+@ The user-facing HTTPS server functor.  Takes KV stores for
+@ static data and TLS certificates, plus the CoHTTP server.
+@ [Server.HTTPS(Data)(Certs)(Http).start data certs http].
+
+@ ocaml.functor Server.HTTPS
+active component Server {
+  output port data: Dep
+  output port certs: Dep
+  output port http: Dep
+}
+
 @ ── DNS ─────────────────────────────────────────────────
 @
 @ Happy Eyeballs (RFC 8305) provides dual-stack connection
@@ -230,6 +243,7 @@ instance fat_certs: Fat_kv_ro base id 0x860
 instance conduit_tcp: Conduit_tcp base id 0xA00
 instance conduit: Conduit base id 0xA10
 instance http: Cohttp_mirage.Server base id 0xA20
+instance server: Server base id 0xA30
 
 @ DNS
 instance happy_eyeballs: Happy_eyeballs_mirage base id 0xE00
