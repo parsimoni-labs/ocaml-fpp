@@ -4,3 +4,5 @@ _opam/
 *.merlin
 .merlin
 examples/mirage/mirage.ml
+_homebrew_build/
+test-results/

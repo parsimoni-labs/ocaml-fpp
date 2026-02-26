@@ -1,0 +1,16 @@
+handle: parsimoni-labs
+
+storage:
+  bucket: homebrew-bottles
+  region: fr-par
+  profile: homebrew-monopam
+
+tap:
+  clone_url: https://github.com/parsimoni-labs/homebrew-tap.git
+  push_url: git@github.com:parsimoni-labs/homebrew-tap
+  local_path: "../homebrew-tap"
+
+binaries:
+  - name: ofpp
+    target: bin/main.exe
+    description: "FPP-to-OCaml code generator for NASA F Prime models"
