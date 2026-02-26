@@ -343,28 +343,48 @@ let dot_render_topos buf ppf output ok tu ~topo_name =
       emit_dot_text output ok (Buffer.contents buf))
     topos
 
+let parse_files files =
+  let tus = ref [] in
+  let ok = ref true in
+  List.iter
+    (fun file ->
+      match Fpp.parse_file file with
+      | tu -> tus := (file, tu) :: !tus
+      | exception Fpp.Parse_error e ->
+          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
+          ok := false)
+    files;
+  if not !ok then None else Some (List.rev !tus)
+
+let merge_tus per_file =
+  let members =
+    List.concat_map
+      (fun (_, (tu : Fpp.Ast.translation_unit)) -> tu.tu_members)
+      per_file
+  in
+  { Fpp.Ast.tu_members = members }
+
 let dot ~output ~sm_name ~topo_name files =
   if sm_name <> None && topo_name <> None then begin
     Fmt.epr "%a --sm and --topology are mutually exclusive@." pp_err ();
     1
   end
   else
-    let ok = ref true in
-    let buf = Buffer.create 4096 in
-    let ppf = Fmt.with_buffer buf in
-    List.iter
-      (fun file ->
-        match Fpp.parse_file file with
-        | tu ->
+    match parse_files files with
+    | None -> 1
+    | Some per_file ->
+        let merged = merge_tus per_file in
+        let ok = ref true in
+        let buf = Buffer.create 4096 in
+        let ppf = Fmt.with_buffer buf in
+        List.iter
+          (fun (_file, tu) ->
             if topo_name = None then
-              dot_render_sms buf ppf output ok tu ~sm_name;
-            if sm_name = None then
-              dot_render_topos buf ppf output ok tu ~topo_name
-        | exception Fpp.Parse_error e ->
-            Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
-            ok := false)
-      files;
-    if !ok then 0 else 1
+              dot_render_sms buf ppf output ok tu ~sm_name)
+          per_file;
+        if sm_name = None then
+          dot_render_topos buf ppf output ok merged ~topo_name;
+        if !ok then 0 else 1
 
 let output_t =
   let doc =
@@ -551,27 +571,6 @@ let gen_ml_all ppf tu ~sm_name =
 let gen_ml_for_tu ppf tu ~sm_name ~topologies =
   if topologies <> [] then gen_ml_topologies ppf tu topologies
   else gen_ml_all ppf tu ~sm_name
-
-let parse_files files =
-  let tus = ref [] in
-  let ok = ref true in
-  List.iter
-    (fun file ->
-      match Fpp.parse_file file with
-      | tu -> tus := (file, tu) :: !tus
-      | exception Fpp.Parse_error e ->
-          Fmt.epr "%a %a@." pp_err () Fpp.pp_error e;
-          ok := false)
-    files;
-  if not !ok then None else Some (List.rev !tus)
-
-let merge_tus per_file =
-  let members =
-    List.concat_map
-      (fun (_, (tu : Fpp.Ast.translation_unit)) -> tu.tu_members)
-      per_file
-  in
-  { Fpp.Ast.tu_members = members }
 
 let to_ml ~output ~sm_name ~topologies ~types_only files =
   match parse_files files with

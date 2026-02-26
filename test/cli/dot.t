@@ -214,6 +214,31 @@ File with both SM and topology renders both by default
   $ ofpp dot both.fpp | grep -c "digraph"
   2
 
+Multi-file topology with import shows sub-topology connections
+  $ cat > defs.fpp <<EOF
+  > port Data
+  > active component A { output port out: Data; sync input port provide: Data }
+  > passive component B { sync input port inp: Data }
+  > instance a: A base id 0x100
+  > instance b: B base id 0x200
+  > topology Sub {
+  >   instance a
+  >   instance b
+  >   connections C { a.out -> b.inp }
+  > }
+  > EOF
+  $ cat > parent.fpp <<EOF
+  > active component D { output port data: Data; sync input port provide: Data }
+  > instance d: D base id 0x300
+  > topology Parent {
+  >   import Sub
+  >   instance d
+  >   connections C { d.data -> a.provide }
+  > }
+  > EOF
+  $ ofpp dot --topology Parent defs.fpp parent.fpp | grep -c '\->'
+  2
+
 DOT output compiles for all upstream state machines
   $ for f in "$TESTDIR"/../upstream/state_machine/*.fpp; do
   >   dotout=$(ofpp dot "$f" 2>/dev/null)
