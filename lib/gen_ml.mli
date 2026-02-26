@@ -60,22 +60,10 @@ val topology_active_instance_names :
     pairs for active (non-passive) instances in [topo], in topo-sorted order.
     These are the instances that receive lazy bindings in fully-bound mode. *)
 
-val topology_start_info :
-  Ast.translation_unit -> Ast.def_topology -> (string * string list) option
-(** [topology_start_info tu topo] returns [Some (module_name, var_names)] when
-    the last active instance in [topo] is a non-leaf (has dependencies),
-    indicating it should receive a [.start] call. Returns [None] when all active
-    instances are leaves. *)
-
-val pp_flat_entry_point :
-  Format.formatter ->
-  (string * string) list ->
-  start:(string * string list) option ->
-  unit
-(** [pp_flat_entry_point ppf names ~start] emits a [let () = Lwt_main.run (...)]
-    entry point that forces each lazy binding. When [~start] is
-    [Some (mod_name, args)], emits [Mod_name.start arg1 ...]; otherwise emits
-    [Lwt.return ()]. Each element of [names] is [(var_name, module_name)]. *)
+val pp_flat_entry_point : Format.formatter -> (string * string) list -> unit
+(** [pp_flat_entry_point ppf names] emits a [let () = Lwt_main.run (...)] entry
+    point that forces each lazy binding with [let* _ = Lazy.force x in] and
+    finishes with [Lwt.return ()]. *)
 
 (** {2 Topology Helpers} *)
 

@@ -9,35 +9,31 @@
 @ Crunch KV (build-time embedded), no DNS.
 topology StaticWebsite {
   import TcpipStack
-  import HttpStack
   instance data
   instance certs
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> stack.provide
     server.data -> data.get
     server.certs -> certs.get
-    server.http -> http.listen
+    server.stack -> stack.provide
   }
 }
 
 @ Crunch KV, with DNS.
 topology StaticWebsiteWithDns {
   import TcpipStack
-  import HttpStack
   import DnsStack
   instance data
   instance certs
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> stack.provide
     happy_eyeballs.stack -> stack.provide
     dns_client.stack -> stack.provide
     server.data -> data.get
     server.certs -> certs.get
-    server.http -> http.listen
+    server.stack -> stack.provide
   }
 }
 
@@ -45,7 +41,6 @@ topology StaticWebsiteWithDns {
 @ Each KV store reads from its own block device.
 topology TarWebsite {
   import TcpipStack
-  import HttpStack
   import DnsStack
   instance data_block
   instance certs_block
@@ -54,21 +49,19 @@ topology TarWebsite {
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> stack.provide
     happy_eyeballs.stack -> stack.provide
     dns_client.stack -> stack.provide
     tar_data.block -> data_block.provide
     tar_certs.block -> certs_block.provide
     server.data -> tar_data.provide
     server.certs -> tar_certs.provide
-    server.http -> http.listen
+    server.stack -> stack.provide
   }
 }
 
 @ FAT-over-block KV, no DNS.
 topology FatWebsite {
   import TcpipStack
-  import HttpStack
   instance data_block
   instance certs_block
   instance fat_data
@@ -76,12 +69,11 @@ topology FatWebsite {
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> stack.provide
     fat_data.block -> data_block.provide
     fat_certs.block -> certs_block.provide
     server.data -> fat_data.provide
     server.certs -> fat_certs.provide
-    server.http -> http.listen
+    server.stack -> stack.provide
   }
 }
 
@@ -96,7 +88,6 @@ topology UnixWebsite {
   instance tcp_socket
   @ ocaml.module Server.Socket_stack
   instance socket_stack
-  import HttpStack
   @ ocaml.module Htdocs_data
   instance data
   @ ocaml.module Tls_data
@@ -104,10 +95,9 @@ topology UnixWebsite {
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> socket_stack.provide
     server.data -> data.get
     server.certs -> certs.get
-    server.http -> http.listen
+    server.stack -> socket_stack.provide
   }
 }
 
@@ -120,7 +110,6 @@ topology UnixWebsiteWithDns {
   instance tcp_socket
   @ ocaml.module Server.Socket_stack
   instance socket_stack
-  import HttpStack
   import DnsStack
   @ ocaml.module Htdocs_data
   instance data
@@ -129,12 +118,11 @@ topology UnixWebsiteWithDns {
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> socket_stack.provide
     happy_eyeballs.stack -> socket_stack.provide
     dns_client.stack -> socket_stack.provide
     server.data -> data.get
     server.certs -> certs.get
-    server.http -> http.listen
+    server.stack -> socket_stack.provide
   }
 }
 
@@ -147,7 +135,6 @@ topology UnixTestWebsite {
   instance tcp_socket
   @ ocaml.module Server.Socket_stack
   instance socket_stack
-  import HttpStack
   @ ocaml.module Mirage_kv_mem
   instance data
   @ ocaml.module Mirage_kv_mem
@@ -155,9 +142,8 @@ topology UnixTestWebsite {
   instance server
 
   connections Connect {
-    conduit_tcp.stack -> socket_stack.provide
     server.data -> data.get
     server.certs -> certs.get
-    server.http -> http.listen
+    server.stack -> socket_stack.provide
   }
 }

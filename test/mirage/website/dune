@@ -8,9 +8,9 @@
  (libraries
   lwt
   lwt.unix
-  conduit-mirage
-  cohttp-mirage
   tcpip.stack-socket
+  tcpip.tcpv4v6-socket
+  tcpip.udpv4v6-socket
   mirage-kv-mem))
 
 ; FPP source files (split across themed files, merged by ofpp).

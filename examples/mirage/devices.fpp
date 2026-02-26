@@ -11,8 +11,7 @@
 @ target backend (solo5, xen, unix tap).
 
 active component Backend {
-  sync input port provide: Dep
-}
+  sync input port provide}
 
 @ ── Socket stack ────────────────────────────────────────
 @
@@ -21,24 +20,18 @@ active component Backend {
 @   [Udpv4v6_socket] + [Tcpv4v6_socket] -> [Tcpip_stack_socket.V4V6]
 
 active component Udpv4v6_socket {
-  sync input port provide: Dep
-}
+  sync input port provide}
 
 active component Tcpv4v6_socket {
-  sync input port provide: Dep
-}
+  sync input port provide}
 
 active component SocketStack {
-  output port udp: Dep
-  output port tcp: Dep
-  sync input port provide: Dep
-}
+  output port udp  output port tcp  sync input port provide}
 
 @ ── Network device ───────────────────────────────────────
 
 active component Vnetif {
-  output port backend: Dep
-  sync input port write: NetWrite
+  output port backend  sync input port write: NetWrite
 }
 
 @ ── Block device ────────────────────────────────────────
@@ -48,8 +41,7 @@ active component Vnetif {
 @ [mirage-block-solo5] for Solo5, xenstore-backed for Xen.
 
 active component Block {
-  sync input port provide: Dep
-}
+  sync input port provide}
 
 @ ── Key-value stores ─────────────────────────────────────
 @
@@ -72,17 +64,13 @@ active component Kv {
 @ [Tar_mirage.Make_KV_RO(Block)] then [connect block].
 @ ocaml.functor Tar_mirage.Make_KV_RO
 active component Tar_kv_ro {
-  output port block: Dep
-  sync input port provide: Dep
-}
+  output port block  sync input port provide}
 
 @ FAT filesystem read-only KV over a block device.
 @ [Fat.KV_RO(Block)] then [connect block].
 @ ocaml.functor Fat.KV_RO
 active component Fat_kv_ro {
-  output port block: Dep
-  sync input port provide: Dep
-}
+  output port block  sync input port provide}
 
 @ ── Protocol stack ───────────────────────────────────────
 @
@@ -142,53 +130,18 @@ module Tcp {
 
 @ ocaml.functor Tcpip_stack_direct.MakeV4V6
 active component TcpipStack {
-  sync input port provide: Dep
-  output port netif: Dep
-  output port ethernet: Dep
-  output port arpv4: Dep
-  output port ipv4v6: Dep
-  output port icmpv4: Dep
-  output port udpv4v6: Dep
-  output port tcpv4v6: Dep
-}
-
-@ ── Conduit transport ────────────────────────────────────
-@
-@ Conduit unifies TLS and plain TCP under one flow type,
-@ letting a single CoHTTP server handle both HTTPS and
-@ HTTP redirect without separate modules per transport.
-
-@ ocaml.functor Conduit_mirage.TCP
-passive component Conduit_tcp {
-  output port stack: Dep
-  sync input port connect: Dep
-}
-
-@ ocaml.functor Conduit_mirage.TLS
-passive component Conduit {
-  output port transport: Dep
-  sync input port connect: Dep
-}
-
-module Cohttp_mirage {
-  passive component Server {
-    output port conduit: Dep
-    sync input port listen: HttpConn
-  }
-}
+  sync input port provide  output port netif  output port ethernet  output port arpv4  output port ipv4v6  output port icmpv4  output port udpv4v6  output port tcpv4v6}
 
 @ ── Application ────────────────────────────────────────
 @
 @ The user-facing HTTPS server functor.  Takes KV stores for
-@ static data and TLS certificates, plus the CoHTTP server.
-@ [Server.HTTPS(Data)(Certs)(Http).start data certs http].
+@ static data and TLS certificates, plus the TCP/IP stack.
+@ The conduit and CoHTTP modules are created internally.
+@ [Server.HTTPS(Data)(Certs)(Stack).start data certs stack].
 
 @ ocaml.functor Server.HTTPS
 active component Server {
-  output port data: Dep
-  output port certs: Dep
-  output port http: Dep
-}
+  output port data  output port certs  output port stack}
 
 @ ── DNS ─────────────────────────────────────────────────
 @
@@ -197,15 +150,10 @@ active component Server {
 @ on the TCP/IP stack; the parent topology wires them.
 
 active component Happy_eyeballs_mirage {
-  output port stack: Dep
-  sync input port provide: Dep
-}
+  output port stack  sync input port provide}
 
 active component Dns_client_mirage {
-  output port stack: Dep
-  output port happy_eyeballs: Dep
-  sync input port resolve: Dep
-}
+  output port stack  output port happy_eyeballs  sync input port resolve}
 
 @ ── Instances ────────────────────────────────────────────
 
@@ -239,10 +187,7 @@ instance tar_certs: Tar_kv_ro base id 0x840
 instance fat_data: Fat_kv_ro base id 0x850
 instance fat_certs: Fat_kv_ro base id 0x860
 
-@ HTTP
-instance conduit_tcp: Conduit_tcp base id 0xA00
-instance conduit: Conduit base id 0xA10
-instance http: Cohttp_mirage.Server base id 0xA20
+@ Application
 instance server: Server base id 0xA30
 
 @ DNS

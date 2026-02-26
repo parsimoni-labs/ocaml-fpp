@@ -6,9 +6,7 @@ module Tcp_socket = Server.Tcp_socket
 module Socket_stack = Server.Socket_stack
 module Data = Htdocs_data
 module Certs = Tls_data
-module Conduit_tcp = Conduit_mirage.TCP(Socket_stack)
-module Conduit = Conduit_mirage.TLS(Conduit_tcp)
-module Http = Cohttp_mirage.Server.Make(Conduit)
+module Server = Server.HTTPS(Data)(Certs)(Socket_stack)
 
 let udp_socket = lazy (Udp_socket.connect ())
 let tcp_socket = lazy (Tcp_socket.connect ())
@@ -21,6 +19,13 @@ let socket_stack = lazy (
 
 let data = lazy (Data.connect ())
 let certs = lazy (Certs.connect ())
+
+let server = lazy (
+  let open Lwt.Syntax in
+  let* data = Lazy.force data in
+  let* certs = Lazy.force certs in
+  let* socket_stack = Lazy.force socket_stack in
+  Server.connect data certs socket_stack)
 let () =
   Lwt_main.run begin
     let open Lwt.Syntax in
@@ -29,5 +34,6 @@ let () =
     let* _ = Lazy.force socket_stack in
     let* _ = Lazy.force data in
     let* _ = Lazy.force certs in
+    let* _ = Lazy.force server in
     Lwt.return ()
   end

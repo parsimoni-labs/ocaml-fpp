@@ -256,10 +256,14 @@ qual_ident_node_opt:
   | %prec PREC_BELOW { None }
   | q = qual_ident_node { Some q }
 
+port_type_clause:
+  | COLON sz = option(array_size) pt = qual_ident_node_opt { (sz, pt) }
+
 port_instance_general:
-  k = general_port_kind PORT n = ident COLON sz = option(array_size)
-  pt = qual_ident_node_opt pri = option(priority_clause) qf = option(queue_full_clause)
-  { Port_general {
+  k = general_port_kind PORT n = ident tc = option(port_type_clause)
+  pri = option(priority_clause) qf = option(queue_full_clause)
+  { let sz, pt = match tc with Some (s, p) -> (s, p) | None -> (None, None) in
+    Port_general {
       gen_kind = k;
       gen_name = n;
       gen_size = sz;

@@ -2,7 +2,11 @@
 
    Adapted from mirage-skeleton/static_website_tls/dispatch.ml.
    Uses conduit for unified TLS/TCP transport, so one CoHTTP
-   server module handles both HTTPS dispatch and HTTP redirect. *)
+   server module handles both HTTPS dispatch and HTTP redirect.
+
+   The conduit and CoHTTP modules are created internally from
+   the TCP/IP stack — matching the mirage-skeleton convention
+   where these are not separate devices. *)
 
 open Lwt.Infix
 
@@ -68,6 +72,10 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.make ~conn_closed ~callback ()
 end
 
+(* ── Socket wrappers ───────────────────────────────────
+   Adapt real library connect signatures to the single-arity
+   [connect dep1 dep2 ... : t Lwt.t] convention. *)
+
 module Udp_socket = struct
   include Udpv4v6_socket
 
@@ -91,7 +99,18 @@ module Socket_stack = struct
     Tcpip_stack_socket.V4V6.connect udp tcp
 end
 
-module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
+(* ── HTTPS server ──────────────────────────────────────
+   Takes KV stores and TCP/IP stack; creates conduit and CoHTTP
+   modules internally (no separate conduit/http devices needed). *)
+
+module HTTPS
+    (DATA : Mirage_kv.RO)
+    (KEYS : Mirage_kv.RO)
+    (Stack : Tcpip.Stack.V4V6) =
+struct
+  module CT = Conduit_mirage.TCP (Stack)
+  module C = Conduit_mirage.TLS (CT)
+  module Http = Cohttp_mirage.Server.Make (C)
   module X509 = Tls_mirage.X509 (KEYS)
   module D = Dispatch (DATA) (Http)
 
@@ -102,17 +121,17 @@ module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
     in
     Lwt.return conf
 
-  let start data keys http =
+  let connect data keys stack =
     tls_init keys >>= fun cfg ->
     let tls = `TLS (cfg, `TCP 443) in
     let tcp = `TCP 80 in
     let https =
       Https_log.info (fun f -> f "listening for HTTPS on 443/TCP");
-      http tls @@ D.serve (D.dispatcher data)
+      Http.listen stack tls (D.serve (D.dispatcher data))
     in
     let http =
       Http_log.info (fun f -> f "listening for HTTP on 80/TCP");
-      http tcp @@ D.serve (D.redirect 443)
+      Http.listen stack tcp (D.serve (D.redirect 443))
     in
     Lwt.join [ https; http ]
 end

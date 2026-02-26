@@ -42,19 +42,6 @@ topology TcpipStack {
   }
 }
 
-@ HTTP server chain: Conduit TCP -> TLS -> CoHTTP.
-@ The parent must wire [conduit_tcp.stack] to a stack.
-topology HttpStack {
-  instance conduit_tcp
-  instance conduit
-  instance http
-
-  connections Connect {
-    conduit.transport -> conduit_tcp.connect
-    http.conduit -> conduit.connect
-  }
-}
-
 @ Unix socket stack: Udpv4v6_socket + Tcpv4v6_socket → V4V6.
 @ The composition is value-level: [V4V6.connect udp tcp], not
 @ a functor application.  Parent topologies bind the three

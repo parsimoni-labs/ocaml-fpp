@@ -578,9 +578,9 @@ Entry point generation (--topologies generates topology + entry point)
   let () =
     Lwt_main.run begin
       let open Lwt.Syntax in
-      let* kv = Lazy.force kv in
-      let* srv = Lazy.force srv in
-      Srv.start kv srv
+      let* _ = Lazy.force kv in
+      let* _ = Lazy.force srv in
+      Lwt.return ()
     end
 
 

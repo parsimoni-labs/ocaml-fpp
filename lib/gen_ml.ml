@@ -926,18 +926,54 @@ let parse_ocaml_annotations annots =
     { functor_path = None; module_path = None }
     annots
 
-(** Extract pre-annotations for a component definition from tu_members. *)
-let component_annots tu comp_name =
-  let rec search members =
+(** Extract pre-annotations for a component definition from tu_members. For
+    qualified identifiers (e.g. [Cohttp_mirage.Server]), searches within the
+    named module. For unqualified names, searches top-level first. *)
+let component_annots tu comp_qi =
+  let find_in members name =
     List.find_map
       (fun ((pre, node, _) : Ast.module_member Ast.node Ast.annotated) ->
         match node.Ast.data with
-        | Ast.Mod_def_component c when c.comp_name.data = comp_name -> Some pre
-        | Ast.Mod_def_module m -> search m.Ast.module_members
+        | Ast.Mod_def_component c when c.comp_name.data = name -> Some pre
         | _ -> None)
       members
   in
-  Option.value ~default:[] (search tu.Ast.tu_members)
+  let result =
+    match comp_qi with
+    | Ast.Qualified _ ->
+        let parts = Ast.qual_ident_to_list comp_qi in
+        let comp_name = (List.nth parts (List.length parts - 1)).data in
+        let mod_parts =
+          List.filteri (fun i _ -> i < List.length parts - 1) parts
+        in
+        let rec search_in members path =
+          match path with
+          | [] -> find_in members comp_name
+          | (m : _ Ast.node) :: rest ->
+              List.find_map
+                (fun ((_, node, _) : Ast.module_member Ast.node Ast.annotated)
+                   ->
+                  match node.Ast.data with
+                  | Ast.Mod_def_module md when md.Ast.module_name.data = m.data
+                    ->
+                      search_in md.Ast.module_members rest
+                  | _ -> None)
+                members
+        in
+        search_in tu.Ast.tu_members mod_parts
+    | Ast.Unqualified id ->
+        let name = id.data in
+        let top = find_in tu.Ast.tu_members name in
+        if Option.is_some top then top
+        else
+          List.find_map
+            (fun ((_, node, _) : Ast.module_member Ast.node Ast.annotated) ->
+              match node.Ast.data with
+              | Ast.Mod_def_module m -> find_in m.Ast.module_members name
+              | _ -> None)
+            tu.Ast.tu_members
+  in
+  Option.value ~default:[] result
 
 (** Collect a type environment from abstract type definitions in the translation
     unit. Each [type Foo] becomes [("Foo", "Foo.t")] by default. An
@@ -1034,33 +1070,63 @@ let resolve_comp_instance tu inst_qi =
     (fun (ci : Ast.def_component_instance) -> ci.inst_name.data = inst_name)
     instances
 
-(** Resolve a component qualified identifier to its definition. *)
+(** Resolve a component qualified identifier to its definition. For qualified
+    names (e.g. [Cohttp_mirage.Server]), searches within the named module. For
+    unqualified names, searches top-level components first, then nested ones. *)
 let resolve_component tu comp_qi =
-  let comp_name =
-    match comp_qi with
-    | Ast.Unqualified id -> id.data
-    | Ast.Qualified _ ->
-        let parts = Ast.qual_ident_to_list comp_qi in
-        (List.nth parts (List.length parts - 1)).data
-  in
-  let components =
-    List.filter_map
-      (fun ann ->
-        match (Ast.unannotate ann).Ast.data with
-        | Ast.Mod_def_component c -> Some c
-        | Ast.Mod_def_module m ->
+  match comp_qi with
+  | Ast.Qualified _ ->
+      let parts = Ast.qual_ident_to_list comp_qi in
+      let comp_name = (List.nth parts (List.length parts - 1)).data in
+      let mod_parts =
+        List.filteri (fun i _ -> i < List.length parts - 1) parts
+      in
+      let mod_names = List.map (fun (n : _ Ast.node) -> n.data) mod_parts in
+      let rec search_in members path =
+        match path with
+        | [] ->
             List.find_map
-              (fun ann2 ->
-                match (Ast.unannotate ann2).Ast.data with
-                | Ast.Mod_def_component c -> Some c
+              (fun ann ->
+                match (Ast.unannotate ann).Ast.data with
+                | Ast.Mod_def_component c when c.comp_name.data = comp_name ->
+                    Some c
                 | _ -> None)
-              m.Ast.module_members
-        | _ -> None)
-      tu.Ast.tu_members
-  in
-  List.find_opt
-    (fun (c : Ast.def_component) -> c.comp_name.data = comp_name)
-    components
+              members
+        | m :: rest ->
+            List.find_map
+              (fun ann ->
+                match (Ast.unannotate ann).Ast.data with
+                | Ast.Mod_def_module md when md.Ast.module_name.data = m ->
+                    search_in md.Ast.module_members rest
+                | _ -> None)
+              members
+      in
+      search_in tu.Ast.tu_members mod_names
+  | Ast.Unqualified id ->
+      let name = id.data in
+      let top_level =
+        List.find_map
+          (fun ann ->
+            match (Ast.unannotate ann).Ast.data with
+            | Ast.Mod_def_component c when c.comp_name.data = name -> Some c
+            | _ -> None)
+          tu.Ast.tu_members
+      in
+      if Option.is_some top_level then top_level
+      else
+        List.find_map
+          (fun ann ->
+            match (Ast.unannotate ann).Ast.data with
+            | Ast.Mod_def_module m ->
+                List.find_map
+                  (fun ann2 ->
+                    match (Ast.unannotate ann2).Ast.data with
+                    | Ast.Mod_def_component c when c.comp_name.data = name ->
+                        Some c
+                    | _ -> None)
+                  m.Ast.module_members
+            | _ -> None)
+          tu.Ast.tu_members
 
 (** Collect general ports from a component. *)
 let collect_general_ports (comp : Ast.def_component) =
@@ -1566,7 +1632,7 @@ let is_dep_port (p : Ast.port_instance_general) =
   match p.gen_port with
   | Some qi -> (
       match qi.data with Ast.Unqualified id -> id.data = "Dep" | _ -> false)
-  | None -> false
+  | None -> true (* typeless ports are dependency-only *)
 
 (** Input ports on [comp] that have no incoming connection for [inst_name].
     These surface as labeled parameters of the generated [connect] function.
@@ -1601,7 +1667,8 @@ let pp_functor_apps ppf tu inst_annots sorted connections =
       then
         let mod_name = constructor_name inst_name in
         let ca =
-          parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+          parse_ocaml_annotations
+            (component_annots tu ci.Ast.inst_component.data)
         in
         match ca.module_path with
         | Some path ->
@@ -1868,7 +1935,8 @@ let pp_topology_flat ppf tu topo sorted groups =
       then
         let mod_name = constructor_name inst_name in
         let ca =
-          parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+          parse_ocaml_annotations
+            (component_annots tu ci.Ast.inst_component.data)
         in
         match ca.module_path with
         | Some path ->
@@ -1894,7 +1962,7 @@ let pp_topology_flat ppf tu topo sorted groups =
                 pf ppf "(%s)" (constructor_name target_inst))
               targets)
     sorted;
-  (* Phase 3: Lazy bindings for active instances *)
+  (* Phase 3: Lazy bindings for active instances. All use [.connect]. *)
   let concrete =
     List.filter
       (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
@@ -1915,12 +1983,12 @@ let pp_topology_flat ppf tu topo sorted groups =
     component carries an [@ ocaml.functor] or [@ ocaml.module] annotation. *)
 let is_functor_mode tu sorted connections =
   List.exists
-    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
       comp.comp_kind <> Passive
       && connection_targets inst_name connections <> []
       ||
       let ca =
-        parse_ocaml_annotations (component_annots tu comp.comp_name.data)
+        parse_ocaml_annotations (component_annots tu ci.Ast.inst_component.data)
       in
       Option.is_some ca.functor_path || Option.is_some ca.module_path)
     sorted
@@ -2088,53 +2156,17 @@ let topology_active_instance_names tu (topo : Ast.def_topology) =
       else None)
     sorted
 
-(** Return [Some (module_name, var_names)] when the last active instance is a
-    non-leaf (has dependencies), indicating it should receive a [.start] call.
-    Returns [None] when all active instances are leaves. *)
-let topology_start_info tu (topo : Ast.def_topology) =
-  let topo = flatten_topology tu topo in
-  let resolved = resolve_topology_instances tu topo in
-  let connections = all_connections (collect_direct_connections topo) in
-  let sorted = topo_sort_instances resolved connections in
-  let active =
-    List.filter_map
-      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-        if comp.comp_kind <> Passive then
-          let targets = target_instances inst_name comp connections sorted in
-          Some
-            (sanitize_ident inst_name, constructor_name inst_name, targets <> [])
-        else None)
-      sorted
-  in
-  match List.rev active with
-  | (_, mod_name, true) :: _ ->
-      Some (mod_name, List.map (fun (v, _, _) -> v) active)
-  | _ -> None
-
 (** Emit a [let () = Lwt_main.run (...)] entry point that forces each lazy
-    binding. When [~start] is [Some (mod_name, args)], the entry point calls
-    [Mod_name.start arg1 arg2 ...]; otherwise it returns [()]. Each element of
-    [names] is [(var_name, module_name)]. Uses [@.] (print_newline) because this
-    is called outside any formatting box. *)
-let pp_flat_entry_point ppf names ~start =
+    binding with [let* _ = Lazy.force x in] and finishes with [Lwt.return ()].
+    Each element of [names] is [(var_name, module_name)]. *)
+let pp_flat_entry_point ppf names =
   match names with
   | [] -> ()
   | _ ->
       pf ppf "let () =@.  Lwt_main.run begin@.";
       pf ppf "    let open Lwt.Syntax in@.";
-      (match start with
-      | Some _ ->
-          List.iter
-            (fun (var, _) -> pf ppf "    let* %s = Lazy.force %s in@." var var)
-            names
-      | None ->
-          List.iter
-            (fun (var, _) -> pf ppf "    let* _ = Lazy.force %s in@." var)
-            names);
-      (match start with
-      | Some (mod_name, args) ->
-          pf ppf "    %s.start" mod_name;
-          List.iter (fun a -> pf ppf " %s" a) args;
-          pf ppf "@."
-      | None -> pf ppf "    Lwt.return ()@.");
+      List.iter
+        (fun (var, _) -> pf ppf "    let* _ = Lazy.force %s in@." var)
+        names;
+      pf ppf "    Lwt.return ()@.";
       pf ppf "  end@."

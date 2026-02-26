@@ -32,8 +32,4 @@ port KvGet(key: string) -> string
 port KvExists(key: string) -> bool
 port KvList(key: string) -> string
 port KvDigest(key: string) -> string
-port HttpConn(uri: string)
 
-@ A dependency-only port: declares a functor argument without
-@ implying data flow.
-port Dep
