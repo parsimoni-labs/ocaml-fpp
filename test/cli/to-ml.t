@@ -479,7 +479,7 @@ Bound leaf instance (@ ocaml.module)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.w ())
+  let kv = lazy (Kv.connect ())
   
   let srv = lazy (
     let open Lwt.Syntax in
@@ -557,7 +557,7 @@ Entry point generation (--topologies generates topology + entry point)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.w ())
+  let kv = lazy (Kv.connect ())
   
   let srv = lazy (
     let open Lwt.Syntax in

@@ -1205,7 +1205,7 @@ let test_all_leaves_bound () =
 module Kv = Embedded_data
 module Srv = Srv.Make(Kv)
 
-let kv = lazy (Kv.w ())
+let kv = lazy (Kv.connect ())
 
 let srv = lazy (
   let open Lwt.Syntax in
@@ -1297,7 +1297,7 @@ let test_bound_nonleaf () =
 module Stack = Tcpip_stack_socket.V4V6
 module Srv = Srv.Make(Stack)
 
-let stack = lazy (Stack.w ())
+let stack = lazy (Stack.connect ())
 
 let srv = lazy (
   let open Lwt.Syntax in
