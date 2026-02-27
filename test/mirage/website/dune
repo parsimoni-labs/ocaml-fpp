@@ -65,7 +65,7 @@
     %{w}))))
 
 (rule
- (target test_types.ml)
+ (targets test_types.ml test_types.mli)
  (deps
   (:ofpp ../../../bin/main.exe)
   (:t ../../../examples/mirage/types.fpp)
@@ -73,7 +73,7 @@
   (:s ../../../examples/mirage/stacks.fpp)
   (:w ../../../examples/mirage/websites.fpp))
  (action
-  (run %{ofpp} to-ml --types -o %{target} %{t} %{d} %{s} %{w})))
+  (run %{ofpp} to-ml --types -o test_types.ml %{t} %{d} %{s} %{w})))
 
 (library
  (name website_types)

@@ -464,6 +464,19 @@ let pp_wrapped_topo ppf tu ~wrap t =
     if wrap then Fmt.pf ppf "end@]@."
   end
 
+let mli_path_of ml_path =
+  if Filename.check_suffix ml_path ".ml" then
+    Filename.chop_suffix ml_path ".ml" ^ ".mli"
+  else ml_path ^ "i"
+
+let trim_trailing_newlines s =
+  let n = String.length s in
+  let i = ref (n - 1) in
+  while !i >= 0 && (s.[!i] = '\n' || s.[!i] = ' ') do
+    decr i
+  done;
+  String.sub s 0 (!i + 1) ^ "\n"
+
 let gen_ml_types_for_file merged_tu topos =
   let buf = Buffer.create 4096 in
   let ppf = Fmt.with_buffer buf in
@@ -487,23 +500,29 @@ let gen_ml_types_only ~output merged_tu per_file =
   in
   match (output, file_topos) with
   | _, [] -> ()
-  | _, [ (_, topos) ] ->
-      (* Single file with types: write to -o or stdout. *)
+  | _, [ (_, topos) ] -> (
       let text = gen_ml_types_for_file merged_tu topos in
-      write_output output text
-  | Some _, _ ->
-      (* Explicit -o: merge all types into one file. *)
+      write_output output text;
+      (* .mli: same content for types-only mode *)
+      match output with
+      | Some path ->
+          write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
+      | None -> ())
+  | Some path, _ ->
       let all_topos = List.concat_map snd file_topos in
       let text = gen_ml_types_for_file merged_tu all_topos in
-      write_output output text
+      write_output (Some path) text;
+      write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
   | None, many ->
-      (* No -o, multiple files: write <stem>.ml per file. *)
       List.iter
         (fun (file, topos) ->
           let text = gen_ml_types_for_file merged_tu topos in
           let stem = Filename.chop_extension file in
-          let out_path = stem ^ ".ml" in
-          write_output (Some out_path) text)
+          let ml_path = stem ^ ".ml" in
+          write_output (Some ml_path) text;
+          write_output
+            (Some (mli_path_of ml_path))
+            (trim_trailing_newlines text))
         many
 
 let gen_ml_topologies ppf tu topologies =
@@ -530,6 +549,26 @@ let gen_ml_topologies ppf tu topologies =
       topos
   in
   if flat_names <> [] then Fpp.Gen_ml.pp_flat_entry_point ppf flat_names
+
+let gen_mli_topologies ppf tu topologies =
+  let all_topos = Fpp.topologies tu in
+  let topos =
+    List.filter
+      (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
+      all_topos
+  in
+  Fpp.Gen_ml.pp_module_types tu topos ppf;
+  let wrap = List.length topos > 1 in
+  List.iter
+    (fun t ->
+      if Fpp.Gen_ml.topology_has_output tu t then begin
+        if wrap then
+          Fmt.pf ppf "@[<v>module %s : sig@,"
+            (String.capitalize_ascii (t : Fpp.Ast.def_topology).topo_name.data);
+        Fpp.Gen_ml.pp_topology_mli tu ppf t;
+        if wrap then Fmt.pf ppf "end@]@."
+      end)
+    topos
 
 let gen_ml_all ppf tu ~sm_name =
   let sms = Fpp.state_machines tu in
@@ -575,6 +614,20 @@ let to_ml ~output ~sm_name ~topologies ~types_only files =
         Fmt.flush ppf ();
         let text = Buffer.contents buf in
         if text <> "" then write_output output text;
+        (* Generate .mli when writing to a file and topologies are specified *)
+        (match output with
+        | Some path when topologies <> [] ->
+            let buf = Buffer.create 4096 in
+            let ppf = Fmt.with_buffer buf in
+            Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
+            gen_mli_topologies ppf tu topologies;
+            Fmt.flush ppf ();
+            let mli_text = Buffer.contents buf in
+            if mli_text <> "" then
+              write_output
+                (Some (mli_path_of path))
+                (trim_trailing_newlines mli_text)
+        | _ -> ());
         0
       end
 
@@ -649,6 +702,81 @@ let to_ml_cmd =
   in
   Cmd.v info to_ml_term
 
+(* --- fpv command --- *)
+
+let fpv ~output ~topo_name files =
+  match parse_files files with
+  | None -> 1
+  | Some per_file ->
+      let merged = merge_tus per_file in
+      let topos = Fpp.topologies merged in
+      let topos =
+        match topo_name with
+        | None -> topos
+        | Some name ->
+            List.filter
+              (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data = name)
+              topos
+      in
+      let ok = ref true in
+      let buf = Buffer.create 4096 in
+      let ppf = Fmt.with_buffer buf in
+      List.iter
+        (fun topo ->
+          Buffer.clear buf;
+          Fpp.Fpv.pp_topology merged ppf topo;
+          Fmt.flush ppf ();
+          let text = Buffer.contents buf in
+          match output with
+          | Some path ->
+              let oc = open_out path in
+              Fun.protect
+                ~finally:(fun () -> close_out oc)
+                (fun () -> output_string oc text)
+          | None -> Fmt.pr "%s" text)
+        topos;
+      if !ok then 0 else 1
+
+let fpv_output_t =
+  let doc = "Output file. If omitted, JSON is written to stdout." in
+  Arg.(
+    value & opt (some string) None & info [ "o"; "output" ] ~doc ~docv:"FILE")
+
+let fpv_files_t =
+  Arg.(
+    non_empty & pos_all file []
+    & info [] ~docv:"FILE" ~doc:"FPP files to render.")
+
+let fpv_topo_name_t =
+  Arg.(
+    value
+    & opt (some string) None
+    & info [ "topology" ] ~docv:"NAME"
+        ~doc:"Only output the topology named $(docv).")
+
+let fpv_term =
+  let fpv output topo_name files = fpv ~output ~topo_name files in
+  Term.(const fpv $ fpv_output_t $ fpv_topo_name_t $ fpv_files_t)
+
+let fpv_cmd =
+  let info =
+    Cmd.info "fpv" ~doc:"Export topologies as F Prime Visual JSON."
+      ~man:
+        [
+          `S "DESCRIPTION";
+          `P
+            "Parse FPP files and output topology connection graphs as JSON \
+             compatible with fprime-visual, the browser-based F Prime topology \
+             visualiser. Instances are laid out in columns using longest-path \
+             layering.";
+          `S "EXAMPLES";
+          `P "$(iname) model.fpp                        # JSON to stdout";
+          `P "$(iname) -o topo.json model.fpp           # write to file";
+          `P "$(iname) --topology T model.fpp           # one topology only";
+        ]
+  in
+  Cmd.v info fpv_term
+
 (* --- main --- *)
 
 let cmd =
@@ -666,7 +794,7 @@ let cmd =
           `P "$(b,https://nasa.github.io/fpp/fpp-users-guide.html)";
         ]
   in
-  Cmd.group info [ check_cmd; dot_cmd; to_ml_cmd ]
+  Cmd.group info [ check_cmd; dot_cmd; fpv_cmd; to_ml_cmd ]
 
 let () =
   match Cmd.eval_value cmd with

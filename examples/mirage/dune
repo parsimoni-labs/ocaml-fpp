@@ -11,10 +11,10 @@
 (rule
  (mode
   (promote (until-clean)))
- (target mirage.ml)
+ (targets mirage.ml mirage.mli)
  (deps types.fpp devices.fpp stacks.fpp websites.fpp)
  (action
-  (run %{bin:ofpp} to-ml --types -o %{target} %{deps})))
+  (run %{bin:ofpp} to-ml --types -o mirage.ml %{deps})))
 
 ; Generate topology + entry point for UnixWebsite
 

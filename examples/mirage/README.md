@@ -282,8 +282,8 @@ active component Ip {
   output port ipv4: IpWrite
   output port ipv6: IpWrite
   sync input port write: IpWrite
-  sync input port ipv4_only: BoolConfig   @ unconnected -> ~ipv4_only
-  sync input port ipv6_only: BoolConfig   @ unconnected -> ~ipv6_only
+  sync input port ipv4_only: IpOnly   @ unconnected -> ~ipv4_only
+  sync input port ipv6_only: IpOnly   @ unconnected -> ~ipv6_only
 }
 ```
 

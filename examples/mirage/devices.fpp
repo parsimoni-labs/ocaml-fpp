@@ -94,7 +94,7 @@ active component Static_ipv4 {
   output port eth_write: EthWrite
   output port arp_query: ArpQuery
   sync input port write: IpWrite
-  sync input port cidr: CidrConfig
+  sync input port cidr: IpCidr
 }
 
 active component Ipv6 {
@@ -107,8 +107,8 @@ active component Ip {
   output port ipv4: IpWrite
   output port ipv6: IpWrite
   sync input port write: IpWrite
-  sync input port ipv4_only: BoolConfig
-  sync input port ipv6_only: BoolConfig
+  sync input port ipv4_only: IpOnly
+  sync input port ipv6_only: IpOnly
 }
 
 active component Icmpv4 {

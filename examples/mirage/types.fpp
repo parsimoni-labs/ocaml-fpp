@@ -56,6 +56,6 @@ port KvGet(key: KvKey) -> KvGetResult
 port KvExists(key: KvKey) -> KvExistsResult
 port KvList(key: KvKey) -> KvListResult
 port KvDigest(key: KvKey) -> KvDigestResult
-port BoolConfig -> bool
-port CidrConfig -> Cidr
+port IpOnly -> bool
+port IpCidr -> Cidr
 

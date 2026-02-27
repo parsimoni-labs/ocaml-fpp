@@ -65,6 +65,14 @@ val pp_flat_entry_point : Format.formatter -> (string * string) list -> unit
     point that forces each lazy binding with [let* _ = Lazy.force x in] and
     finishes with [Lwt.return ()]. *)
 
+(** {2 .mli Generation} *)
+
+val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
+(** [pp_topology_mli tu ppf topo] pretty-prints the [.mli] interface for a
+    topology. For parameterised topologies, emits the [Make] functor signature
+    with [type t] and [val connect]. For fully-bound topologies, emits
+    [val x : X.t Lazy.t] for each active instance. *)
+
 (** {2 Topology Helpers} *)
 
 val collect_topologies : Ast.translation_unit -> Ast.def_topology list
