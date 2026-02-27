@@ -13,22 +13,20 @@ val pp : Ast.def_state_machine Fmt.t
 
 val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology tu] is a pretty-printer for topology [topo] as an OCaml module.
-    Generates component module type signatures and a [Make] functor that wires
-    connections via direct functor application. Follows the device-centric
-    MirageOS functor pattern: functor parameters are target component module
-    types (not per-port adapters). Components that are both functor targets and
-    have outputs get an [_S] operations-only module type. Active components use
+    Generates component module type signatures for leaf components and a [Make]
+    functor that wires connections via direct functor application. Follows the
+    device-centric MirageOS functor pattern: functor parameters are leaf
+    component module types (not per-port adapters). Non-leaf instances get
+    internal [module X = X.Make(Dep)] applications. Active components use
     [Lwt.t] return types.
 
-    In annotated (functor-application) mode, passive components are module-only:
-    they get functor applications but no record fields, connect calls, or Make
-    parameters. Import-only topologies (all instances passive) produce no
-    output. *)
+    Fully-bound topologies (all leaves bound via [@ ocaml.module]) produce
+    top-level lazy bindings instead of a [Make] functor. Empty topologies
+    produce no output. *)
 
 val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
 (** [topology_has_output tu topo] is [true] when [topo] would produce OCaml
-    code. Returns [false] for import-only topologies where every instance is
-    passive. *)
+    code. Returns [false] for empty topologies (no instances). *)
 
 val topology_is_fully_bound : Ast.translation_unit -> Ast.def_topology -> bool
 (** [topology_is_fully_bound tu topo] is [true] when every leaf instance in
@@ -57,8 +55,8 @@ val pp_main_entry_multi : Format.formatter -> (string * string) list -> unit
 val topology_active_instance_names :
   Ast.translation_unit -> Ast.def_topology -> (string * string) list
 (** [topology_active_instance_names tu topo] returns [(var_name, module_name)]
-    pairs for active (non-passive) instances in [topo], in topo-sorted order.
-    These are the instances that receive lazy bindings in fully-bound mode. *)
+    pairs for all instances in [topo], in topo-sorted order. These are the
+    instances that receive lazy bindings in fully-bound topologies. *)
 
 val pp_flat_entry_point : Format.formatter -> (string * string) list -> unit
 (** [pp_flat_entry_point ppf names] emits a [let () = Lwt_main.run (...)] entry
@@ -71,7 +69,7 @@ val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology_mli tu] is a pretty-printer for the interface of a topology.
     For parameterised topologies, emits the Make functor signature with type and
     connect declarations. For fully-bound topologies, emits lazy value bindings
-    for each active instance. *)
+    for each instance. *)
 
 (** {2 Topology Helpers} *)
 

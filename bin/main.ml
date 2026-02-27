@@ -532,7 +532,6 @@ let gen_ml_topologies ppf tu topologies =
       (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
       all_topos
   in
-  Fpp.Gen_ml.pp_module_types tu topos ppf;
   let wrap = List.length topos > 1 in
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos;
   let flat_names =
@@ -581,7 +580,6 @@ let gen_ml_all ppf tu ~sm_name =
           sms
   in
   let topos = Fpp.topologies tu in
-  if topos <> [] then Fpp.Gen_ml.pp_module_types tu topos ppf;
   let wrap = List.length sms + List.length topos > 1 in
   List.iter
     (fun (sm : Fpp.Ast.def_state_machine) ->

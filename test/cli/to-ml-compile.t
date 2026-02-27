@@ -393,33 +393,10 @@ Topology: simple 2-component wiring
   >   print_endline "topo: OK"
   > IMPL
   $ compile && run && echo "topo_compile: OK"
-  File "sm.ml", line 32, characters 13-39:
-  32 | module App = Make (MyLogger) (MySensor)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error: This application of the functor Make is ill-typed.
-         These arguments:
-           MyLogger MySensor
-         do not match these parameters:
-           (Logger : $T1) (Sensor : $T2) -> ...
-         1. Modules do not match:
-              MyLogger :
-              sig
-                type t = MyLogger.t = { mutable received : int; }
-                val data_in : t -> unit
-                val connect : unit -> t
-              end
-            is not included in
-              $T1 = sig type t val data_in : t -> unit val data : unit -> t end
-            The value data is required but not provided
-            File "sm.ml", line 14, characters 31-51: Expected declaration
-         2. Modules do not match:
-              MySensor :
-              sig
-                type t = MyLogger.t
-                val connect : MyLogger.t -> MyLogger.t
-              end
-            is not included in
-              $T2 = sig type t val data : Logger.t -> t end
+  File "sm.ml", line 11, characters 18-24:
+  11 |   module Sensor = Sensor.Make(Logger)
+                         ^^^^^^
+  Error: Unbound module Sensor
   [2]
 
 Topology: typed port wiring compiles and field access works
@@ -462,34 +439,10 @@ Topology: typed port wiring compiles and field access works
   >   print_endline "typed_topo: OK"
   > IMPL
   $ compile && run && echo "typed_topo_compile: OK"
-  File "sm.ml", line 32, characters 11-41:
-  32 | module A = Make (MyConsumer) (MyProducer)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error: This application of the functor Make is ill-typed.
-         These arguments:
-           MyConsumer MyProducer
-         do not match these parameters:
-           (Consumer : $T1) (Producer : $T2) -> ...
-         1. Modules do not match:
-              MyConsumer :
-              sig
-                type t = MyConsumer.t = { mutable last : int32; }
-                val in_ : t -> int32 -> bool
-                val connect : unit -> t
-              end
-            is not included in
-              $T1 =
-              sig type t val in_ : t -> int32 -> bool val main : unit -> t end
-            The value main is required but not provided
-            File "sm.ml", line 14, characters 35-55: Expected declaration
-         2. Modules do not match:
-              MyProducer :
-              sig
-                type t = MyConsumer.t
-                val connect : MyConsumer.t -> MyConsumer.t
-              end
-            is not included in
-              $T2 = sig type t val main : Consumer.t -> t end
+  File "sm.ml", line 11, characters 20-28:
+  11 |   module Producer = Producer.Make(Consumer)
+                           ^^^^^^^^
+  Error: Unbound module Producer
   [2]
 
 Topology + SM merged in one file compiles
@@ -533,29 +486,10 @@ Topology + SM merged in one file compiles
   >   print_endline "merged: OK"
   > IMPL
   $ compile && run && echo "merged_compile: OK"
-  File "sm.ml", line 66, characters 13-46:
-  66 | module App = System.Make (MyLogger) (MySensor)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error: This application of the functor System.Make is ill-typed.
-         These arguments:
-           MyLogger MySensor
-         do not match these parameters:
-           (Logger : $T1) (Sensor : $T2) -> ...
-         1. Modules do not match:
-              MyLogger :
-              sig
-                type t = unit
-                val data_in : unit -> unit
-                val connect : unit -> unit
-              end
-            is not included in
-              $T1 = sig type t val data_in : t -> unit val data : unit -> t end
-            The value data is required but not provided
-            File "sm.ml", line 49, characters 31-51: Expected declaration
-         2. Modules do not match:
-              MySensor : sig type t = MyLogger.t val connect : unit -> unit end
-            is not included in
-              $T2 = sig type t val data : Logger.t -> t end
+  File "sm.ml", line 46, characters 18-24:
+  46 |   module Sensor = Sensor.Make(Logger)
+                         ^^^^^^
+  Error: Unbound module Sensor
   [2]
 
 Full pipeline: SM + topology wiring
@@ -657,54 +591,8 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ compile && run && echo "pipeline_compile: OK"
-  File "sm.ml", line 102, characters 13-59:
-  102 | module App = Pipeline.Make (MyLogger) (MyFilter) (MySensor)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error: This application of the functor Pipeline.Make is ill-typed.
-         These arguments:
-           MyLogger MyFilter MySensor
-         do not match these parameters:
-           (Logger : $T1) (Filter : $T2) (Sensor : $T3) -> ...
-         1. Modules do not match:
-              MyLogger :
-              sig
-                type t = MyLogger.t = { mutable count : int; }
-                val alert : t -> string -> unit
-                val connect : unit -> t
-              end
-            is not included in
-              $T1 =
-              sig
-                type t
-                val alert : t -> string -> unit
-                val data : unit -> t
-              end
-            The value data is required but not provided
-            File "sm.ml", line 69, characters 31-51: Expected declaration
-         2. Modules do not match:
-              MyFilter :
-              sig
-                type t = MyFilter.t = { logger : MyLogger.t; }
-                val data : t -> int32 -> int32 -> unit
-                val connect : MyLogger.t -> t
-              end
-            is not included in
-              $T2 = sig type t val data : Logger.t -> t end
-            Values do not match:
-              val data : t -> int32 -> int32 -> unit
-            is not included in
-              val data : Logger.t -> t
-            The type t -> int32 -> int32 -> unit
-            is not compatible with the type Logger.t -> t
-            Type t = MyFilter.t is not compatible with type Logger.t
-            File "sm.ml", line 70, characters 31-55: Expected declaration
-            File "sm.ml", line 89, characters 6-10: Actual declaration
-         3. Modules do not match:
-              MySensor :
-              sig
-                type t = MyFilter.t
-                val connect : MyFilter.t -> MyFilter.t
-              end
-            is not included in
-              $T3 = sig type t val data : Filter.t -> t end
+  File "sm.ml", line 61, characters 18-24:
+  61 |   module Filter = Filter.Make(Logger)
+                         ^^^^^^
+  Error: Unbound module Filter
   [2]
