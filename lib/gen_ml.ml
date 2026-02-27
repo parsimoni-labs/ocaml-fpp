@@ -1045,26 +1045,28 @@ let instance_bound_module inst_annots inst_name =
 (** Find [@ ocaml.functor X] on an instance. Uses last-wins semantics like
     {!instance_bound_module}, letting parent topology override imported functor
     paths. *)
+let extract_functor_annotation annots =
+  List.find_map
+    (fun s ->
+      let s = String.trim s in
+      if starts_with ~prefix:"ocaml.functor " s then
+        let v = String.trim (String.sub s 14 (String.length s - 14)) in
+        let path =
+          match String.index_opt v '(' with
+          | None -> v
+          | Some i -> String.sub v 0 i
+        in
+        Some path
+      else None)
+    annots
+
 let instance_functor_override inst_annots inst_name =
-  let extract annots =
-    List.find_map
-      (fun s ->
-        let s = String.trim s in
-        if starts_with ~prefix:"ocaml.functor " s then
-          let v = String.trim (String.sub s 14 (String.length s - 14)) in
-          let path =
-            match String.index_opt v '(' with
-            | None -> v
-            | Some i -> String.sub v 0 i
-          in
-          Some path
-        else None)
-      annots
-  in
   List.fold_left
     (fun acc (n, annots) ->
       if n = inst_name then
-        match extract annots with Some _ as v -> v | None -> acc
+        match extract_functor_annotation annots with
+        | Some _ as v -> v
+        | None -> acc
       else acc)
     None inst_annots
 
@@ -1225,6 +1227,31 @@ let port_type_parts ~type_env (port_def : Ast.def_port) =
     | None -> "unit"
   in
   (params, ret)
+
+(** Whether a component has a non-trivial module type. A component with only
+    untyped input ports (e.g. [sync input port connect]) and no abstract types
+    produces a trivial [sig type t val connect : t -> unit end] — not useful.
+    Returns [true] when the component has at least one typed input port or an
+    abstract type declaration. *)
+let has_nontrivial_module_type tu (comp : Ast.def_component) =
+  let has_abs_type =
+    List.exists
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Comp_def_abs_type _ -> true
+        | _ -> false)
+      comp.comp_members
+  in
+  let has_typed_input_port =
+    let ports = collect_general_ports comp in
+    List.exists
+      (fun (p : Ast.port_instance_general) ->
+        p.gen_kind <> Output && p.gen_port <> None
+        && Option.is_some
+             (Option.bind p.gen_port (fun qi -> resolve_port_def tu qi.data)))
+      ports
+  in
+  has_abs_type || has_typed_input_port
 
 (** Pretty-print a module type generated from a component's input ports. For
     each [sync input port name: PortType], generates
@@ -1915,7 +1942,8 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
         if
           target_instances inst_name comp connections sorted = []
           && instance_bound_module inst_annots inst_name = None
-          && not (Hashtbl.mem seen comp.comp_name.data)
+          && (not (Hashtbl.mem seen comp.comp_name.data))
+          && has_nontrivial_module_type tu comp
         then (
           Hashtbl.add seen comp.comp_name.data ();
           pp_port_module_type ppf tu ~type_env comp))
@@ -1927,11 +1955,12 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
 
 (** Emit module types for leaf components in annotated topologies. The module
     type is generated from the component's input ports. *)
-let is_unseen_leaf_comp seen inst_annots connections sorted inst_name
+let is_unseen_leaf_comp tu seen inst_annots connections sorted inst_name
     (comp : Ast.def_component) =
   target_instances inst_name comp connections sorted = []
   && instance_bound_module inst_annots inst_name = None
-  && not (Hashtbl.mem seen comp.comp_name.data)
+  && (not (Hashtbl.mem seen comp.comp_name.data))
+  && has_nontrivial_module_type tu comp
 
 let collect_leaf_comps_from_topo tu seen comps (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
@@ -1941,7 +1970,9 @@ let collect_leaf_comps_from_topo tu seen comps (topo : Ast.def_topology) =
   let sorted = topo_sort_instances resolved connections in
   List.iter
     (fun (inst_name, _ci, comp) ->
-      if is_unseen_leaf_comp seen inst_annots connections sorted inst_name comp
+      if
+        is_unseen_leaf_comp tu seen inst_annots connections sorted inst_name
+          comp
       then (
         Hashtbl.add seen comp.comp_name.data ();
         comps := comp :: !comps))

@@ -92,24 +92,6 @@
     %{s}
     %{w}))))
 
-; ── Types library ──────────────────────────────────────────────────
-
-(rule
- (targets test_types.ml test_types.mli)
- (deps
-  (:ofpp ../../../bin/main.exe)
-  (:t ../../../examples/mirage/types.fpp)
-  (:d ../../../examples/mirage/devices.fpp)
-  (:s ../../../examples/mirage/stacks.fpp)
-  (:w ../../../examples/mirage/websites.fpp))
- (action
-  (run %{ofpp} to-ml --types -o test_types.ml %{t} %{d} %{s} %{w})))
-
-(library
- (name website_types)
- (modules test_types)
- (libraries lwt cstruct macaddr mirage-block))
-
 ; ── Build and run ──────────────────────────────────────────────────
 
 (executables
@@ -194,70 +176,12 @@
    %{target}
    (run %{ofpp} to-ml --topologies FatWebsite %{t} %{d} %{s} %{w}))))
 
-; skeleton.fpp topologies
-
-(rule
- (target gen_unix_network.ml)
- (deps
-  (:ofpp ../../../bin/main.exe)
-  (:t ../../../examples/mirage/types.fpp)
-  (:d ../../../examples/mirage/devices.fpp)
-  (:s ../../../examples/mirage/stacks.fpp)
-  (:k ../../../examples/mirage/skeleton.fpp))
- (action
-  (with-stdout-to
-   %{target}
-   (run %{ofpp} to-ml --topologies UnixNetwork %{t} %{d} %{s} %{k}))))
-
-(rule
- (target gen_unix_kv.ml)
- (deps
-  (:ofpp ../../../bin/main.exe)
-  (:t ../../../examples/mirage/types.fpp)
-  (:d ../../../examples/mirage/devices.fpp)
-  (:s ../../../examples/mirage/stacks.fpp)
-  (:k ../../../examples/mirage/skeleton.fpp))
- (action
-  (with-stdout-to
-   %{target}
-   (run %{ofpp} to-ml --topologies UnixKv %{t} %{d} %{s} %{k}))))
-
-(rule
- (target gen_unix_dns_resolver.ml)
- (deps
-  (:ofpp ../../../bin/main.exe)
-  (:t ../../../examples/mirage/types.fpp)
-  (:d ../../../examples/mirage/devices.fpp)
-  (:s ../../../examples/mirage/stacks.fpp)
-  (:k ../../../examples/mirage/skeleton.fpp))
- (action
-  (with-stdout-to
-   %{target}
-   (run %{ofpp} to-ml --topologies UnixDnsResolver %{t} %{d} %{s} %{k}))))
-
-(rule
- (target gen_unix_static_website_tls.ml)
- (deps
-  (:ofpp ../../../bin/main.exe)
-  (:t ../../../examples/mirage/types.fpp)
-  (:d ../../../examples/mirage/devices.fpp)
-  (:s ../../../examples/mirage/stacks.fpp)
-  (:k ../../../examples/mirage/skeleton.fpp))
- (action
-  (with-stdout-to
-   %{target}
-   (run %{ofpp} to-ml --topologies UnixStaticWebsiteTls %{t} %{d} %{s} %{k}))))
-
 (rule
  (alias runtest)
  (deps
   gen_static_website.ml
   gen_static_website_dns.ml
   gen_tar_website.ml
-  gen_fat_website.ml
-  gen_unix_network.ml
-  gen_unix_kv.ml
-  gen_unix_dns_resolver.ml
-  gen_unix_static_website_tls.ml)
+  gen_fat_website.ml)
  (action
   (echo "topology code generation tests: OK\n")))

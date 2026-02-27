@@ -14,9 +14,9 @@ topology StaticWebsite {
   instance server
 
   connections Connect {
-    server.data -> data.get
-    server.certs -> certs.get
-    server.stack -> stack.disconnect
+    server.data -> data.connect
+    server.certs -> certs.connect
+    server.stack -> stack.connect
   }
 }
 
@@ -29,11 +29,11 @@ topology StaticWebsiteWithDns {
   instance server
 
   connections Connect {
-    happy_eyeballs.stack -> stack.disconnect
-    dns_client.stack -> stack.disconnect
-    server.data -> data.get
-    server.certs -> certs.get
-    server.stack -> stack.disconnect
+    happy_eyeballs.stack -> stack.connect
+    dns_client.stack -> stack.connect
+    server.data -> data.connect
+    server.certs -> certs.connect
+    server.stack -> stack.connect
   }
 }
 
@@ -49,13 +49,13 @@ topology TarWebsite {
   instance server
 
   connections Connect {
-    happy_eyeballs.stack -> stack.disconnect
-    dns_client.stack -> stack.disconnect
-    tar_data.block -> data_block.read
-    tar_certs.block -> certs_block.read
-    server.data -> tar_data.disconnect
-    server.certs -> tar_certs.disconnect
-    server.stack -> stack.disconnect
+    happy_eyeballs.stack -> stack.connect
+    dns_client.stack -> stack.connect
+    tar_data.block -> data_block.connect
+    tar_certs.block -> certs_block.connect
+    server.data -> tar_data.connect
+    server.certs -> tar_certs.connect
+    server.stack -> stack.connect
   }
 }
 
@@ -69,11 +69,11 @@ topology FatWebsite {
   instance server
 
   connections Connect {
-    fat_data.block -> data_block.read
-    fat_certs.block -> certs_block.read
-    server.data -> fat_data.disconnect
-    server.certs -> fat_certs.disconnect
-    server.stack -> stack.disconnect
+    fat_data.block -> data_block.connect
+    fat_certs.block -> certs_block.connect
+    server.data -> fat_data.connect
+    server.certs -> fat_certs.connect
+    server.stack -> stack.connect
   }
 }
 
@@ -95,9 +95,9 @@ topology UnixWebsite {
   instance server
 
   connections Connect {
-    server.data -> data.get
-    server.certs -> certs.get
-    server.stack -> socket_stack.disconnect
+    server.data -> data.connect
+    server.certs -> certs.connect
+    server.stack -> socket_stack.connect
   }
 }
 
@@ -121,14 +121,14 @@ topology UnixWebsiteWithDns {
   instance server
 
   connections Connect_device {
-    happy_eyeballs.stack -> socket_stack.disconnect
+    happy_eyeballs.stack -> socket_stack.connect
   }
 
   connections Connect {
-    dns_client.stack -> socket_stack.disconnect
-    server.data -> data.get
-    server.certs -> certs.get
-    server.stack -> socket_stack.disconnect
+    dns_client.stack -> socket_stack.connect
+    server.data -> data.connect
+    server.certs -> certs.connect
+    server.stack -> socket_stack.connect
   }
 }
 
@@ -148,8 +148,8 @@ topology UnixTestWebsite {
   instance server
 
   connections Connect {
-    server.data -> data.get
-    server.certs -> certs.get
-    server.stack -> socket_stack.disconnect
+    server.data -> data.connect
+    server.certs -> certs.connect
+    server.stack -> socket_stack.connect
   }
 }

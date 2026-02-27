@@ -20,25 +20,25 @@ topology TcpipStack {
   instance stack
 
   connections Connect {
-    net.backend -> backend.write
-    eth.net_write -> net.write
-    arp.eth_write -> eth.write
-    ipv4.eth_write -> eth.write
-    ipv4.arp_query -> arp.query
-    ipv6.net_write -> net.write
-    ipv6.eth_write -> eth.write
-    ip.ipv4 -> ipv4.write
-    ip.ipv6 -> ipv6.write
-    icmp.ip_write -> ipv4.write
-    udp.ip_write -> ip.write
-    tcp.ip_write -> ip.write
-    stack.netif -> net.write
-    stack.ethernet -> eth.write
-    stack.arpv4 -> arp.query
-    stack.ipv4v6 -> ip.write
-    stack.icmpv4 -> icmp.ip_write
-    stack.udpv4v6 -> udp.ip_write
-    stack.tcpv4v6 -> tcp.write
+    net.backend -> backend.connect
+    eth.net -> net.connect
+    arp.eth -> eth.connect
+    ipv4.eth -> eth.connect
+    ipv4.arp -> arp.connect
+    ipv6.net -> net.connect
+    ipv6.eth -> eth.connect
+    ip.ipv4 -> ipv4.connect
+    ip.ipv6 -> ipv6.connect
+    icmp.ip -> ipv4.connect
+    udp.ip -> ip.connect
+    tcp.ip -> ip.connect
+    stack.netif -> net.connect
+    stack.ethernet -> eth.connect
+    stack.arpv4 -> arp.connect
+    stack.ipv4v6 -> ip.connect
+    stack.icmpv4 -> icmp.connect
+    stack.udpv4v6 -> udp.connect
+    stack.tcpv4v6 -> tcp.connect
   }
 }
 
@@ -52,23 +52,18 @@ topology SocketStack {
   instance socket_stack
 
   connections Connect {
-    socket_stack.udp -> udp_socket.disconnect
-    socket_stack.tcp -> tcp_socket.disconnect
+    socket_stack.udp -> udp_socket.connect
+    socket_stack.tcp -> tcp_socket.connect
   }
 }
 
 @ Happy Eyeballs + DNS client.  The parent must wire
 @ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
-@
-@ Happy Eyeballs uses [connect_device] (not [connect]) for
-@ initialisation.  The parent topology puts happy_eyeballs
-@ connections in a [Connect_device] group so the generated
-@ code calls [connect_device] instead of [connect].
 topology DnsStack {
   instance happy_eyeballs
   instance dns_client
 
   connections Connect {
-    dns_client.happy_eyeballs -> happy_eyeballs.disconnect
+    dns_client.happy_eyeballs -> happy_eyeballs.connect
   }
 }

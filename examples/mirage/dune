@@ -2,7 +2,7 @@
 
 (rule
  (target mirage.fpp)
- (deps types.fpp devices.fpp stacks.fpp websites.fpp skeleton.fpp)
+ (deps types.fpp devices.fpp stacks.fpp websites.fpp)
  (action
   (bash "cat %{deps} > %{target}")))
 

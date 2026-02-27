@@ -499,7 +499,11 @@ let gen_ml_types_only ~output merged_tu per_file =
       file_topos
   in
   match (output, file_topos) with
-  | _, [] -> ()
+  | Some path, [] ->
+      let text = "[@@@ocamlformat \"disable\"]\n" in
+      write_output (Some path) text;
+      write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
+  | None, [] -> ()
   | _, [ (_, topos) ] -> (
       let text = gen_ml_types_for_file merged_tu topos in
       write_output output text;
