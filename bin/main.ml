@@ -477,58 +477,6 @@ let trim_trailing_newlines s =
   done;
   String.sub s 0 (!i + 1) ^ "\n"
 
-let gen_ml_types_for_file merged_tu topos =
-  let buf = Buffer.create 4096 in
-  let ppf = Fmt.with_buffer buf in
-  Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-  Fpp.Gen_ml.pp_module_types merged_tu topos ppf;
-  Fmt.flush ppf ();
-  Buffer.contents buf
-
-let gen_ml_types_only ~output merged_tu per_file =
-  let file_topos =
-    List.filter_map
-      (fun (file, tu) ->
-        let topos = Fpp.topologies tu in
-        if topos = [] then None else Some (file, topos))
-      per_file
-  in
-  let file_topos =
-    List.filter
-      (fun (_file, topos) -> Fpp.Gen_ml.has_module_types merged_tu topos)
-      file_topos
-  in
-  match (output, file_topos) with
-  | Some path, [] ->
-      let text = "[@@@ocamlformat \"disable\"]\n" in
-      write_output (Some path) text;
-      write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
-  | None, [] -> ()
-  | _, [ (_, topos) ] -> (
-      let text = gen_ml_types_for_file merged_tu topos in
-      write_output output text;
-      (* .mli: same content for types-only mode *)
-      match output with
-      | Some path ->
-          write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
-      | None -> ())
-  | Some path, _ ->
-      let all_topos = List.concat_map snd file_topos in
-      let text = gen_ml_types_for_file merged_tu all_topos in
-      write_output (Some path) text;
-      write_output (Some (mli_path_of path)) (trim_trailing_newlines text)
-  | None, many ->
-      List.iter
-        (fun (file, topos) ->
-          let text = gen_ml_types_for_file merged_tu topos in
-          let stem = Filename.chop_extension file in
-          let ml_path = stem ^ ".ml" in
-          write_output (Some ml_path) text;
-          write_output
-            (Some (mli_path_of ml_path))
-            (trim_trailing_newlines text))
-        many
-
 let gen_ml_topologies ppf tu topologies =
   let all_topos = Fpp.topologies tu in
   let topos =
@@ -599,39 +547,33 @@ let gen_ml_for_tu ppf tu ~sm_name ~topologies =
   if topologies <> [] then gen_ml_topologies ppf tu topologies
   else gen_ml_all ppf tu ~sm_name
 
-let to_ml ~output ~sm_name ~topologies ~types_only files =
+let to_ml ~output ~sm_name ~topologies files =
   match parse_files files with
   | None -> 1
   | Some per_file ->
       let tu = merge_tus per_file in
-      if types_only then begin
-        gen_ml_types_only ~output tu per_file;
-        0
-      end
-      else begin
-        let buf = Buffer.create 4096 in
-        let ppf = Fmt.with_buffer buf in
-        Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-        gen_ml_for_tu ppf tu ~sm_name ~topologies;
-        Fmt.flush ppf ();
-        let text = Buffer.contents buf in
-        if text <> "" then write_output output text;
-        (* Generate .mli when writing to a file and topologies are specified *)
-        (match output with
-        | Some path when topologies <> [] ->
-            let buf = Buffer.create 4096 in
-            let ppf = Fmt.with_buffer buf in
-            Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-            gen_mli_topologies ppf tu topologies;
-            Fmt.flush ppf ();
-            let mli_text = Buffer.contents buf in
-            if mli_text <> "" then
-              write_output
-                (Some (mli_path_of path))
-                (trim_trailing_newlines mli_text)
-        | _ -> ());
-        0
-      end
+      let buf = Buffer.create 4096 in
+      let ppf = Fmt.with_buffer buf in
+      Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
+      gen_ml_for_tu ppf tu ~sm_name ~topologies;
+      Fmt.flush ppf ();
+      let text = Buffer.contents buf in
+      if text <> "" then write_output output text;
+      (* Generate .mli when writing to a file and topologies are specified *)
+      (match output with
+      | Some path when topologies <> [] ->
+          let buf = Buffer.create 4096 in
+          let ppf = Fmt.with_buffer buf in
+          Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
+          gen_mli_topologies ppf tu topologies;
+          Fmt.flush ppf ();
+          let mli_text = Buffer.contents buf in
+          if mli_text <> "" then
+            write_output
+              (Some (mli_path_of path))
+              (trim_trailing_newlines mli_text)
+      | _ -> ());
+      0
 
 let to_ml_output_t =
   let doc = "Output file. If omitted, OCaml code is written to stdout." in
@@ -657,27 +599,12 @@ let topologies_t =
            Comma-separated names (e.g. $(b,--topologies T1,T2)). Module prefix \
            for entry points is inferred from the input filename.")
 
-let types_only_t =
-  Arg.(
-    value & flag
-    & info [ "types" ]
-        ~doc:
-          "Output only module type aliases. Mutually exclusive with \
-           $(b,--topologies).")
-
 let to_ml_term =
-  let to_ml output sm_name topologies_lists types_only files =
-    if types_only && List.concat topologies_lists <> [] then begin
-      Fmt.epr "%a --types and --topologies are mutually exclusive@." pp_err ();
-      1
-    end
-    else
-      let topologies = List.concat topologies_lists in
-      to_ml ~output ~sm_name ~topologies ~types_only files
+  let to_ml output sm_name topologies_lists files =
+    let topologies = List.concat topologies_lists in
+    to_ml ~output ~sm_name ~topologies files
   in
-  Term.(
-    const to_ml $ to_ml_output_t $ sm_name_t $ topologies_t $ types_only_t
-    $ to_ml_files_t)
+  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ topologies_t $ to_ml_files_t)
 
 let to_ml_cmd =
   let info =
@@ -694,7 +621,6 @@ let to_ml_cmd =
              wiring.";
           `S "EXAMPLES";
           `P "$(iname) model.fpp                        # everything to stdout";
-          `P "$(iname) --types model.fpp                # module types only";
           `P
             "$(iname) --topologies T1 model.fpp         # one topology + entry \
              point";

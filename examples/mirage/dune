@@ -6,16 +6,6 @@
  (action
   (bash "cat %{deps} > %{target}")))
 
-; Generate module type aliases
-
-(rule
- (mode
-  (promote (until-clean)))
- (targets mirage.ml mirage.mli)
- (deps types.fpp devices.fpp stacks.fpp websites.fpp)
- (action
-  (run %{bin:ofpp} to-ml --types -o mirage.ml %{deps})))
-
 ; Generate topology + entry point for UnixWebsite
 
 (rule
@@ -50,7 +40,7 @@
 
 (executable
  (name main)
- (modules main mirage server htdocs_data tls_data)
+ (modules main server htdocs_data tls_data)
  (libraries
   mirage-block
   mirage-vnetif
