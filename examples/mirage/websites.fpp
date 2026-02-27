@@ -102,6 +102,7 @@ topology UnixWebsite {
 }
 
 @ Unix socket stack, crunch KV, with DNS.
+@ Happy Eyeballs uses [connect_device] for initialisation.
 topology UnixWebsiteWithDns {
   import SocketStack
   @ ocaml.module Server.Udp_socket
@@ -111,14 +112,19 @@ topology UnixWebsiteWithDns {
   @ ocaml.module Server.Socket_stack
   instance socket_stack
   import DnsStack
+  @ ocaml.functor Server.Dns
+  instance dns_client
   @ ocaml.module Htdocs_data
   instance data
   @ ocaml.module Tls_data
   instance certs
   instance server
 
-  connections Connect {
+  connections Connect_device {
     happy_eyeballs.stack -> socket_stack.disconnect
+  }
+
+  connections Connect {
     dns_client.stack -> socket_stack.disconnect
     server.data -> data.get
     server.certs -> certs.get

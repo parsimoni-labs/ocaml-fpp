@@ -1,4 +1,4 @@
-; Compilation tests for fully-bound Unix topologies.
+; Compilation tests for MirageOS topologies.
 ; Generated code is compiled against real MirageOS library signatures.
 
 (library
@@ -8,14 +8,29 @@
  (libraries
   lwt
   lwt.unix
+  cstruct
+  macaddr
+  mirage-block
+  mirage-vnetif
+  ethernet
+  arp.mirage
+  tcpip.ipv4
+  tcpip.ipv6
+  tcpip.stack-direct
+  tcpip.icmpv4
+  tcpip.udp
+  tcpip.tcp
   tcpip.stack-socket
   tcpip.tcpv4v6-socket
   tcpip.udpv4v6-socket
-  mirage-kv-mem))
+  mirage-kv-mem
+  happy-eyeballs-mirage
+  dns-client-mirage))
 
-; FPP source files (split across themed files, merged by ofpp).
-; skeleton.fpp is excluded — its topologies bind directly to library
-; modules and are not compilable without connect() wrappers.
+; ── Fully-bound Unix topologies (executables) ──────────────────────
+;
+; These topologies bind every instance to a concrete module via
+; [@ ocaml.module], so the generated code is a standalone executable.
 
 (rule
  (target test_unix_test.ml)
@@ -44,6 +59,19 @@
    (run %{ofpp} to-ml --topologies UnixWebsite %{t} %{d} %{s} %{w}))))
 
 (rule
+ (target test_unix_website_dns.ml)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (with-stdout-to
+   %{target}
+   (run %{ofpp} to-ml --topologies UnixWebsiteWithDns %{t} %{d} %{s} %{w}))))
+
+(rule
  (target test_multi_bound.ml)
  (deps
   (:ofpp ../../../bin/main.exe)
@@ -64,6 +92,8 @@
     %{s}
     %{w}))))
 
+; ── Types library ──────────────────────────────────────────────────
+
 (rule
  (targets test_types.ml test_types.mli)
  (deps
@@ -80,13 +110,39 @@
  (modules test_types)
  (libraries lwt cstruct macaddr mirage-block))
 
+; ── Build and run ──────────────────────────────────────────────────
+
 (executables
- (names test_unix_test test_unix_website test_multi_bound)
+ (names
+  test_unix_test
+  test_unix_website
+  test_unix_website_dns
+  test_multi_bound)
  (libraries website_support)
- (modules test_unix_test test_unix_website test_multi_bound))
+ (modules
+  test_unix_test
+  test_unix_website
+  test_unix_website_dns
+  test_multi_bound))
 
 (rule
  (alias runtest)
- (deps test_unix_test.exe test_unix_website.exe test_multi_bound.exe)
+ (deps
+  test_unix_test.exe
+  test_unix_website.exe
+  test_unix_website_dns.exe
+  test_multi_bound.exe)
  (action
   (echo "website compilation tests: OK\n")))
+
+; ── Known-broken topologies ────────────────────────────────────────
+;
+; The topologies below fail to compile against real MirageOS packages
+; because the generated module types and connect signatures don't
+; match the actual library APIs:
+;
+; - StaticWebsite, StaticWebsiteWithDns, TarWebsite, FatWebsite:
+;   generated BACKEND module type is missing register, unregister,
+;   set_listen_fn, unregister_and_flush (Vnetif.BACKEND requires
+;   them). The generated types from port declarations don't match
+;   real MirageOS module type signatures.

@@ -1042,6 +1042,32 @@ let instance_bound_module inst_annots inst_name =
       else acc)
     None inst_annots
 
+(** Find [@ ocaml.functor X] on an instance. Uses last-wins semantics like
+    {!instance_bound_module}, letting parent topology override imported functor
+    paths. *)
+let instance_functor_override inst_annots inst_name =
+  let extract annots =
+    List.find_map
+      (fun s ->
+        let s = String.trim s in
+        if starts_with ~prefix:"ocaml.functor " s then
+          let v = String.trim (String.sub s 14 (String.length s - 14)) in
+          let path =
+            match String.index_opt v '(' with
+            | None -> v
+            | Some i -> String.sub v 0 i
+          in
+          Some path
+        else None)
+      annots
+  in
+  List.fold_left
+    (fun acc (n, annots) ->
+      if n = inst_name then
+        match extract annots with Some _ as v -> v | None -> acc
+      else acc)
+    None inst_annots
+
 (* ── Topology code generation ────────────────────────────────────── *)
 
 (** Resolve a topology instance name to its component instance definition. *)
@@ -1386,8 +1412,7 @@ let instance_method_names groups =
     (fun (gname, conns) ->
       List.iter
         (fun (conn : Ast.connection) ->
-          Hashtbl.replace tbl (pid_inst_name conn.conn_from_port.data) gname;
-          Hashtbl.replace tbl (pid_inst_name conn.conn_to_port.data) gname)
+          Hashtbl.replace tbl (pid_inst_name conn.conn_from_port.data) gname)
         conns)
     groups;
   tbl
@@ -1556,16 +1581,19 @@ let pp_functor_apps ppf tu inst_annots sorted connections =
             pf ppf "@,  module %s = %s" mod_name path
         | None ->
             let functor_path =
-              match ca.functor_path with
+              match instance_functor_override inst_annots inst_name with
               | Some s -> s
-              | None ->
-                  let parts =
-                    Ast.qual_ident_to_list ci.Ast.inst_component.data
-                  in
-                  let segments =
-                    List.map (fun n -> constructor_name n.Ast.data) parts
-                  in
-                  String.concat "." segments ^ ".Make"
+              | None -> (
+                  match ca.functor_path with
+                  | Some s -> s
+                  | None ->
+                      let parts =
+                        Ast.qual_ident_to_list ci.Ast.inst_component.data
+                      in
+                      let segments =
+                        List.map (fun n -> constructor_name n.Ast.data) parts
+                      in
+                      String.concat "." segments ^ ".Make")
             in
             pf ppf "@,  module %s = %s" mod_name functor_path;
             List.iter
@@ -1781,16 +1809,19 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
         | None ->
             module_break ();
             let functor_path =
-              match ca.functor_path with
+              match instance_functor_override inst_annots inst_name with
               | Some s -> s
-              | None ->
-                  let parts =
-                    Ast.qual_ident_to_list ci.Ast.inst_component.data
-                  in
-                  let segments =
-                    List.map (fun n -> constructor_name n.Ast.data) parts
-                  in
-                  String.concat "." segments ^ ".Make"
+              | None -> (
+                  match ca.functor_path with
+                  | Some s -> s
+                  | None ->
+                      let parts =
+                        Ast.qual_ident_to_list ci.Ast.inst_component.data
+                      in
+                      let segments =
+                        List.map (fun n -> constructor_name n.Ast.data) parts
+                      in
+                      String.concat "." segments ^ ".Make")
             in
             pf ppf "module %s = %s" mod_name functor_path;
             List.iter

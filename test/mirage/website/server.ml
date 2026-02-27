@@ -34,3 +34,16 @@ struct
   let connect (_ : DATA.t) (_ : KEYS.t) (_ : Stack.t) : unit Lwt.t =
     Lwt.return_unit
 end
+
+(* DNS client wrapper: the real connect takes (stack, he) as a tuple;
+   the wrapper takes them as two separate positional arguments. *)
+module Dns
+    (S : Tcpip.Stack.V4V6)
+    (H :
+      Happy_eyeballs_mirage.S with type stack = S.t and type flow = S.TCP.flow) =
+struct
+  module D = Dns_client_mirage.Make (S) (H)
+  include D
+
+  let connect (s : S.t) (h : H.t) : D.t Lwt.t = D.connect (s, h)
+end

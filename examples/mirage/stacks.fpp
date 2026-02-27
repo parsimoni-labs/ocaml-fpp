@@ -57,8 +57,13 @@ topology SocketStack {
   }
 }
 
-@ Happy Eyeballs + DNS client.  The parent must wire both
+@ Happy Eyeballs + DNS client.  The parent must wire
 @ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
+@
+@ Happy Eyeballs uses [connect_device] (not [connect]) for
+@ initialisation.  The parent topology puts happy_eyeballs
+@ connections in a [Connect_device] group so the generated
+@ code calls [connect_device] instead of [connect].
 topology DnsStack {
   instance happy_eyeballs
   instance dns_client
