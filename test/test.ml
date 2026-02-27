@@ -18,4 +18,5 @@ let () =
       Test_check.suite;
       Test_dot.suite;
       Test_gen_ml.suite;
+      Test_fpv.suite;
     ]

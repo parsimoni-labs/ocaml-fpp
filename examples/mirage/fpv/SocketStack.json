@@ -1,0 +1,22 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "socket_stack",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "udp", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "udp_socket",
+                   "inputPorts": [{"name": "provide", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "tcp_socket",
+                   "inputPorts": [{"name": "provide", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]], [[0, 0, 1, 0], [1, 1, 0, 0]]]
+}

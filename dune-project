@@ -24,6 +24,7 @@
   (ocaml
    (>= 4.14))
   fmt
+  jsont
   menhir
   menhirLib
   cmdliner
@@ -32,6 +33,12 @@
   (alcotest :with-test)
   (memtrace :with-test)
   (lwt :with-test)
+  (cstruct :with-test)
+  (macaddr :with-test)
+  (mirage-block :with-test)
+  (mirage-vnetif :with-test)
+  (ethernet :with-test)
+  (arp :with-test)
   (conduit-mirage :with-test)
   (cohttp-mirage :with-test)
   (tcpip :with-test)

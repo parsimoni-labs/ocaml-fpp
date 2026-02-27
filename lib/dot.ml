@@ -392,6 +392,23 @@ let add_connection_edges connections =
         (Fmt.str "%s → %s" (escape_html from_port) (escape_html to_port)))
     connections
 
+let emit_top_level_instances ppf instances connected inst_import =
+  List.iter
+    (fun (n, _inst, comp) ->
+      if inst_import n = None && SSet.mem n connected then
+        emit_instance ppf ~ind:1 n comp.Ast.comp_name.data comp.comp_kind)
+    instances
+
+let emit_topology_edges ppf =
+  List.iter
+    (fun e ->
+      if e.label = "" then
+        Fmt.pf ppf {|  "%s" -> "%s";@.|} (escape_dot e.src) (escape_dot e.dst)
+      else
+        Fmt.pf ppf {|  "%s" -> "%s" [label=<%s> fontsize=9];@.|}
+          (escape_dot e.src) (escape_dot e.dst) e.label)
+    (List.rev !edges)
+
 let pp_topology tu ppf (topo : Ast.def_topology) =
   let imports = import_names topo in
   let import_inst_sets =
@@ -410,20 +427,9 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
       import_inst_sets
   in
   List.iter (pp_import_cluster ppf instances connected inst_import) imports;
-  List.iter
-    (fun (n, _inst, comp) ->
-      if inst_import n = None && SSet.mem n connected then
-        emit_instance ppf ~ind:1 n comp.Ast.comp_name.data comp.comp_kind)
-    instances;
+  emit_top_level_instances ppf instances connected inst_import;
   add_connection_edges connections;
-  List.iter
-    (fun e ->
-      if e.label = "" then
-        Fmt.pf ppf {|  "%s" -> "%s";@.|} (escape_dot e.src) (escape_dot e.dst)
-      else
-        Fmt.pf ppf {|  "%s" -> "%s" [label=<%s> fontsize=9];@.|}
-          (escape_dot e.src) (escape_dot e.dst) e.label)
-    (List.rev !edges);
+  emit_topology_edges ppf;
   Fmt.pf ppf "}@."
 
 (* ── Public API ────────────────────────────────────────────────────── *)

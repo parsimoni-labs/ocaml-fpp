@@ -6,6 +6,7 @@
 module Ast = Ast
 module Check = Check
 module Dot = Dot
+module Fpv = Fpv
 module Gen_ml = Gen_ml
 
 (** {1 Parse Errors} *)

@@ -1,7 +1,7 @@
 (library
  (name fpp)
  (public_name fpp)
- (libraries fmt menhirLib)
+ (libraries fmt jsont menhirLib)
  (private_modules
   check_env
   check_core
