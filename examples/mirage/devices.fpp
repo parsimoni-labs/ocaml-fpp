@@ -11,7 +11,12 @@
 @ target backend (solo5, xen, unix tap).
 
 active component Backend {
-  sync input port provide}
+  sync input port write: NetWrite
+  sync input port listen: NetListen
+  sync input port mac: MacAddr
+  sync input port mtu: Mtu
+  sync input port disconnect: Disconnect
+}
 
 @ ── Socket stack ────────────────────────────────────────
 @
@@ -20,13 +25,16 @@ active component Backend {
 @   [Udpv4v6_socket] + [Tcpv4v6_socket] -> [Tcpip_stack_socket.V4V6]
 
 active component Udpv4v6_socket {
-  sync input port provide}
+  sync input port disconnect: Disconnect
+}
 
 active component Tcpv4v6_socket {
-  sync input port provide}
+  sync input port disconnect: Disconnect
+}
 
 active component SocketStack {
-  output port udp  output port tcp  sync input port provide}
+  output port udp  output port tcp  sync input port disconnect: Disconnect
+}
 
 @ ── Network device ───────────────────────────────────────
 
@@ -41,7 +49,13 @@ active component Vnetif {
 @ [mirage-block-solo5] for Solo5, xenstore-backed for Xen.
 
 active component Block {
-  sync input port provide}
+  type Error
+  type WriteError
+  sync input port disconnect: Disconnect
+  sync input port get_info: BlockGetInfo
+  sync input port read: BlockRead
+  sync input port write: BlockWrite
+}
 
 @ ── Key-value stores ─────────────────────────────────────
 @
@@ -66,13 +80,15 @@ active component Kv {
 @ [Tar_mirage.Make_KV_RO(Block)] then [connect block].
 @ ocaml.functor Tar_mirage.Make_KV_RO
 active component Tar_kv_ro {
-  output port block  sync input port provide}
+  output port block  sync input port disconnect: Disconnect
+}
 
 @ FAT filesystem read-only KV over a block device.
 @ [Fat.KV_RO(Block)] then [connect block].
 @ ocaml.functor Fat.KV_RO
 active component Fat_kv_ro {
-  output port block  sync input port provide}
+  output port block  sync input port disconnect: Disconnect
+}
 
 @ ── Protocol stack ───────────────────────────────────────
 @
@@ -134,7 +150,8 @@ module Tcp {
 
 @ ocaml.functor Tcpip_stack_direct.MakeV4V6
 active component TcpipStack {
-  sync input port provide  output port netif  output port ethernet  output port arpv4  output port ipv4v6  output port icmpv4  output port udpv4v6  output port tcpv4v6}
+  sync input port disconnect: Disconnect  output port netif  output port ethernet  output port arpv4  output port ipv4v6  output port icmpv4  output port udpv4v6  output port tcpv4v6
+}
 
 @ ── Application ────────────────────────────────────────
 @
@@ -154,7 +171,8 @@ active component Server {
 @ on the TCP/IP stack; the parent topology wires them.
 
 active component Happy_eyeballs_mirage {
-  output port stack  sync input port provide}
+  output port stack  sync input port disconnect: Disconnect
+}
 
 active component Dns_client_mirage {
   output port stack  output port happy_eyeballs  sync input port resolve}

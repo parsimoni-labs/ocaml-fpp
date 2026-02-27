@@ -68,10 +68,10 @@ val pp_flat_entry_point : Format.formatter -> (string * string) list -> unit
 (** {2 .mli Generation} *)
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology_mli tu ppf topo] pretty-prints the [.mli] interface for a
-    topology. For parameterised topologies, emits the [Make] functor signature
-    with [type t] and [val connect]. For fully-bound topologies, emits
-    [val x : X.t Lazy.t] for each active instance. *)
+(** [pp_topology_mli tu] is a pretty-printer for the interface of a topology.
+    For parameterised topologies, emits the Make functor signature with type and
+    connect declarations. For fully-bound topologies, emits lazy value bindings
+    for each active instance. *)
 
 (** {2 Topology Helpers} *)
 

@@ -20,7 +20,7 @@ topology TcpipStack {
   instance stack
 
   connections Connect {
-    net.backend -> backend.provide
+    net.backend -> backend.write
     eth.net_write -> net.write
     arp.eth_write -> eth.write
     ipv4.eth_write -> eth.write
@@ -52,8 +52,8 @@ topology SocketStack {
   instance socket_stack
 
   connections Connect {
-    socket_stack.udp -> udp_socket.provide
-    socket_stack.tcp -> tcp_socket.provide
+    socket_stack.udp -> udp_socket.disconnect
+    socket_stack.tcp -> tcp_socket.disconnect
   }
 }
 
@@ -64,6 +64,6 @@ topology DnsStack {
   instance dns_client
 
   connections Connect {
-    dns_client.happy_eyeballs -> happy_eyeballs.provide
+    dns_client.happy_eyeballs -> happy_eyeballs.disconnect
   }
 }

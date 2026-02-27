@@ -16,7 +16,7 @@ topology StaticWebsite {
   connections Connect {
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> stack.provide
+    server.stack -> stack.disconnect
   }
 }
 
@@ -29,11 +29,11 @@ topology StaticWebsiteWithDns {
   instance server
 
   connections Connect {
-    happy_eyeballs.stack -> stack.provide
-    dns_client.stack -> stack.provide
+    happy_eyeballs.stack -> stack.disconnect
+    dns_client.stack -> stack.disconnect
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> stack.provide
+    server.stack -> stack.disconnect
   }
 }
 
@@ -49,13 +49,13 @@ topology TarWebsite {
   instance server
 
   connections Connect {
-    happy_eyeballs.stack -> stack.provide
-    dns_client.stack -> stack.provide
-    tar_data.block -> data_block.provide
-    tar_certs.block -> certs_block.provide
-    server.data -> tar_data.provide
-    server.certs -> tar_certs.provide
-    server.stack -> stack.provide
+    happy_eyeballs.stack -> stack.disconnect
+    dns_client.stack -> stack.disconnect
+    tar_data.block -> data_block.read
+    tar_certs.block -> certs_block.read
+    server.data -> tar_data.disconnect
+    server.certs -> tar_certs.disconnect
+    server.stack -> stack.disconnect
   }
 }
 
@@ -69,11 +69,11 @@ topology FatWebsite {
   instance server
 
   connections Connect {
-    fat_data.block -> data_block.provide
-    fat_certs.block -> certs_block.provide
-    server.data -> fat_data.provide
-    server.certs -> fat_certs.provide
-    server.stack -> stack.provide
+    fat_data.block -> data_block.read
+    fat_certs.block -> certs_block.read
+    server.data -> fat_data.disconnect
+    server.certs -> fat_certs.disconnect
+    server.stack -> stack.disconnect
   }
 }
 
@@ -97,7 +97,7 @@ topology UnixWebsite {
   connections Connect {
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> socket_stack.provide
+    server.stack -> socket_stack.disconnect
   }
 }
 
@@ -118,11 +118,11 @@ topology UnixWebsiteWithDns {
   instance server
 
   connections Connect {
-    happy_eyeballs.stack -> socket_stack.provide
-    dns_client.stack -> socket_stack.provide
+    happy_eyeballs.stack -> socket_stack.disconnect
+    dns_client.stack -> socket_stack.disconnect
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> socket_stack.provide
+    server.stack -> socket_stack.disconnect
   }
 }
 
@@ -144,6 +144,6 @@ topology UnixTestWebsite {
   connections Connect {
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> socket_stack.provide
+    server.stack -> socket_stack.disconnect
   }
 }

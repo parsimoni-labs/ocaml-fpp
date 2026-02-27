@@ -3,22 +3,26 @@
 
 module type BACKEND = sig
   type t
-  val provide : t -> unit
+  val write : t -> Cstruct.t -> unit
+  val listen : t -> int32 -> unit
+  val mac : t -> Macaddr.t
+  val mtu : t -> int32
+  val disconnect : t -> unit Lwt.t
 end
 
 module type UDPV4V6_SOCKET = sig
   type t
-  val provide : t -> unit
+  val disconnect : t -> unit Lwt.t
 end
 
 module type TCPV4V6_SOCKET = sig
   type t
-  val provide : t -> unit
+  val disconnect : t -> unit Lwt.t
 end
 
 module type HAPPY_EYEBALLS_MIRAGE = sig
   type t
-  val provide : t -> unit
+  val disconnect : t -> unit Lwt.t
 end
 
 module type KV = sig
@@ -34,5 +38,10 @@ end
 
 module type BLOCK = sig
   type t
-  val provide : t -> unit
+  type error
+  type write_error
+  val disconnect : t -> unit Lwt.t
+  val get_info : t -> Mirage_block.info Lwt.t
+  val read : t -> int64 -> Cstruct.t -> (unit, error) result Lwt.t
+  val write : t -> int64 -> Cstruct.t -> (unit, write_error) result Lwt.t
 end

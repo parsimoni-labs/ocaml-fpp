@@ -80,7 +80,7 @@ topology StaticWebsite {
   connections Connect {
     server.data -> data.get
     server.certs -> certs.get
-    server.stack -> stack.provide
+    server.stack -> stack.disconnect
   }
 }
 ```
@@ -310,9 +310,18 @@ active component Kv {
   sync input port get: KvGet
   ...
 }
+
+active component Block {
+  type Error
+  type WriteError
+  sync input port disconnect: Disconnect
+  sync input port get_info: BlockGetInfo
+  sync input port read: BlockRead
+  sync input port write: BlockWrite
+}
 ```
 
-Generated module type:
+Generated module types:
 ```ocaml
 module type KV = sig
   type t
@@ -321,6 +330,16 @@ module type KV = sig
   val disconnect : t -> unit Lwt.t
   val get : t -> key -> (string, error) result Lwt.t
   ...
+end
+
+module type BLOCK = sig
+  type t
+  type error
+  type write_error
+  val disconnect : t -> unit Lwt.t
+  val get_info : t -> Mirage_block.info Lwt.t
+  val read : t -> int64 -> Cstruct.t -> (unit, error) result Lwt.t
+  val write : t -> int64 -> Cstruct.t -> (unit, write_error) result Lwt.t
 end
 ```
 

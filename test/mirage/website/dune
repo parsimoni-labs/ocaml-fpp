@@ -78,7 +78,7 @@
 (library
  (name website_types)
  (modules test_types)
- (libraries lwt))
+ (libraries lwt cstruct macaddr mirage-block))
 
 (executables
  (names test_unix_test test_unix_website test_multi_bound)

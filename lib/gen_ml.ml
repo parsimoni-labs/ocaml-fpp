@@ -1378,6 +1378,20 @@ let pid_inst_name (pid : Ast.port_instance_id) =
   | Ast.Unqualified id -> id.data
   | Ast.Qualified _ -> Ast.qual_ident_to_string pid.pid_component.data
 
+(** Build a mapping from instance name to connection group name. For instances
+    appearing in multiple groups the last-seen group wins. *)
+let instance_method_names groups =
+  let tbl = Hashtbl.create 16 in
+  List.iter
+    (fun (gname, conns) ->
+      List.iter
+        (fun (conn : Ast.connection) ->
+          Hashtbl.replace tbl (pid_inst_name conn.conn_from_port.data) gname;
+          Hashtbl.replace tbl (pid_inst_name conn.conn_to_port.data) gname)
+        conns)
+    groups;
+  tbl
+
 (** Filter sorted instances to those referenced in a set of connections. *)
 let group_instances sorted connections =
   let mentioned =
@@ -1501,6 +1515,37 @@ let target_instances inst_name (comp : Ast.def_component) connections sorted =
     outputs;
   List.rev !targets
 
+(** Whether a port is a dependency-only marker ([port Dep]). Dep ports model
+    functor arguments in the connection graph but should not surface as labeled
+    connect parameters. *)
+let is_dep_port (p : Ast.port_instance_general) =
+  match p.gen_port with
+  | Some qi -> (
+      match qi.data with Ast.Unqualified id -> id.data = "Dep" | _ -> false)
+  | None -> true (* typeless ports are dependency-only *)
+
+(** Input ports on [comp] that have no incoming connection for [inst_name].
+    These surface as labeled parameters of the generated [connect] function.
+    Dependency-only ports ([Dep]) are excluded — they model functor arguments,
+    not connect parameters. *)
+let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
+  let input_ports =
+    List.filter_map
+      (fun (_pre, (p : Ast.port_instance_general)) ->
+        if p.gen_kind <> Output && not (is_dep_port p) then Some p else None)
+      (collect_general_ports_annotated comp)
+  in
+  List.filter
+    (fun (p : Ast.port_instance_general) ->
+      let port_name = camel_to_snake p.gen_name.data in
+      not
+        (List.exists
+           (fun (conn : Ast.connection) ->
+             pid_inst_name conn.conn_to_port.data = inst_name
+             && camel_to_snake conn.conn_to_port.data.pid_port.data = port_name)
+           connections))
+    input_ports
+
 (** Pretty-print the connect function body. Leaf instances (no outgoing
     connections) become parameters; non-leaf instances are bound via their
     [connect] function.
@@ -1510,10 +1555,22 @@ let target_instances inst_name (comp : Ast.def_component) connections sorted =
     [let] for passive ones), and wraps the return value in [Lwt.return]. A
     topology containing only passive components emits a plain synchronous record
     — no Lwt at all. *)
-let pp_topo_connect_body ppf ~func_name group_sorted connections =
+let pp_topo_connect_body ppf ~func_name ~all_conns group_sorted connections =
   let has_active =
     List.exists
       (fun (_, _, (comp : Ast.def_component)) -> is_active_component comp)
+      group_sorted
+  in
+  (* Labeled args from unconnected input ports on non-leaf instances. *)
+  let labeled_args =
+    List.concat_map
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        if target_instances inst_name comp connections group_sorted <> [] then
+          List.map
+            (fun (p : Ast.port_instance_general) ->
+              sanitize_ident p.gen_name.data)
+            (unconnected_input_ports inst_name comp all_conns)
+        else [])
       group_sorted
   in
   (* Leaf instances (no outgoing connections) become function parameters;
@@ -1526,13 +1583,12 @@ let pp_topo_connect_body ppf ~func_name group_sorted connections =
         else None)
       group_sorted
   in
-  let params =
-    match leaf_params with [] -> "()" | _ -> String.concat " " leaf_params
-  in
-  if has_active then (
-    pf ppf "@,  let %s %s =" func_name params;
-    pf ppf "@,    let open Lwt.Syntax in")
-  else pf ppf "@,  let %s %s =" func_name params;
+  pf ppf "@,  let %s" func_name;
+  List.iter (fun arg -> pf ppf " ~%s" arg) labeled_args;
+  List.iter (fun p -> pf ppf " %s" p) leaf_params;
+  if labeled_args = [] && leaf_params = [] then pf ppf " ()";
+  pf ppf " =";
+  if has_active then pf ppf "@,    let open Lwt.Syntax in";
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp connections group_sorted in
@@ -1541,7 +1597,12 @@ let pp_topo_connect_body ppf ~func_name group_sorted connections =
         let mod_name = constructor_name inst_name in
         let active = is_active_component comp in
         let bind = if active then "let* " else "let " in
-        pf ppf "@,    %s%s = %s.connect" bind inst_var mod_name;
+        pf ppf "@,    %s%s = %s.%s" bind inst_var mod_name func_name;
+        let config_ports = unconnected_input_ports inst_name comp all_conns in
+        List.iter
+          (fun (p : Ast.port_instance_general) ->
+            pf ppf " ~%s" (sanitize_ident p.gen_name.data))
+          config_ports;
         List.iter
           (fun (target_inst, _) -> pf ppf " %s" (sanitize_ident target_inst))
           targets;
@@ -1560,16 +1621,22 @@ let pp_topo_connect_body ppf ~func_name group_sorted connections =
     Leaf instances (no outgoing connections) use their named module type
     directly. Non-leaf instances carry an inline [val connect] whose arguments
     are the dependency instances. *)
-let pp_functor_param ppf all_conns sorted inst_name (comp : Ast.def_component) =
+let pp_functor_param ppf ~func_name all_conns sorted inst_name
+    (comp : Ast.def_component) =
   let mod_name = constructor_name inst_name in
   let comp_type = String.uppercase_ascii (camel_to_snake comp.comp_name.data) in
   let targets = target_instances inst_name comp all_conns sorted in
   if targets = [] then
-    pf ppf "@,  (%s : sig include %s val connect : unit -> t end)" mod_name
-      comp_type
+    pf ppf "@,  (%s : sig include %s val %s : unit -> t end)" mod_name comp_type
+      func_name
   else
     let connect_ret = if is_active_component comp then "t Lwt.t" else "t" in
-    pf ppf "@,  (%s : sig include %s val connect :" mod_name comp_type;
+    let config_ports = unconnected_input_ports inst_name comp all_conns in
+    pf ppf "@,  (%s : sig include %s val %s :" mod_name comp_type func_name;
+    List.iter
+      (fun (p : Ast.port_instance_general) ->
+        pf ppf " %s:_ ->" (sanitize_ident p.gen_name.data))
+      config_ports;
     List.iter
       (fun (target_inst, _) -> pf ppf " %s.t ->" (constructor_name target_inst))
       targets;
@@ -1602,15 +1669,20 @@ let pp_topology_functor ppf topo sorted groups =
   let all_conns = all_connections groups in
   let multi = List.length groups > 1 in
   let orphans = orphan_instances sorted groups in
+  let method_names = instance_method_names groups in
   pf ppf "@,@,module Make";
   List.iter
     (fun (inst_name, _ci, comp) ->
-      pp_functor_param ppf all_conns sorted inst_name comp)
+      let func_name =
+        Hashtbl.find_opt method_names inst_name
+        |> Option.value ~default:"connect"
+      in
+      pp_functor_param ppf ~func_name all_conns sorted inst_name comp)
     sorted;
   pf ppf " = struct";
   if groups = [] then (
     pf ppf "@,  type t = unit";
-    pp_topo_connect_body ppf ~func_name:"connect" [] [])
+    pp_topo_connect_body ppf ~func_name:"connect" ~all_conns:[] [] [])
   else
     List.iteri
       (fun i (name, conns) ->
@@ -1626,43 +1698,12 @@ let pp_topology_functor ppf topo sorted groups =
                 (constructor_name inst_name))
             gs;
           pf ppf " }");
-        pp_topo_connect_body ppf ~func_name:name gs conns)
+        pp_topo_connect_body ppf ~func_name:name ~all_conns gs conns)
       groups;
   pp_pattern_connections ppf topo;
   pf ppf "@,end"
 
 (* ── Annotated (functor-application) topology mode ───────────────── *)
-
-(** Whether a port is a dependency-only marker ([port Dep]). Dep ports model
-    functor arguments in the connection graph but should not surface as labeled
-    connect parameters. *)
-let is_dep_port (p : Ast.port_instance_general) =
-  match p.gen_port with
-  | Some qi -> (
-      match qi.data with Ast.Unqualified id -> id.data = "Dep" | _ -> false)
-  | None -> true (* typeless ports are dependency-only *)
-
-(** Input ports on [comp] that have no incoming connection for [inst_name].
-    These surface as labeled parameters of the generated [connect] function.
-    Dependency-only ports ([Dep]) are excluded — they model functor arguments,
-    not connect parameters. *)
-let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
-  let input_ports =
-    List.filter_map
-      (fun (_pre, (p : Ast.port_instance_general)) ->
-        if p.gen_kind <> Output && not (is_dep_port p) then Some p else None)
-      (collect_general_ports_annotated comp)
-  in
-  List.filter
-    (fun (p : Ast.port_instance_general) ->
-      let port_name = camel_to_snake p.gen_name.data in
-      not
-        (List.exists
-           (fun (conn : Ast.connection) ->
-             pid_inst_name conn.conn_to_port.data = inst_name
-             && camel_to_snake conn.conn_to_port.data.pid_port.data = port_name)
-           connections))
-    input_ports
 
 (** Emit functor applications for non-leaf instances inside the Make struct.
     Bound instances (with [@ ocaml.module]) are skipped — they already have
@@ -1704,7 +1745,7 @@ let pp_functor_apps ppf tu inst_annots sorted connections =
 
 (** Emit individual connect calls for non-leaf, non-passive instances. Passive
     (module-only) components get functor applications but no connect. *)
-let pp_one_connect_call ppf inst_name comp connections group_sorted =
+let pp_one_connect_call ppf ~func_name inst_name comp connections group_sorted =
   let targets = target_instances inst_name comp connections group_sorted in
   if targets = [] then ()
   else
@@ -1712,7 +1753,7 @@ let pp_one_connect_call ppf inst_name comp connections group_sorted =
     let mod_name = constructor_name inst_name in
     let bind = if is_active_component comp then "let* " else "let " in
     let config_ports = unconnected_input_ports inst_name comp connections in
-    pf ppf "@,    %s%s = %s.connect" bind inst_var mod_name;
+    pf ppf "@,    %s%s = %s.%s" bind inst_var mod_name func_name;
     List.iter
       (fun (p : Ast.port_instance_general) ->
         pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1724,11 +1765,12 @@ let pp_one_connect_call ppf inst_name comp connections group_sorted =
       targets;
     pf ppf " in"
 
-let pp_annotated_connect_calls ppf _tu group_sorted connections =
+let pp_annotated_connect_calls ppf ~func_name _tu group_sorted connections =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       if comp.comp_kind <> Passive then
-        pp_one_connect_call ppf inst_name comp connections group_sorted)
+        pp_one_connect_call ppf ~func_name inst_name comp connections
+          group_sorted)
     group_sorted
 
 (** Emit the connect function for annotated topology mode. Passive (module-only)
@@ -1743,7 +1785,8 @@ let pp_annotated_connect_calls ppf _tu group_sorted connections =
     does not trigger Lwt. This means a topology whose only non-passive leaf is
     an unbound functor parameter emits a synchronous connect — the parameter's
     [connect] is called by the consumer, not by us. *)
-let pp_bound_leaf_inits ppf inst_annots concrete connections group_sorted =
+let pp_bound_leaf_inits ppf ~func_name inst_annots concrete connections
+    group_sorted =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp connections group_sorted in
@@ -1751,9 +1794,9 @@ let pp_bound_leaf_inits ppf inst_annots concrete connections group_sorted =
         match instance_bound_module inst_annots inst_name with
         | Some _ ->
             let bind = if is_active_component comp then "let* " else "let " in
-            pf ppf "@,    %s%s = %s.connect () in" bind
-              (sanitize_ident inst_name)
+            pf ppf "@,    %s%s = %s.%s () in" bind (sanitize_ident inst_name)
               (constructor_name inst_name)
+              func_name
         | None -> ())
     concrete
 
@@ -1812,8 +1855,9 @@ let pp_annotated_connect ppf tu ~func_name inst_annots group_sorted connections
   if labeled_args = [] && leaf_params = [] then pf ppf " ()";
   pf ppf " =";
   if has_active then pf ppf "@,    let open Lwt.Syntax in";
-  pp_bound_leaf_inits ppf inst_annots concrete connections group_sorted;
-  pp_annotated_connect_calls ppf tu group_sorted connections;
+  pp_bound_leaf_inits ppf ~func_name inst_annots concrete connections
+    group_sorted;
+  pp_annotated_connect_calls ppf ~func_name tu group_sorted connections;
   pp_connect_return ppf ~has_active concrete
 
 (** Pretty-print an annotated topology in functor-application mode. Passive
@@ -1880,12 +1924,13 @@ let pp_topology_annotated ppf tu topo sorted groups =
 (** Emit a single top-level lazy binding for an active instance. Leaf instances
     (no deps) emit [let x = lazy (X.connect ())]. Non-leaf instances force
     active dependencies and pass non-passive values to [connect]. *)
-let pp_lazy_binding ppf inst_name (comp : Ast.def_component) connections sorted
-    =
+let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
+    connections sorted =
   let inst_var = sanitize_ident inst_name in
   let mod_name = constructor_name inst_name in
   let targets = target_instances inst_name comp connections sorted in
-  if targets = [] then pf ppf "let %s = lazy (%s.connect ())" inst_var mod_name
+  if targets = [] then
+    pf ppf "let %s = lazy (%s.%s ())" inst_var mod_name func_name
   else
     let active_targets =
       List.filter
@@ -1901,7 +1946,7 @@ let pp_lazy_binding ppf inst_name (comp : Ast.def_component) connections sorted
           (sanitize_ident target_inst)
           (sanitize_ident target_inst))
       active_targets;
-    pf ppf "@,  %s.connect" mod_name;
+    pf ppf "@,  %s.%s" mod_name func_name;
     List.iter
       (fun (p : Ast.port_instance_general) ->
         pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1913,20 +1958,7 @@ let pp_lazy_binding ppf inst_name (comp : Ast.def_component) connections sorted
       targets;
     pf ppf ")"
 
-(** Pretty-print a flat topology for fully-bound annotated mode. Module aliases
-    and functor applications are at top level (no [Make] struct wrapper). Active
-    instances get [lazy] bindings. *)
-let pp_topology_flat ppf tu topo sorted groups =
-  let all_conns = all_connections groups in
-  let inst_annots = instance_annotations topo in
-  let first_module = ref true in
-  let module_break () =
-    if !first_module then (
-      pf ppf "@,";
-      first_module := false);
-    pf ppf "@,"
-  in
-  (* Phase 1: Module aliases for bound instances *)
+let pp_module_aliases ppf inst_annots module_break sorted =
   List.iter
     (fun (inst_name, _ci, _comp) ->
       match instance_bound_module inst_annots inst_name with
@@ -1934,8 +1966,9 @@ let pp_topology_flat ppf tu topo sorted groups =
           module_break ();
           pf ppf "module %s = %s" (constructor_name inst_name) concrete_mod
       | None -> ())
-    sorted;
-  (* Phase 2: Functor applications for non-leaf, non-bound instances *)
+    sorted
+
+let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp all_conns sorted in
@@ -1969,8 +2002,25 @@ let pp_topology_flat ppf tu topo sorted groups =
               (fun (target_inst, _) ->
                 pf ppf "(%s)" (constructor_name target_inst))
               targets)
-    sorted;
-  (* Phase 3: Lazy bindings for active instances. All use [.connect]. *)
+    sorted
+
+(** Pretty-print a flat topology for fully-bound annotated mode. Module aliases
+    and functor applications are at top level (no [Make] struct wrapper). Active
+    instances get [lazy] bindings. *)
+let pp_topology_flat ppf tu topo sorted groups =
+  let all_conns = all_connections groups in
+  let inst_annots = instance_annotations topo in
+  let method_names = instance_method_names groups in
+  let first_module = ref true in
+  let module_break () =
+    if !first_module then (
+      pf ppf "@,";
+      first_module := false);
+    pf ppf "@,"
+  in
+  pp_module_aliases ppf inst_annots module_break sorted;
+  pp_functor_applications ppf tu inst_annots all_conns module_break sorted;
+  (* Lazy bindings for active instances *)
   let concrete =
     List.filter
       (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
@@ -1982,7 +2032,11 @@ let pp_topology_flat ppf tu topo sorted groups =
          let targets = target_instances inst_name comp all_conns sorted in
          let is_leaf = targets = [] in
          if prev_leaf && is_leaf then pf ppf "@," else pf ppf "@,@,";
-         pp_lazy_binding ppf inst_name comp all_conns sorted;
+         let func_name =
+           Hashtbl.find_opt method_names inst_name
+           |> Option.value ~default:"connect"
+         in
+         pp_lazy_binding ppf ~func_name inst_name comp all_conns sorted;
          is_leaf)
        false concrete)
 
@@ -2157,15 +2211,23 @@ let pp_main_entry_multi ppf topos =
 let pp_topology_functor_mli ppf topo sorted groups =
   let all_conns = all_connections groups in
   let multi = List.length groups > 1 in
+  let method_names = instance_method_names groups in
   pf ppf "@,@,module Make";
   List.iter
     (fun (inst_name, _ci, comp) ->
-      pp_functor_param ppf all_conns sorted inst_name comp)
+      let func_name =
+        Hashtbl.find_opt method_names inst_name
+        |> Option.value ~default:"connect"
+      in
+      pp_functor_param ppf ~func_name all_conns sorted inst_name comp)
     sorted;
   pf ppf " : sig";
+  let default_name =
+    match groups with (name, _) :: _ -> name | [] -> "connect"
+  in
   if groups = [] then (
     pf ppf "@,  type t = unit";
-    pf ppf "@,  val connect : unit -> t Lwt.t")
+    pf ppf "@,  val %s : unit -> t Lwt.t" default_name)
   else
     List.iter
       (fun (name, conns) ->
@@ -2180,6 +2242,17 @@ let pp_topology_functor_mli ppf topo sorted groups =
                 (constructor_name inst_name))
             gs;
           pf ppf " }");
+        let labeled_args =
+          List.concat_map
+            (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+              if target_instances inst_name comp conns gs <> [] then
+                List.map
+                  (fun (p : Ast.port_instance_general) ->
+                    sanitize_ident p.gen_name.data)
+                  (unconnected_input_ports inst_name comp all_conns)
+              else [])
+            gs
+        in
         let leaf_params =
           List.filter_map
             (fun (inst_name, _ci, (comp : Ast.def_component)) ->
@@ -2195,12 +2268,72 @@ let pp_topology_functor_mli ppf topo sorted groups =
         in
         let ret = if has_active then type_name ^ " Lwt.t" else type_name in
         pf ppf "@,  val %s :" name;
+        List.iter (fun arg -> pf ppf " %s:_ ->" arg) labeled_args;
         List.iter (fun (_, m) -> pf ppf " %s.t ->" m) leaf_params;
-        if leaf_params = [] then pf ppf " unit ->";
+        if labeled_args = [] && leaf_params = [] then pf ppf " unit ->";
         pf ppf " %s" ret)
       groups;
   pp_pattern_connections ppf topo;
   pf ppf "@,end"
+
+let pp_connect_val_sig ppf all_conns inst_annots concrete gs conns type_name
+    name =
+  let labeled_args =
+    List.concat_map
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        if target_instances inst_name comp conns gs <> [] then
+          List.map
+            (fun (p : Ast.port_instance_general) ->
+              sanitize_ident p.gen_name.data)
+            (unconnected_input_ports inst_name comp all_conns)
+        else [])
+      concrete
+  in
+  let leaf_params =
+    List.filter_map
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        if
+          target_instances inst_name comp conns gs = []
+          && instance_bound_module inst_annots inst_name = None
+        then Some (sanitize_ident inst_name, constructor_name inst_name)
+        else None)
+      concrete
+  in
+  let has_active =
+    List.exists
+      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+        let targets = target_instances inst_name comp conns gs in
+        is_active_component comp
+        && (targets <> [] || instance_bound_module inst_annots inst_name <> None))
+      concrete
+  in
+  let ret = if has_active then type_name ^ " Lwt.t" else type_name in
+  pf ppf "@,  val %s :" name;
+  List.iter (fun arg -> pf ppf " %s:_ ->" arg) labeled_args;
+  List.iter (fun (_, m) -> pf ppf " %s.t ->" m) leaf_params;
+  if labeled_args = [] && leaf_params = [] then pf ppf " unit ->";
+  pf ppf " %s" ret
+
+let pp_group_sig ppf all_conns inst_annots concrete multi orphans sorted i
+    (name, conns) =
+  let gs = group_instances sorted conns in
+  let gs = if i = 0 then gs @ orphans else gs in
+  let gc =
+    List.filter
+      (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
+      gs
+  in
+  let type_name = if multi then name else "t" in
+  if gc = [] then pf ppf "@,  type %s = unit" type_name
+  else (
+    pf ppf "@,  type %s = {" type_name;
+    List.iter
+      (fun (inst_name, _ci, _comp) ->
+        let mod_name = constructor_name inst_name in
+        pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
+      gc;
+    pf ppf " }");
+  pp_connect_val_sig ppf all_conns inst_annots concrete gs conns type_name name
 
 (** Pretty-print the .mli for an annotated (functor-application) topology. *)
 let pp_topology_annotated_mli ppf _tu topo sorted groups =
@@ -2226,61 +2359,7 @@ let pp_topology_annotated_mli ppf _tu topo sorted groups =
     concrete;
   pf ppf " : sig";
   List.iteri
-    (fun i (name, conns) ->
-      let gs = group_instances sorted conns in
-      let gs = if i = 0 then gs @ orphans else gs in
-      let gc =
-        List.filter
-          (fun (_, _, (comp : Ast.def_component)) -> comp.comp_kind <> Passive)
-          gs
-      in
-      let type_name = if multi then name else "t" in
-      if gc = [] then pf ppf "@,  type %s = unit" type_name
-      else (
-        pf ppf "@,  type %s = {" type_name;
-        List.iter
-          (fun (inst_name, _ci, _comp) ->
-            let mod_name = constructor_name inst_name in
-            pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
-          gc;
-        pf ppf " }");
-      (* Connect signature *)
-      let labeled_args =
-        List.concat_map
-          (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-            if target_instances inst_name comp conns gs <> [] then
-              List.map
-                (fun (p : Ast.port_instance_general) ->
-                  sanitize_ident p.gen_name.data)
-                (unconnected_input_ports inst_name comp all_conns)
-            else [])
-          concrete
-      in
-      let leaf_params =
-        List.filter_map
-          (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-            if
-              target_instances inst_name comp conns gs = []
-              && instance_bound_module inst_annots inst_name = None
-            then Some (sanitize_ident inst_name, constructor_name inst_name)
-            else None)
-          concrete
-      in
-      let has_active =
-        List.exists
-          (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-            let targets = target_instances inst_name comp conns gs in
-            is_active_component comp
-            && (targets <> []
-               || instance_bound_module inst_annots inst_name <> None))
-          concrete
-      in
-      let ret = if has_active then type_name ^ " Lwt.t" else type_name in
-      pf ppf "@,  val %s :" name;
-      List.iter (fun arg -> pf ppf " %s:_ ->" arg) labeled_args;
-      List.iter (fun (_, m) -> pf ppf " %s.t ->" m) leaf_params;
-      if labeled_args = [] && leaf_params = [] then pf ppf " unit ->";
-      pf ppf " %s" ret)
+    (pp_group_sig ppf all_conns inst_annots concrete multi orphans sorted)
     groups;
   pf ppf "@,end"
 
@@ -2290,31 +2369,27 @@ let pp_topology_flat_mli ppf tu topo sorted groups =
   let all_conns = all_connections groups in
   let inst_annots = instance_annotations topo in
   let first_module = ref true in
-  List.iter
-    (fun (inst_name, ci, (comp : Ast.def_component)) ->
-      if comp.comp_kind <> Passive then begin
-        let mod_name = constructor_name inst_name in
-        let targets = target_instances inst_name comp all_conns sorted in
-        if targets = [] then begin
-          match instance_bound_module inst_annots inst_name with
-          | Some concrete_mod ->
-              if !first_module then (
-                pf ppf "@,";
-                first_module := false);
-              pf ppf "@,module %s = %s" mod_name concrete_mod
-          | None -> ()
-        end
-      end;
-      ignore ci)
-    sorted;
+  let emit_bound_alias (inst_name, _ci, (comp : Ast.def_component)) =
+    if comp.comp_kind = Passive then ()
+    else
+      let targets = target_instances inst_name comp all_conns sorted in
+      if targets <> [] then ()
+      else
+        match instance_bound_module inst_annots inst_name with
+        | None -> ()
+        | Some concrete_mod ->
+            if !first_module then (
+              pf ppf "@,";
+              first_module := false);
+            pf ppf "@,module %s = %s" (constructor_name inst_name) concrete_mod
+  in
+  List.iter emit_bound_alias sorted;
   pf ppf "@,";
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-      if comp.comp_kind <> Passive then begin
-        let inst_var = sanitize_ident inst_name in
-        let mod_name = constructor_name inst_name in
-        pf ppf "@,val %s : %s.t Lazy.t" inst_var mod_name
-      end)
+      if comp.comp_kind <> Passive then
+        pf ppf "@,val %s : %s.t Lazy.t" (sanitize_ident inst_name)
+          (constructor_name inst_name))
     sorted;
   ignore (tu, topo)
 

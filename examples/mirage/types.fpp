@@ -37,6 +37,15 @@ type KvDigestResult
 @ ocaml.type unit Lwt.t
 type LwtUnit
 
+@ ocaml.type Mirage_block.info Lwt.t
+type BlockInfo
+
+@ ocaml.type (unit, error) result Lwt.t
+type BlockResult
+
+@ ocaml.type (unit, write_error) result Lwt.t
+type BlockWriteResult
+
 @ ── Port types ─────────────────────────────────────────────
 @
 @ Each port type models an operation that a component provides
@@ -58,4 +67,7 @@ port KvList(key: KvKey) -> KvListResult
 port KvDigest(key: KvKey) -> KvDigestResult
 port IpOnly -> bool
 port IpCidr -> Cidr
+port BlockGetInfo -> BlockInfo
+port BlockRead(offset: U64, buffers: Buffer) -> BlockResult
+port BlockWrite(offset: U64, buffers: Buffer) -> BlockWriteResult
 

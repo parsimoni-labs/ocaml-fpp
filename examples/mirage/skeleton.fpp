@@ -30,8 +30,8 @@ topology UnixDnsResolver {
   import DnsStack
 
   connections Connect {
-    happy_eyeballs.stack -> socket_stack.provide
-    dns_client.stack -> socket_stack.provide
+    happy_eyeballs.stack -> socket_stack.disconnect
+    dns_client.stack -> socket_stack.disconnect
   }
 }
 
@@ -49,6 +49,6 @@ topology UnixStaticWebsiteTls {
   instance certs
 
   connections Connect {
-    conduit_tcp.stack -> socket_stack.provide
+    conduit_tcp.stack -> socket_stack.disconnect
   }
 }

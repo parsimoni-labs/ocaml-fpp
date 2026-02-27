@@ -195,11 +195,11 @@ Simple topology (2 components, 1 connection)
   end
   
   module Make
-    (Logger : sig include LOGGER val connect : unit -> t end)
-    (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
+    (Logger : sig include LOGGER val data : unit -> t end)
+    (Sensor : sig include SENSOR val data : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
     let data logger =
-      let sensor = Sensor.connect logger in
+      let sensor = Sensor.data logger in
       { logger; sensor }
   end
 
@@ -246,11 +246,11 @@ Typed port topology
   end
   
   module Make
-    (Consumer : sig include CONSUMER val connect : unit -> t end)
-    (Producer : sig include PRODUCER val connect : Consumer.t -> t end) = struct
+    (Consumer : sig include CONSUMER val main : unit -> t end)
+    (Producer : sig include PRODUCER val main : Consumer.t -> t end) = struct
     type t = { consumer : Consumer.t; producer : Producer.t; }
     let main consumer =
-      let producer = Producer.connect consumer in
+      let producer = Producer.main consumer in
       { consumer; producer }
   end
 
@@ -296,11 +296,11 @@ Filter by topology name
   end
   
   module Make
-    (B : sig include B val connect : unit -> t end)
-    (A : sig include A val connect : B.t -> t end) = struct
+    (B : sig include B val c : unit -> t end)
+    (A : sig include A val c : B.t -> t end) = struct
     type t = { b : B.t; a : A.t; }
     let c b =
-      let a = A.connect b in
+      let a = A.c b in
       { b; a }
   end
 
@@ -368,11 +368,11 @@ SM + topology merged in one file (wrapped in named modules)
   end
   
   module Make
-    (Logger : sig include LOGGER val connect : unit -> t end)
-    (Sensor : sig include SENSOR val connect : Logger.t -> t end) = struct
+    (Logger : sig include LOGGER val data : unit -> t end)
+    (Sensor : sig include SENSOR val data : Logger.t -> t end) = struct
     type t = { logger : Logger.t; sensor : Sensor.t; }
     let data logger =
-      let sensor = Sensor.connect logger in
+      let sensor = Sensor.data logger in
       { logger; sensor }
   end
   end
@@ -476,8 +476,8 @@ Annotated topology (functor-application mode)
   
     let w ~cidr net =
       let open Lwt.Syntax in
-      let* eth = Eth.connect net in
-      let* ipv4 = Ipv4.connect ~cidr eth in
+      let* eth = Eth.w net in
+      let* ipv4 = Ipv4.w ~cidr eth in
       Lwt.return { net; eth; ipv4 }
   end
 
@@ -489,12 +489,12 @@ Bound leaf instance (@ ocaml.module)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.connect ())
+  let kv = lazy (Kv.w ())
   
   let srv = lazy (
     let open Lwt.Syntax in
     let* kv = Lazy.force kv in
-    Srv.connect kv)
+    Srv.w kv)
 
 
 
@@ -542,7 +542,7 @@ External types in port declarations
   
     let c net =
       let open Lwt.Syntax in
-      let* eth = Eth.connect net in
+      let* eth = Eth.c net in
       Lwt.return { net; eth }
   end
 
@@ -569,12 +569,12 @@ Entry point generation (--topologies generates topology + entry point)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.connect ())
+  let kv = lazy (Kv.w ())
   
   let srv = lazy (
     let open Lwt.Syntax in
     let* kv = Lazy.force kv in
-    Srv.connect kv)
+    Srv.w kv)
   let () =
     Lwt_main.run begin
       let open Lwt.Syntax in
