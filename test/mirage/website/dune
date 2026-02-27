@@ -75,19 +75,18 @@
  (action
   (run %{ofpp} to-ml --types -o %{target} %{t} %{d} %{s} %{w})))
 
+(library
+ (name website_types)
+ (modules test_types)
+ (libraries lwt))
+
 (executables
- (names test_unix_test test_unix_website test_multi_bound test_types)
+ (names test_unix_test test_unix_website test_multi_bound)
  (libraries website_support)
- (ocamlopt_flags
-  (:standard -w -32))
- (modules test_unix_test test_unix_website test_multi_bound test_types))
+ (modules test_unix_test test_unix_website test_multi_bound))
 
 (rule
  (alias runtest)
- (deps
-  test_unix_test.exe
-  test_unix_website.exe
-  test_multi_bound.exe
-  test_types.exe)
+ (deps test_unix_test.exe test_unix_website.exe test_multi_bound.exe)
  (action
   (echo "website compilation tests: OK\n")))

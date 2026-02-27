@@ -13,6 +13,30 @@ type Macaddr
 @ ocaml.type Ipaddr.V4.Prefix.t
 type Cidr
 
+@ ── Module-type-internal types ─────────────────────────────
+@
+@ These map to names that are abstract within a module type sig.
+@ They appear in port return types so that the generated module
+@ types closely match real Mirage signatures.
+
+@ ocaml.type key
+type KvKey
+
+@ ocaml.type (string, error) result Lwt.t
+type KvGetResult
+
+@ ocaml.type (bool option, error) result Lwt.t
+type KvExistsResult
+
+@ ocaml.type (string list, error) result Lwt.t
+type KvListResult
+
+@ ocaml.type (string, error) result Lwt.t
+type KvDigestResult
+
+@ ocaml.type unit Lwt.t
+type LwtUnit
+
 @ ── Port types ─────────────────────────────────────────────
 @
 @ Each port type models an operation that a component provides
@@ -23,13 +47,15 @@ port NetWrite(data: Buffer)
 port NetListen(header_size: U32)
 port MacAddr -> Macaddr
 port Mtu -> U32
-port Disconnect
+port Disconnect -> LwtUnit
 port EthWrite(dst: Macaddr, payload: Buffer)
 port ArpQuery(ip: Macaddr) -> Macaddr
 port IpWrite(dst: string, payload: Buffer)
 port IpConfig(prefix: Cidr)
-port KvGet(key: string) -> string
-port KvExists(key: string) -> bool
-port KvList(key: string) -> string
-port KvDigest(key: string) -> string
+port KvGet(key: KvKey) -> KvGetResult
+port KvExists(key: KvKey) -> KvExistsResult
+port KvList(key: KvKey) -> KvListResult
+port KvDigest(key: KvKey) -> KvDigestResult
+port BoolConfig -> bool
+port CidrConfig -> Cidr
 

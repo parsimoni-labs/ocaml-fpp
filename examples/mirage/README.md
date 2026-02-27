@@ -13,7 +13,7 @@ FPP definitions are split across themed files:
 |---|---|
 | `types.fpp` | External types and port declarations |
 | `devices.fpp` | Component definitions and instance declarations |
-| `stacks.fpp` | Infrastructure sub-topologies (`TcpipStack`, `HttpStack`, `DnsStack`) |
+| `stacks.fpp` | Infrastructure sub-topologies (`TcpipStack`, `SocketStack`, `DnsStack`) |
 | `websites.fpp` | Composed web-server topologies (Unix, Xen/Solo5 variants) |
 | `skeleton.fpp` | Minimal topologies matching mirage-skeleton examples |
 | `server.ml` | User code: HTTPS dispatch, `Unix_socket_stack` wrapper |
@@ -47,9 +47,7 @@ determines application order.
 | `Udp` | `Udp.Make` | `Make(IP)` | `tcpip.udp` |
 | `Tcp.Flow` | `Tcp.Flow.Make` | `Make(IP)` | `tcpip.tcp` |
 | `TcpipStack` | `Tcpip_stack_direct.MakeV4V6` | `MakeV4V6(Net,Eth,Arp,IP,Icmp,Udp,Tcp)` | `tcpip.stack-direct` |
-| `Conduit_tcp` | `Conduit_mirage.TCP` | `TCP(Stack)` | `conduit-mirage` |
-| `Conduit` | `Conduit_mirage.TLS` | `TLS(Conduit_tcp)` | `conduit-mirage` |
-| `Cohttp_mirage.Server` | `Cohttp_mirage.Server.Make` | `Make(Conduit)` | `cohttp-mirage` |
+| `Server` | `Server.HTTPS` | `HTTPS(Data)(Certs)(Stack)` | *(user code)* |
 | `Happy_eyeballs_mirage` | `Happy_eyeballs_mirage.Make` | `Make(Stack)` | `happy-eyeballs-mirage` |
 | `Dns_client_mirage` | `Dns_client_mirage.Make` | `Make(Stack)(HE)` | `dns-client-mirage` |
 | `Kv` | *(leaf parameter)* | — | `mirage-kv` |
@@ -76,17 +74,19 @@ Sub-topologies are shared via `import`:
 ```
 topology StaticWebsite {
   import TcpipStack        -- protocol stack
-  import HttpStack          -- conduit + cohttp
   instance data             -- leaf: KV for htdocs
   instance certs            -- leaf: KV for TLS certs
+  instance server
   connections Connect {
-    conduit_tcp.stack -> stack.provide
+    server.data -> data.get
+    server.certs -> certs.get
+    server.stack -> stack.provide
   }
 }
 ```
 
 The parent topology wires cross-boundary connections (here: plugging
-the TCP/IP stack into conduit).
+the TCP/IP stack and KV stores into the server).
 
 ## Fully-bound vs parameterised topologies
 
@@ -271,6 +271,59 @@ calls in both systems.
 | Socket stack | Models UDP/TCP sub-layers | Opaque module alias |
 | Boilerplate | ~90 lines per example | ~10-20 lines per example |
 
+## Runtime config via unconnected ports
+
+Components can declare input ports that are intentionally left
+unconnected in the topology.  These become labelled arguments on the
+generated `connect` function:
+
+```fpp
+active component Ip {
+  output port ipv4: IpWrite
+  output port ipv6: IpWrite
+  sync input port write: IpWrite
+  sync input port ipv4_only: BoolConfig   @ unconnected -> ~ipv4_only
+  sync input port ipv6_only: BoolConfig   @ unconnected -> ~ipv6_only
+}
+```
+
+Generated connect call:
+```ocaml
+let connect ~cidr ~ipv4_only ~ipv6_only backend data certs =
+  ...
+  let* ipv4 = Ipv4.connect ~cidr eth arp in
+  let* ip = Ip.connect ~ipv4_only ~ipv6_only ipv4 ipv6 in
+  ...
+```
+
+## Component abstract types
+
+Components can declare abstract types that appear in the generated
+module type signatures.  This produces module types that closely match
+the real Mirage interfaces:
+
+```fpp
+active component Kv {
+  type Error
+  type Key
+  sync input port disconnect: Disconnect
+  sync input port get: KvGet
+  ...
+}
+```
+
+Generated module type:
+```ocaml
+module type KV = sig
+  type t
+  type error
+  type key
+  val disconnect : t -> unit Lwt.t
+  val get : t -> key -> (string, error) result Lwt.t
+  ...
+end
+```
+
 ## Known limitations
 
 - **`connect` signature assumption.** The generated code assumes each
@@ -278,8 +331,3 @@ calls in both systems.
   non-standard lifecycle functions (e.g. `Happy_eyeballs_mirage`
   uses `connect_device`, `Dns_client_mirage.connect` takes a tuple)
   require a user-provided wrapper component.
-
-- **Generated module types are narrow.** Port-based module types use
-  simplified signatures (`string` instead of `Mirage_kv.key`,
-  no `Lwt.t` return types).  Fully-bound topologies bypass this
-  because bound modules satisfy real functor constraints directly.

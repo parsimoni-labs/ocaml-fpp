@@ -1207,6 +1207,14 @@ let pp_port_module_type ppf tu ~type_env (comp : Ast.def_component) =
   let name = String.uppercase_ascii (camel_to_snake comp.comp_name.data) in
   pf ppf "@,@,module type %s = sig" name;
   pf ppf "@,  type t";
+  (* Emit component abstract types *)
+  List.iter
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_def_abs_type at ->
+          pf ppf "@,  type %s" (camel_to_snake at.abs_name.data)
+      | _ -> ())
+    comp.comp_members;
   let ports = collect_general_ports comp in
   let input_ports =
     List.filter

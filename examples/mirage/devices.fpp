@@ -53,6 +53,8 @@ active component Block {
 @ [Fat_kv_ro]) take a [Block] dependency via their output port.
 
 active component Kv {
+  type Error
+  type Key
   sync input port disconnect: Disconnect
   sync input port get: KvGet
   sync input port exists: KvExists
@@ -92,7 +94,7 @@ active component Static_ipv4 {
   output port eth_write: EthWrite
   output port arp_query: ArpQuery
   sync input port write: IpWrite
-  sync input port cidr: IpConfig
+  sync input port cidr: CidrConfig
 }
 
 active component Ipv6 {
@@ -105,6 +107,8 @@ active component Ip {
   output port ipv4: IpWrite
   output port ipv6: IpWrite
   sync input port write: IpWrite
+  sync input port ipv4_only: BoolConfig
+  sync input port ipv6_only: BoolConfig
 }
 
 active component Icmpv4 {
