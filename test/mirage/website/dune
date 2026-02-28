@@ -1,6 +1,19 @@
 ; Compilation tests for MirageOS topologies.
 ; Generated code is compiled against real MirageOS library signatures.
 
+; ── Check: all mirage FPP files must pass ofpp check ─────────────
+
+(rule
+ (alias runtest)
+ (deps
+  (:ofpp ../../../bin/main.exe)
+  (:t ../../../examples/mirage/types.fpp)
+  (:d ../../../examples/mirage/devices.fpp)
+  (:s ../../../examples/mirage/stacks.fpp)
+  (:w ../../../examples/mirage/websites.fpp))
+ (action
+  (run %{ofpp} check %{t} %{d} %{s} %{w})))
+
 (library
  (name website_support)
  (modules server runtime htdocs_data tls_data)

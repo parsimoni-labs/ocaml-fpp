@@ -1449,49 +1449,111 @@ let mark_pattern_connections tu_env connected ~pattern_kind ~pattern_source
 
 let collect_connected_input_ports tu_env members =
   let connected = Hashtbl.create 32 in
-  List.iter
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Topo_spec_connection_graph (Graph_direct d) ->
-          List.iter
-            (fun conn_ann ->
-              let conn : Ast.connection = (Ast.unannotate conn_ann).Ast.data in
-              let to_pid = conn.conn_to_port.data in
-              let to_inst =
-                Ast.qual_ident_to_string to_pid.pid_component.data
-              in
-              let key = to_inst ^ "." ^ to_pid.pid_port.data in
-              Hashtbl.replace connected key true)
-            d.graph_connections
-      | Ast.Topo_spec_connection_graph (Graph_pattern p) ->
-          mark_pattern_connections tu_env connected ~pattern_kind:p.pattern_kind
-            ~pattern_source:p.pattern_source ~pattern_targets:p.pattern_targets
-      | _ -> ())
-    members;
+  let rec collect visited members =
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+            List.iter
+              (fun conn_ann ->
+                let conn : Ast.connection =
+                  (Ast.unannotate conn_ann).Ast.data
+                in
+                let to_pid = conn.conn_to_port.data in
+                let to_inst =
+                  Ast.qual_ident_to_string to_pid.pid_component.data
+                in
+                let key = to_inst ^ "." ^ to_pid.pid_port.data in
+                Hashtbl.replace connected key true)
+              d.graph_connections
+        | Ast.Topo_spec_connection_graph (Graph_pattern p) ->
+            mark_pattern_connections tu_env connected
+              ~pattern_kind:p.pattern_kind ~pattern_source:p.pattern_source
+              ~pattern_targets:p.pattern_targets
+        | Ast.Topo_spec_top_import qi -> (
+            let topo_name = Ast.qual_ident_to_string qi.data in
+            if not (SSet.mem topo_name visited) then
+              match SMap.find_opt topo_name tu_env.topologies with
+              | Some imported ->
+                  collect (SSet.add topo_name visited) imported.topo_members
+              | None -> ())
+        | _ -> ())
+      members
+  in
+  collect SSet.empty members;
   connected
+
+let collect_source_instances tu_env members =
+  let sources = Hashtbl.create 16 in
+  let rec collect visited members =
+    List.iter
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Topo_spec_connection_graph (Graph_direct d) ->
+            List.iter
+              (fun conn_ann ->
+                let conn : Ast.connection =
+                  (Ast.unannotate conn_ann).Ast.data
+                in
+                let from_inst =
+                  Ast.qual_ident_to_string
+                    conn.conn_from_port.data.pid_component.data
+                in
+                Hashtbl.replace sources from_inst true)
+              d.graph_connections
+        | Ast.Topo_spec_top_import qi -> (
+            let topo_name = Ast.qual_ident_to_string qi.data in
+            if not (SSet.mem topo_name visited) then
+              match SMap.find_opt topo_name tu_env.topologies with
+              | Some imported ->
+                  collect (SSet.add topo_name visited) imported.topo_members
+              | None -> ())
+        | _ -> ())
+      members
+  in
+  collect SSet.empty members;
+  sources
 
 let check_unconnected_ports ~scope tu_env topo_instances members =
   let connected = collect_connected_input_ports tu_env members in
+  let sources = collect_source_instances tu_env members in
   Hashtbl.fold
     (fun inst_name inst_loc acc ->
       match resolve_instance_comp tu_env inst_name with
       | None -> acc
       | Some comp ->
-          List.fold_left
-            (fun acc ann ->
-              match (Ast.unannotate ann).Ast.data with
-              | Ast.Comp_spec_port_instance (Port_general g)
-                when g.gen_kind = Sync_input || g.gen_kind = Async_input
-                     || g.gen_kind = Guarded_input ->
-                  let key = inst_name ^ "." ^ g.gen_name.data in
-                  if not (Hashtbl.mem connected key) then
-                    warningf ~sm_name:scope inst_loc
-                      "input port '%s.%s' has no incoming connection" inst_name
-                      g.gen_name.data
-                    :: acc
-                  else acc
-              | _ -> acc)
-            acc comp.comp_members)
+          (* Check whether this instance has any connected input port *)
+          let is_ever_target =
+            List.exists
+              (fun ann ->
+                match (Ast.unannotate ann).Ast.data with
+                | Ast.Comp_spec_port_instance (Port_general g)
+                  when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                       || g.gen_kind = Guarded_input ->
+                    Hashtbl.mem connected (inst_name ^ "." ^ g.gen_name.data)
+                | _ -> false)
+              comp.comp_members
+          in
+          (* Skip instances that are only sources, never targets:
+             they participate via the connection group method name
+             (e.g. start, connect_device) rather than the connect port. *)
+          if (not is_ever_target) && Hashtbl.mem sources inst_name then acc
+          else
+            List.fold_left
+              (fun acc ann ->
+                match (Ast.unannotate ann).Ast.data with
+                | Ast.Comp_spec_port_instance (Port_general g)
+                  when g.gen_kind = Sync_input || g.gen_kind = Async_input
+                       || g.gen_kind = Guarded_input ->
+                    let key = inst_name ^ "." ^ g.gen_name.data in
+                    if not (Hashtbl.mem connected key) then
+                      warningf ~sm_name:scope inst_loc
+                        "input port '%s.%s' has no incoming connection"
+                        inst_name g.gen_name.data
+                      :: acc
+                    else acc
+                | _ -> acc)
+              acc comp.comp_members)
     topo_instances []
 
 (* ── Synchronous cycle detection ──────────────────────────────────── *)
