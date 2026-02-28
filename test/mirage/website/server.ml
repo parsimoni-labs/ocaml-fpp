@@ -4,11 +4,6 @@
    trivial implementations.  Socket wrappers match the connect
    signatures that ofpp generates. *)
 
-module Runtime = struct
-  let ipv4_only = false
-  let ipv6_only = false
-end
-
 module Udpv4v6_socket = struct
   include Udpv4v6_socket
 
@@ -50,5 +45,7 @@ struct
   module D = Dns_client_mirage.Make (S) (H)
   include D
 
-  let connect (s : S.t) (h : H.t) : D.t Lwt.t = D.connect (s, h)
+  let connect ?nameservers ?timeout ?cache_size (s : S.t) (h : H.t) : D.t Lwt.t
+      =
+    D.connect ?nameservers ?timeout ?cache_size (s, h)
 end

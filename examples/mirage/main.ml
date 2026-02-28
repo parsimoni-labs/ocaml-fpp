@@ -4,14 +4,12 @@
 module Udpv4v6_socket = Server.Udpv4v6_socket
 module Tcpv4v6_socket = Server.Tcpv4v6_socket
 module Stackv4v6 = Server.Stackv4v6
-module Data = Htdocs_data
-module Certs = Tls_data
-module Dispatch = Server.HTTPS(Data)(Certs)(Stackv4v6)
+module Dispatch = Server.HTTPS(Htdocs_data)(Tls_data)(Stackv4v6)
 
 let udpv4v6_socket = lazy (
-  Udpv4v6_socket.connect ~ipv4_only:Server.Runtime.ipv4_only ~ipv6_only:Server.Runtime.ipv6_only ())
+  Udpv4v6_socket.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
 let tcpv4v6_socket = lazy (
-  Tcpv4v6_socket.connect ~ipv4_only:Server.Runtime.ipv4_only ~ipv6_only:Server.Runtime.ipv6_only ())
+  Tcpv4v6_socket.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
 
 let stackv4v6 = lazy (
   let open Lwt.Syntax in
@@ -19,23 +17,23 @@ let stackv4v6 = lazy (
   let* tcpv4v6_socket = Lazy.force tcpv4v6_socket in
   Stackv4v6.connect udpv4v6_socket tcpv4v6_socket)
 
-let data = lazy (Data.connect ())
-let certs = lazy (Certs.connect ())
+let htdocs_data = lazy (Htdocs_data.connect ())
+let tls_data = lazy (Tls_data.connect ())
 
 let dispatch = lazy (
   let open Lwt.Syntax in
-  let* data = Lazy.force data in
-  let* certs = Lazy.force certs in
+  let* htdocs_data = Lazy.force htdocs_data in
+  let* tls_data = Lazy.force tls_data in
   let* stackv4v6 = Lazy.force stackv4v6 in
-  Dispatch.start data certs stackv4v6)
+  Dispatch.start htdocs_data tls_data stackv4v6)
 let () =
   Lwt_main.run begin
     let open Lwt.Syntax in
     let* _ = Lazy.force udpv4v6_socket in
     let* _ = Lazy.force tcpv4v6_socket in
     let* _ = Lazy.force stackv4v6 in
-    let* _ = Lazy.force data in
-    let* _ = Lazy.force certs in
+    let* _ = Lazy.force htdocs_data in
+    let* _ = Lazy.force tls_data in
     let* _ = Lazy.force dispatch in
     Lwt.return ()
   end

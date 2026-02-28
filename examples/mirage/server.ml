@@ -21,15 +21,6 @@ let http_src = Logs.Src.create "http" ~doc:"HTTP server"
 
 module Http_log = (val Logs.src_log http_src : Logs.LOG)
 
-(* ── Runtime config ────────────────────────────────────
-   Values injected as labeled arguments into connect calls
-   via the runtime component convention. *)
-
-module Runtime = struct
-  let ipv4_only = false
-  let ipv6_only = false
-end
-
 (* ── Socket wrappers ───────────────────────────────────
    Adapt real library connect signatures to the
    [connect ~ipv4_only ~ipv6_only () : t Lwt.t] convention. *)
@@ -69,7 +60,9 @@ struct
   module D = Dns_client_mirage.Make (S) (H)
   include D
 
-  let connect (s : S.t) (h : H.t) : D.t Lwt.t = D.connect (s, h)
+  let connect ?nameservers ?timeout ?cache_size (s : S.t) (h : H.t) : D.t Lwt.t
+      =
+    D.connect ?nameservers ?timeout ?cache_size (s, h)
 end
 
 (* ── Dispatch ──────────────────────────────────────────

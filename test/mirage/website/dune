@@ -3,7 +3,7 @@
 
 (library
  (name website_support)
- (modules server htdocs_data tls_data)
+ (modules server runtime htdocs_data tls_data)
  (wrapped false)
  (libraries
   lwt
@@ -29,8 +29,9 @@
 
 ; ── Fully-bound Unix topologies (executables) ──────────────────────
 ;
-; These topologies bind every instance to a concrete module via
-; [@ ocaml.module], so the generated code is a standalone executable.
+; These topologies use instance names that match concrete modules
+; (plus a few [@ ocaml.module] wrappers), so the generated code
+; is a standalone executable.
 
 (rule
  (target test_unix_test.ml)

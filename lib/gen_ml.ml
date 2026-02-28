@@ -1086,11 +1086,21 @@ let pid_inst_name (pid : Ast.port_instance_id) =
 let is_runtime_component (comp : Ast.def_component) =
   comp.comp_name.data = "Runtime"
 
+(** Whether a port on a Runtime component is annotated [@ ocaml.optional]. *)
+let is_optional_runtime_port (comp : Ast.def_component) port_name =
+  List.exists
+    (fun ((pre, node, _) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with
+      | Ast.Comp_spec_port_instance (Ast.Port_general p) ->
+          camel_to_snake p.gen_name.data = port_name
+          && List.exists (fun s -> String.trim s = "ocaml.optional") pre
+      | _ -> false)
+    comp.comp_members
+
 (** Collect runtime kwargs for a target instance: for each connection FROM a
-    runtime instance TO [inst_name], return the source port name (snake_case).
-    The order follows the output port declaration order. *)
+    runtime instance TO [inst_name], return [(port_name, is_optional)]. The
+    order follows the output port declaration order. *)
 let runtime_kwargs inst_name sorted connections =
-  (* Collect (runtime_inst_name, source_port_name) pairs *)
   let raw =
     List.filter_map
       (fun (conn : Ast.connection) ->
@@ -1102,7 +1112,8 @@ let runtime_kwargs inst_name sorted connections =
               let port =
                 camel_to_snake conn.conn_from_port.data.pid_port.data
               in
-              Some (from_inst, port)
+              let optional = is_optional_runtime_port comp port in
+              Some (from_inst, (port, optional))
           | _ -> None
         else None)
       connections
@@ -1680,7 +1691,10 @@ let pp_one_connect_call ppf ~func_name inst_name comp connections group_sorted
     let config_ports = unconnected_input_ports inst_name comp connections in
     pf ppf "@,    %s%s = %s.%s" bind inst_var mod_name func_name;
     (* Runtime kwargs as bare labels in parameterised mode *)
-    List.iter (fun kwarg -> pf ppf " ~%s" kwarg) kwargs;
+    List.iter
+      (fun (kwarg, optional) ->
+        pf ppf " %s%s" (if optional then "?" else "~") kwarg)
+      kwargs;
     List.iter
       (fun (p : Ast.port_instance_general) ->
         pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1750,7 +1764,15 @@ let pp_annotated_connect ppf tu ~func_name inst_annots group_sorted connections
           runtime_kwargs inst_name sorted connections)
         group_sorted
     in
-    List.sort_uniq String.compare raw
+    (* Deduplicate by name, keeping optional flag *)
+    let seen = Hashtbl.create 4 in
+    List.filter
+      (fun (name, _) ->
+        if Hashtbl.mem seen name then false
+        else (
+          Hashtbl.add seen name ();
+          true))
+      raw
   in
   let labeled_args =
     List.concat_map
@@ -1778,7 +1800,10 @@ let pp_annotated_connect ppf tu ~func_name inst_annots group_sorted connections
       group_sorted
   in
   pf ppf "@,@,  let %s" func_name;
-  List.iter (fun kwarg -> pf ppf " ~%s" kwarg) all_kwargs;
+  List.iter
+    (fun (kwarg, optional) ->
+      pf ppf " %s%s" (if optional then "?" else "~") kwarg)
+    all_kwargs;
   List.iter (fun arg -> pf ppf " ~%s" arg) labeled_args;
   List.iter (fun p -> pf ppf " %s" p) leaf_params;
   if all_kwargs = [] && labeled_args = [] && leaf_params = [] then pf ppf " ()";
@@ -1816,7 +1841,9 @@ let pp_topology_annotated ppf tu topo sorted groups =
     (fun (inst_name, _ci, _comp) ->
       match instance_bound_module inst_annots inst_name with
       | Some concrete_mod ->
-          pf ppf "@,  module %s = %s" (constructor_name inst_name) concrete_mod
+          let mod_name = constructor_name inst_name in
+          if mod_name <> concrete_mod then
+            pf ppf "@,  module %s = %s" mod_name concrete_mod
       | None -> ())
     non_rt;
   pp_functor_apps ppf tu inst_annots non_rt all_conns;
@@ -1866,7 +1893,8 @@ let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
     (* Runtime kwargs — in flat mode, look up bound module for the
        runtime instance to qualify values *)
     List.iter
-      (fun kwarg ->
+      (fun (kwarg, optional) ->
+        let label = if optional then "?" else "~" in
         (* Find which runtime instance provides this kwarg *)
         let rt_mod =
           List.find_map
@@ -1877,13 +1905,16 @@ let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
                 && camel_to_snake conn.conn_from_port.data.pid_port.data = kwarg
               then
                 let from_inst = pid_inst_name conn.conn_from_port.data in
-                instance_bound_module inst_annots from_inst
+                Some
+                  (match instance_bound_module inst_annots from_inst with
+                  | Some m -> m
+                  | None -> constructor_name from_inst)
               else None)
             connections
         in
         match rt_mod with
-        | Some m -> pf ppf " ~%s:%s.%s" kwarg m kwarg
-        | None -> pf ppf " ~%s" kwarg)
+        | Some m -> pf ppf " %s%s:%s.%s" label kwarg m kwarg
+        | None -> pf ppf " %s%s" label kwarg)
       kwargs;
     List.iter
       (fun (p : Ast.port_instance_general) ->
@@ -1903,8 +1934,10 @@ let pp_module_aliases ppf inst_annots module_break sorted =
       else
         match instance_bound_module inst_annots inst_name with
         | Some concrete_mod ->
-            module_break ();
-            pf ppf "module %s = %s" (constructor_name inst_name) concrete_mod
+            let mod_name = constructor_name inst_name in
+            if mod_name <> concrete_mod then (
+              module_break ();
+              pf ppf "module %s = %s" mod_name concrete_mod)
         | None -> ())
     sorted
 
@@ -2003,13 +2036,63 @@ let is_fully_bound inst_annots sorted connections =
             targets = [] && instance_bound_module inst_annots inst_name = None)
           non_rt)
 
+(** Structural heuristic: a topology is fully bound (flat) when it has at least
+    one [import] directive AND every non-runtime leaf instance is either
+    parent-declared or annotated with [@ ocaml.module]. This allows flat
+    topologies without requiring [@ ocaml.module] on every leaf. *)
+let is_fully_bound_structural (orig_topo : Ast.def_topology) inst_annots sorted
+    connections =
+  let has_imports =
+    List.exists
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Topo_spec_top_import _ -> true
+        | _ -> false)
+      orig_topo.topo_members
+  in
+  if not has_imports then false
+  else
+    let parent_declared =
+      List.fold_left
+        (fun acc ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Topo_spec_comp_instance ci -> (
+              match ci.ci_instance.data with
+              | Ast.Unqualified id -> Check_env.SSet.add id.data acc
+              | Ast.Qualified _ ->
+                  Check_env.SSet.add
+                    (Ast.qual_ident_to_string ci.ci_instance.data)
+                    acc)
+          | _ -> acc)
+        Check_env.SSet.empty orig_topo.topo_members
+    in
+    let non_rt = filter_non_runtime sorted in
+    non_rt <> []
+    && not
+         (List.exists
+            (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+              let targets =
+                target_instances inst_name comp connections sorted
+              in
+              targets = []
+              && (not (is_runtime_component comp))
+              && (not (Check_env.SSet.mem inst_name parent_declared))
+              && instance_bound_module inst_annots inst_name = None)
+            non_rt)
+
+(** Combined check: annotation-based OR structural heuristic. *)
+let is_flat orig_topo inst_annots sorted connections =
+  is_fully_bound inst_annots sorted connections
+  || is_fully_bound_structural orig_topo inst_annots sorted connections
+
 let topology_is_fully_bound tu (topo : Ast.def_topology) =
+  let orig_topo = topo in
   let topo = flatten_topology tu topo in
   let inst_annots = instance_annotations topo in
   let resolved = resolve_topology_instances tu topo in
   let connections = all_connections (collect_direct_connections topo) in
   let sorted = topo_sort_instances resolved connections in
-  is_fully_bound inst_annots sorted connections
+  is_flat orig_topo inst_annots sorted connections
 
 (** Return connect function names for a topology (one per connection group). *)
 let topology_connect_names tu (topo : Ast.def_topology) =
@@ -2021,6 +2104,7 @@ let topology_connect_names tu (topo : Ast.def_topology) =
     top-level lazy bindings (no [Make] struct wrapper). Parameterised topologies
     emit a [Make] functor with unbound leaves as parameters. *)
 let pp_topology tu ppf (topo : Ast.def_topology) =
+  let orig_topo = topo in
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
   let groups = collect_direct_connections topo in
@@ -2045,7 +2129,7 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
           Hashtbl.add seen comp.comp_name.data ();
           pp_port_module_type ppf tu ~type_env comp))
       non_rt;
-    if is_fully_bound inst_annots sorted connections then
+    if is_flat orig_topo inst_annots sorted connections then
       pp_topology_flat ppf tu topo sorted groups
     else pp_topology_annotated ppf tu topo sorted groups;
     pf ppf "@]@."
@@ -2119,12 +2203,29 @@ let pp_main_entry_multi ppf topos =
 
 (* ── .mli generation ─────────────────────────────────────────────── *)
 
-let pp_connect_val_sig ppf all_conns inst_annots group_sorted gs conns type_name
-    name =
+let pp_connect_val_sig ppf all_conns inst_annots group_sorted sorted gs conns
+    type_name name =
+  let all_kwargs =
+    let raw =
+      List.concat_map
+        (fun (inst_name, _ci, _comp) -> runtime_kwargs inst_name sorted conns)
+        gs
+    in
+    let seen = Hashtbl.create 4 in
+    List.filter
+      (fun (kw, _) ->
+        if Hashtbl.mem seen kw then false
+        else (
+          Hashtbl.add seen kw ();
+          true))
+      raw
+  in
   let labeled_args =
     List.concat_map
       (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-        if target_instances inst_name comp conns gs <> [] then
+        let targets = target_instances inst_name comp conns gs in
+        let kwargs = runtime_kwargs inst_name sorted all_conns in
+        if targets <> [] || kwargs <> [] then
           List.map
             (fun (p : Ast.port_instance_general) ->
               sanitize_ident p.gen_name.data)
@@ -2152,15 +2253,21 @@ let pp_connect_val_sig ppf all_conns inst_annots group_sorted gs conns type_name
   in
   let ret = if has_active then type_name ^ " Lwt.t" else type_name in
   pf ppf "@,  val %s :" name;
+  List.iter
+    (fun (kwarg, optional) ->
+      pf ppf " %s%s:_ ->" (if optional then "?" else "") kwarg)
+    all_kwargs;
   List.iter (fun arg -> pf ppf " %s:_ ->" arg) labeled_args;
   List.iter (fun (_, m) -> pf ppf " %s.t ->" m) leaf_params;
-  if labeled_args = [] && leaf_params = [] then pf ppf " unit ->";
+  if all_kwargs = [] && labeled_args = [] && leaf_params = [] then
+    pf ppf " unit ->";
   pf ppf " %s" ret
 
 let pp_group_sig ppf all_conns inst_annots group_sorted multi orphans sorted i
     (name, conns) =
-  let gs = group_instances sorted conns in
-  let gs = if i = 0 then gs @ orphans else gs in
+  let gs_full = group_instances sorted conns in
+  let gs_full = if i = 0 then gs_full @ orphans else gs_full in
+  let gs = filter_non_runtime gs_full in
   let type_name = if multi then name else "t" in
   if gs = [] then pf ppf "@,  type %s = unit" type_name
   else (
@@ -2171,8 +2278,8 @@ let pp_group_sig ppf all_conns inst_annots group_sorted multi orphans sorted i
         pf ppf " %s : %s.t;" (sanitize_ident inst_name) mod_name)
       gs;
     pf ppf " }");
-  pp_connect_val_sig ppf all_conns inst_annots group_sorted gs conns type_name
-    name
+  pp_connect_val_sig ppf all_conns inst_annots group_sorted sorted gs_full conns
+    type_name name
 
 (** Pretty-print the .mli for a parameterised topology. Runtime instances are
     excluded. *)
@@ -2195,7 +2302,7 @@ let pp_topology_annotated_mli ppf _tu topo sorted groups =
     non_rt;
   pf ppf " : sig";
   List.iteri
-    (pp_group_sig ppf all_conns inst_annots non_rt multi orphans non_rt)
+    (pp_group_sig ppf all_conns inst_annots non_rt multi orphans sorted)
     groups;
   pf ppf "@,end"
 
@@ -2214,10 +2321,12 @@ let pp_topology_flat_mli ppf tu topo sorted groups =
       match instance_bound_module inst_annots inst_name with
       | None -> ()
       | Some concrete_mod ->
-          if !first_module then (
-            pf ppf "@,";
-            first_module := false);
-          pf ppf "@,module %s = %s" (constructor_name inst_name) concrete_mod
+          let mod_name = constructor_name inst_name in
+          if mod_name <> concrete_mod then (
+            if !first_module then (
+              pf ppf "@,";
+              first_module := false);
+            pf ppf "@,module %s = %s" mod_name concrete_mod)
   in
   List.iter emit_bound_alias non_rt;
   pf ppf "@,";
@@ -2231,6 +2340,7 @@ let pp_topology_flat_mli ppf tu topo sorted groups =
 (** Pretty-print the .mli for a topology. Dispatches to flat or parameterised
     mode. *)
 let pp_topology_mli tu ppf (topo : Ast.def_topology) =
+  let orig_topo = topo in
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
   let groups = collect_direct_connections topo in
@@ -2241,7 +2351,7 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
     pf ppf "@[<v>(** Generated by ofpp to-ml from topology %s. *)"
       topo.topo_name.data;
     (let inst_annots = instance_annotations topo in
-     if is_fully_bound inst_annots sorted connections then
+     if is_flat orig_topo inst_annots sorted connections then
        pp_topology_flat_mli ppf tu topo sorted groups
      else pp_topology_annotated_mli ppf tu topo sorted groups);
     pf ppf "@]@."

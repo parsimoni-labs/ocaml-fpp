@@ -24,15 +24,25 @@ topology StaticWebsite {
 topology StaticWebsiteWithDns {
   import TcpipStack
   import DnsStack
+  instance runtime
   instance data
   instance certs
   instance dispatch
 
   connections Connect_device {
+    runtime.aaaa_timeout -> happy_eyeballs.connect
+    runtime.connect_delay -> happy_eyeballs.connect
+    runtime.connect_timeout -> happy_eyeballs.connect
+    runtime.resolve_timeout -> happy_eyeballs.connect
+    runtime.resolve_retries -> happy_eyeballs.connect
+    runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stack.connect
   }
 
   connections Connect {
+    runtime.nameservers -> dns_client.connect
+    runtime.timeout -> dns_client.connect
+    runtime.cache_size -> dns_client.connect
     dns_client.stack -> stack.connect
   }
 
@@ -48,6 +58,7 @@ topology StaticWebsiteWithDns {
 topology TarWebsite {
   import TcpipStack
   import DnsStack
+  instance runtime
   instance data_block
   instance certs_block
   instance tar_data
@@ -55,10 +66,19 @@ topology TarWebsite {
   instance dispatch
 
   connections Connect_device {
+    runtime.aaaa_timeout -> happy_eyeballs.connect
+    runtime.connect_delay -> happy_eyeballs.connect
+    runtime.connect_timeout -> happy_eyeballs.connect
+    runtime.resolve_timeout -> happy_eyeballs.connect
+    runtime.resolve_retries -> happy_eyeballs.connect
+    runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stack.connect
   }
 
   connections Connect {
+    runtime.nameservers -> dns_client.connect
+    runtime.timeout -> dns_client.connect
+    runtime.cache_size -> dns_client.connect
     dns_client.stack -> stack.connect
     tar_data.block -> data_block.connect
     tar_certs.block -> certs_block.connect
@@ -99,7 +119,6 @@ topology FatWebsite {
 @ socket connect calls.
 topology UnixWebsite {
   import SocketStack
-  @ ocaml.module Server.Runtime
   instance runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
@@ -107,15 +126,13 @@ topology UnixWebsite {
   instance tcpv4v6_socket
   @ ocaml.module Server.Stackv4v6
   instance stackv4v6
-  @ ocaml.module Htdocs_data
-  instance data
-  @ ocaml.module Tls_data
-  instance certs
+  instance htdocs_data
+  instance tls_data
   instance dispatch
 
   connections Start {
-    dispatch.data -> data.connect
-    dispatch.certs -> certs.connect
+    dispatch.data -> htdocs_data.connect
+    dispatch.certs -> tls_data.connect
     dispatch.stack -> stackv4v6.connect
   }
 }
@@ -124,7 +141,6 @@ topology UnixWebsite {
 @ Happy Eyeballs uses [connect_device] for initialisation.
 topology UnixWebsiteWithDns {
   import SocketStack
-  @ ocaml.module Server.Runtime
   instance runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
@@ -135,23 +151,30 @@ topology UnixWebsiteWithDns {
   import DnsStack
   @ ocaml.functor Server.Dns
   instance dns_client
-  @ ocaml.module Htdocs_data
-  instance data
-  @ ocaml.module Tls_data
-  instance certs
+  instance htdocs_data
+  instance tls_data
   instance dispatch
 
   connections Connect_device {
+    runtime.aaaa_timeout -> happy_eyeballs.connect
+    runtime.connect_delay -> happy_eyeballs.connect
+    runtime.connect_timeout -> happy_eyeballs.connect
+    runtime.resolve_timeout -> happy_eyeballs.connect
+    runtime.resolve_retries -> happy_eyeballs.connect
+    runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stackv4v6.connect
   }
 
   connections Connect {
+    runtime.nameservers -> dns_client.connect
+    runtime.timeout -> dns_client.connect
+    runtime.cache_size -> dns_client.connect
     dns_client.stack -> stackv4v6.connect
   }
 
   connections Start {
-    dispatch.data -> data.connect
-    dispatch.certs -> certs.connect
+    dispatch.data -> htdocs_data.connect
+    dispatch.certs -> tls_data.connect
     dispatch.stack -> stackv4v6.connect
   }
 }
@@ -159,7 +182,6 @@ topology UnixWebsiteWithDns {
 @ Unix socket stack, in-memory KV (for testing).
 topology UnixTestWebsite {
   import SocketStack
-  @ ocaml.module Server.Runtime
   instance runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
@@ -168,14 +190,14 @@ topology UnixTestWebsite {
   @ ocaml.module Server.Stackv4v6
   instance stackv4v6
   @ ocaml.module Mirage_kv_mem
-  instance data
+  instance htdocs_data
   @ ocaml.module Mirage_kv_mem
-  instance certs
+  instance tls_data
   instance dispatch
 
   connections Start {
-    dispatch.data -> data.connect
-    dispatch.certs -> certs.connect
+    dispatch.data -> htdocs_data.connect
+    dispatch.certs -> tls_data.connect
     dispatch.stack -> stackv4v6.connect
   }
 }

@@ -40,7 +40,7 @@
 
 (executable
  (name main)
- (modules main server htdocs_data tls_data)
+ (modules main server runtime htdocs_data tls_data)
  (libraries
   mirage-block
   mirage-vnetif

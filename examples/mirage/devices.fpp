@@ -12,14 +12,6 @@ active component Tcpv4v6_socket { async input port connect }
 active component Block { async input port connect }
 active component Kv { async input port connect }
 
-@ ── Infrastructure services ───────────────────────────────
-
-passive component Pclock { sync input port connect }
-passive component Sleep { sync input port connect }
-passive component Ptime { sync input port connect }
-passive component Mtime { sync input port connect }
-passive component CryptoRng { sync input port connect }
-
 @ ── Runtime config ────────────────────────────────────────
 @
 @ A component named [Runtime] is a runtime config provider.
@@ -27,8 +19,31 @@ passive component CryptoRng { sync input port connect }
 @ into the connect call of target instances.
 
 passive component Runtime {
+  @ Network config (required)
   output port ipv4_only: [2]
   output port ipv6_only: [2]
+
+  @ Happy Eyeballs tuning (optional)
+  @ ocaml.optional
+  output port aaaa_timeout
+  @ ocaml.optional
+  output port connect_delay
+  @ ocaml.optional
+  output port connect_timeout
+  @ ocaml.optional
+  output port resolve_timeout
+  @ ocaml.optional
+  output port resolve_retries
+  @ ocaml.optional
+  output port timer_interval
+
+  @ DNS client config (optional)
+  @ ocaml.optional
+  output port nameservers
+  @ ocaml.optional
+  output port timeout
+  @ ocaml.optional
+  output port cache_size
 }
 
 @ ── Socket stack ────────────────────────────────────────
@@ -120,11 +135,38 @@ active component DirectStackv4v6 {
   output port tcpv4v6
 }
 
+@ ── Conduit / TLS / CoHTTP ─────────────────────────────
+@
+@ Each layer wraps the previous one. In the generated code,
+@ the connect functions are pass-throughs ([Lwt.return x]).
+
+@ ocaml.functor Conduit_mirage.TCP
+active component ConduitTcp {
+  async input port connect
+  output port stack
+}
+
+@ ocaml.functor Conduit_mirage.TLS
+active component ConduitTls {
+  async input port connect
+  output port conduit
+}
+
+module Cohttp_mirage {
+  module Server {
+    @ ocaml.functor Cohttp_mirage.Server.Make
+    active component Make {
+      async input port connect
+      output port conduit
+    }
+  }
+}
+
 @ ── Application ─────────────────────────────────────────
 @
-@ Dispatch takes KV stores and stack; creates conduit and
-@ CoHTTP modules internally (matching mirage-skeleton
-@ convention where these are not separate devices).
+@ Dispatch takes KV stores and a network stack.
+@ Conduit / TLS / CoHTTP layers are created internally
+@ by the [Server.HTTPS] functor.
 
 @ ocaml.functor Server.HTTPS
 active component Dispatch {
@@ -167,19 +209,14 @@ instance udp: Udp base id 0x600
 instance tcp: Tcp.Flow base id 0x700
 instance stack: DirectStackv4v6 base id 0xC00
 
-@ Infrastructure
-instance pclock: Pclock base id 0xF00
-instance sleep: Sleep base id 0xF10
-instance ptime: Ptime base id 0xF20
-instance mtime: Mtime base id 0xF30
-instance rng: CryptoRng base id 0xF40
-
 @ Runtime config
 instance runtime: Runtime base id 0xB00
 
 @ Key-value stores (leaf parameters or bound modules)
 instance data: Kv base id 0x800
 instance certs: Kv base id 0x900
+instance htdocs_data: Kv base id 0x870
+instance tls_data: Kv base id 0x880
 
 @ Key-value stores (block-backed)
 instance data_block: Block base id 0x810
