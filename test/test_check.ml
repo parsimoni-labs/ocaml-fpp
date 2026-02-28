@@ -112,13 +112,19 @@ let expected_error_patterns =
 
 (* ── Check runner ──────────────────────────────────────────────────── *)
 
-let errors_of_file path =
+let all_errors_config =
+  Fpp.Check.config ~warning_spec:[ Fpp.Check.Enable_all ]
+    ~error_spec:[ Fpp.Check.Enable_all ]
+
+let diags_of_file ?(config = Fpp.Check.default) path =
   match Fpp.parse_file path with
-  | tu ->
-      Fpp.Check.run Fpp.Check.default tu
-      |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
+  | tu -> Fpp.Check.run config tu
   | exception Fpp.Parse_error _ -> []
   | exception Fpp.Lexer_error _ -> []
+
+let errors_of_file ?config path =
+  diags_of_file ?config path
+  |> List.filter (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
 
 let test_pass abs_path () =
   let errs = errors_of_file abs_path in
@@ -127,8 +133,8 @@ let test_pass abs_path () =
       (Check_test_helpers.format_diags errs)
 
 let test_fail ~rel abs_path () =
-  let errs = errors_of_file abs_path in
-  if errs = [] then Alcotest.fail "expected check errors but got none"
+  let diags = diags_of_file ~config:all_errors_config abs_path in
+  if diags = [] then Alcotest.fail "expected check diagnostics but got none"
   else
     match List.assoc_opt rel expected_error_patterns with
     | None -> ()
@@ -139,13 +145,13 @@ let test_fail ~rel abs_path () =
               List.exists
                 (fun pat -> Check_test_helpers.msg_contains ~substr:pat d.msg)
                 patterns)
-            errs
+            diags
         in
         if not has_match then
           Alcotest.failf
-            "errors found but none match expected patterns [%s]: %s"
+            "diagnostics found but none match expected patterns [%s]: %s"
             (String.concat "; " patterns)
-            (Check_test_helpers.format_diags errs)
+            (Check_test_helpers.format_diags diags)
 
 (* ── Suite construction ────────────────────────────────────────────── *)
 

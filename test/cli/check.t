@@ -39,9 +39,6 @@ Report syntax errors
 Mix of valid and invalid files
   $ ofpp check hello.fpp bad.fpp
   ✗ bad.fpp:2:0: syntax error
-  ✓ hello.fpp
-  
-  ✗ 1/2 files failed
   [1]
 
 

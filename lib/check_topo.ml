@@ -9,11 +9,12 @@ open Check_tu_env
 
 (* ── Component instance property helpers ──────────────────────────── *)
 
-let check_inst_requires ~scope (i : Ast.def_component_instance) kind_str field
-    field_name =
+let check_inst_requires ?(severity = `Error) ~scope
+    (i : Ast.def_component_instance) kind_str field field_name =
   if Option.is_none field then
+    let mk = match severity with `Error -> error | `Warning -> warning in
     [
-      error ~sm_name:scope i.inst_name.loc
+      mk ~sm_name:scope i.inst_name.loc
         (Fmt.str "%s component instance '%s' requires %s" kind_str
            i.inst_name.data field_name);
     ]
@@ -33,7 +34,8 @@ let check_kind_props ~scope (i : Ast.def_component_instance)
     (kind : Ast.component_kind) =
   match kind with
   | Active ->
-      check_inst_requires ~scope i "active" i.inst_queue_size "queue size"
+      check_inst_requires ~severity:`Warning ~scope i "active" i.inst_queue_size
+        "queue size"
   | Queued ->
       check_inst_requires ~scope i "queued" i.inst_queue_size "queue size"
       @ check_inst_forbids ~scope i "queued" i.inst_stack_size "stack size"

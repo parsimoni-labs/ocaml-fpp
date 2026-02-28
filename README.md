@@ -79,8 +79,9 @@ expressions. The parser produces zero Menhir conflicts and is validated against
 all 670 upstream test files imported from the reference compiler's test suite
 (35 categories covering codegen, state machines, topologies, ports, and more).
 
-Three subcommands are available: `ofpp check` for static analysis, `ofpp dot`
-for state machine visualisation, and `ofpp to-ml` for OCaml code generation.
+Four subcommands are available: `ofpp check` for static analysis, `ofpp dot`
+for state machine and topology visualisation, `ofpp fpv` for F Prime Visual
+JSON export, and `ofpp to-ml` for OCaml code generation.
 
 ## `ofpp check` -- static analysis
 
@@ -191,27 +192,33 @@ ofpp check --error=all model.fpp                 # all warnings are errors
 ofpp check --error=cov,dea --warning=-sha m.fpp  # promote coverage+deadlock, disable shadowing
 ```
 
-## `ofpp dot` -- state machine diagrams
+## `ofpp dot` -- state machine and topology diagrams
 
 ```
-ofpp dot [-o FILE] [--sm NAME] FILE...
+ofpp dot [-o FILE] [--sm NAME] [--topology NAME] FILE...
 ```
 
-Render state machines as [Graphviz](https://graphviz.org) DOT diagrams.
-Graphviz DOT gives first-class edge labels, self-loop support, `subgraph
-cluster_*` containers, and HTML table labels for structured state annotations.
+Render state machines and topologies as [Graphviz](https://graphviz.org) DOT
+diagrams. Graphviz DOT gives first-class edge labels, self-loop support,
+`subgraph cluster_*` containers, and HTML table labels for structured
+annotations.
 
-Hierarchical states become subgraph clusters with nested children. Choices
-appear as diamond-shaped nodes. Transitions carry the signal name on the edge,
-with the guard placed near the source state and actions near the target state
-for visual clarity. Initial transitions originate from small filled circles.
-Entry and exit actions appear inside HTML table labels within state nodes.
+**State machines.** Hierarchical states become subgraph clusters with nested
+children. Choices appear as diamond-shaped nodes. Transitions carry the signal
+name on the edge, with the guard placed near the source state and actions near
+the target state for visual clarity. Initial transitions originate from small
+filled circles. Entry and exit actions appear inside HTML table labels within
+state nodes.
+
+**Topologies.** Component instances are rendered as nodes, connections as
+directed edges with port labels. Imported sub-topologies appear as cluster
+subgraphs. Active components are distinguished from passive ones.
 
 Without `-o`, DOT text is written to stdout. With `-o`, the output format is
 determined by the file extension: `.svg`, `.png`, and `.pdf` invoke `dot`
 automatically to render an image; any other extension writes DOT text to the
-file. The `--sm` flag selects a single state machine by name when a file
-contains multiple definitions.
+file. The `--sm` and `--topology` flags select a single state machine or
+topology by name (mutually exclusive).
 
 This feature is not available in the upstream FPP toolchain.
 
@@ -223,6 +230,7 @@ ofpp dot -o diagram.svg model.fpp             # render to SVG
 ofpp dot -o diagram.png model.fpp             # render to PNG
 ofpp dot model.fpp | dot -Tsvg -o diagram.svg # manual pipe to dot
 ofpp dot --sm Controller model.fpp            # select one SM
+ofpp dot --topology StaticWebsite types.fpp devices.fpp stacks.fpp websites.fpp
 ```
 
 Rendering to image formats requires
@@ -230,6 +238,38 @@ Rendering to image formats requires
 
 A [gallery](doc/gallery/index.html) of rendered diagrams is available for
 browsing, showing both the FPP source and the resulting SVG side by side.
+
+## `ofpp fpv` -- F Prime Visual export
+
+```
+ofpp fpv [-o FILE] [--topology NAME] FILE...
+```
+
+Export topologies as JSON compatible with
+[fprime-visual](https://github.com/fprime-community/fprime-visual), the
+browser-based F Prime topology visualiser. Instances are laid out in columns
+using longest-path layering (Kahn's algorithm). Connections reference instances
+and ports by index.
+
+Without `-o`, JSON is written to stdout. With `-o`, JSON is written to the
+file. The `--topology` flag selects a single topology by name.
+
+### Examples
+
+```
+ofpp fpv types.fpp devices.fpp stacks.fpp websites.fpp
+ofpp fpv --topology TcpipStack -o TcpipStack.json types.fpp devices.fpp stacks.fpp websites.fpp
+```
+
+### Regenerating images
+
+The `scripts/gen-images.sh` script regenerates topology diagrams (SVG, PNG)
+and FPV JSON for all MirageOS example topologies into the `images/` directory:
+
+```
+./scripts/gen-images.sh                    # all topologies
+./scripts/gen-images.sh TcpipStack         # single topology
+```
 
 ## `ofpp to-ml` -- OCaml code generation
 

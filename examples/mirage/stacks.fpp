@@ -46,19 +46,28 @@ topology TcpipStack {
 @ The composition is value-level: [V4V6.connect udp tcp], not
 @ a functor application.  Parent topologies bind the three
 @ instances to concrete (wrapper) modules via [@ ocaml.module].
+@
+@ The [runtime] instance provides [~ipv4_only] and [~ipv6_only]
+@ as keyword arguments to the socket connect calls.
 topology SocketStack {
-  instance udp_socket
-  instance tcp_socket
-  instance socket_stack
+  instance runtime
+  instance udpv4v6_socket
+  instance tcpv4v6_socket
+  instance stackv4v6
 
   connections Connect {
-    socket_stack.udp -> udp_socket.connect
-    socket_stack.tcp -> tcp_socket.connect
+    runtime.ipv4_only -> udpv4v6_socket.connect
+    runtime.ipv6_only -> udpv4v6_socket.connect
+    runtime.ipv4_only -> tcpv4v6_socket.connect
+    runtime.ipv6_only -> tcpv4v6_socket.connect
+    stackv4v6.udp -> udpv4v6_socket.connect
+    stackv4v6.tcp -> tcpv4v6_socket.connect
   }
 }
 
 @ Happy Eyeballs + DNS client.  The parent must wire
 @ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
+@ Happy Eyeballs uses [connect_device] for initialisation.
 topology DnsStack {
   instance happy_eyeballs
   instance dns_client

@@ -21,10 +21,64 @@ let http_src = Logs.Src.create "http" ~doc:"HTTP server"
 
 module Http_log = (val Logs.src_log http_src : Logs.LOG)
 
+(* ── Runtime config ────────────────────────────────────
+   Values injected as labeled arguments into connect calls
+   via the runtime component convention. *)
+
+module Runtime = struct
+  let ipv4_only = false
+  let ipv6_only = false
+end
+
+(* ── Socket wrappers ───────────────────────────────────
+   Adapt real library connect signatures to the
+   [connect ~ipv4_only ~ipv6_only () : t Lwt.t] convention. *)
+
+module Udpv4v6_socket = struct
+  include Udpv4v6_socket
+
+  let connect ~ipv4_only ~ipv6_only () =
+    let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
+    Udpv4v6_socket.connect ~ipv4_only ~ipv6_only ipv4 None
+end
+
+module Tcpv4v6_socket = struct
+  include Tcpv4v6_socket
+
+  let connect ~ipv4_only ~ipv6_only () =
+    let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
+    Tcpv4v6_socket.connect ~ipv4_only ~ipv6_only ipv4 None
+end
+
+module Stackv4v6 = struct
+  include Tcpip_stack_socket.V4V6
+
+  let connect (udp : Udpv4v6_socket.t) (tcp : Tcpv4v6_socket.t) =
+    Tcpip_stack_socket.V4V6.connect udp tcp
+end
+
+(* ── DNS client wrapper ────────────────────────────────
+   The real connect takes (stack, he) as a tuple;
+   the wrapper takes them as two positional arguments. *)
+
+module Dns
+    (S : Tcpip.Stack.V4V6)
+    (H :
+      Happy_eyeballs_mirage.S with type stack = S.t and type flow = S.TCP.flow) =
+struct
+  module D = Dns_client_mirage.Make (S) (H)
+  include D
+
+  let connect (s : S.t) (h : H.t) : D.t Lwt.t = D.connect (s, h)
+end
+
+(* ── Dispatch ──────────────────────────────────────────
+   Takes KV stores and TCP/IP stack; creates conduit and CoHTTP
+   modules internally (no separate conduit/http devices needed). *)
+
 module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
   let failf fmt = Fmt.kstr Lwt.fail_with fmt
 
-  (* Given a URI, find the appropriate file and construct a response. *)
   let rec dispatcher fs uri =
     match Uri.path uri with
     | "" | "/" -> dispatcher fs (Uri.with_path uri "index.html")
@@ -41,7 +95,6 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
             | Ok body -> S.respond_string ~status:`OK ~body ~headers ())
           (fun _exn -> S.respond_not_found ())
 
-  (* Redirect to the same address, but in https. *)
   let redirect port uri =
     let new_uri = Uri.with_scheme uri (Some "https") in
     let new_uri = Uri.with_port new_uri (Some port) in
@@ -72,37 +125,6 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.make ~conn_closed ~callback ()
 end
 
-(* ── Socket wrappers ───────────────────────────────────
-   Adapt real library connect signatures to the single-arity
-   [connect dep1 dep2 ... : t Lwt.t] convention. *)
-
-module Udp_socket = struct
-  include Udpv4v6_socket
-
-  let connect () =
-    let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
-    Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
-end
-
-module Tcp_socket = struct
-  include Tcpv4v6_socket
-
-  let connect () =
-    let ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0" in
-    Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false ipv4 None
-end
-
-module Socket_stack = struct
-  include Tcpip_stack_socket.V4V6
-
-  let connect (udp : Udp_socket.t) (tcp : Tcp_socket.t) =
-    Tcpip_stack_socket.V4V6.connect udp tcp
-end
-
-(* ── HTTPS server ──────────────────────────────────────
-   Takes KV stores and TCP/IP stack; creates conduit and CoHTTP
-   modules internally (no separate conduit/http devices needed). *)
-
 module HTTPS
     (DATA : Mirage_kv.RO)
     (KEYS : Mirage_kv.RO)
@@ -114,16 +136,12 @@ struct
   module X509 = Tls_mirage.X509 (KEYS)
   module D = Dispatch (DATA) (Http)
 
-  let tls_init kv =
-    X509.certificate kv `Default >>= fun cert ->
+  let start data keys stack =
+    X509.certificate keys `Default >>= fun cert ->
     let conf =
       Result.get_ok (Tls.Config.server ~certificates:(`Single cert) ())
     in
-    Lwt.return conf
-
-  let connect data keys stack =
-    tls_init keys >>= fun cfg ->
-    let tls = `TLS (cfg, `TCP 443) in
+    let tls = `TLS (conf, `TCP 443) in
     let tcp = `TCP 80 in
     let https =
       Https_log.info (fun f -> f "listening for HTTPS on 443/TCP");

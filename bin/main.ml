@@ -118,44 +118,6 @@ let check_file config file =
         warnings = 0;
       }
 
-let pp_summary_table ppf results =
-  let columns =
-    Tty.Table.
-      [
-        column "";
-        column "File";
-        column ~align:`Right "Components";
-        column ~align:`Right "State Machines";
-        column ~align:`Right "Topologies";
-        column ~align:`Right "Warnings";
-      ]
-  in
-  let rows =
-    List.map
-      (fun r ->
-        let icon, style =
-          match r.status with
-          | `Ok -> ("✓", ok_style)
-          | `Fail -> ("✗", err_style)
-        in
-        let warn_cell =
-          if r.warnings > 0 then
-            Tty.Span.styled warn_style (string_of_int r.warnings)
-          else Tty.Span.text "0"
-        in
-        [
-          Tty.Span.styled style icon;
-          Tty.Span.text r.file;
-          Tty.Span.text (string_of_int r.components);
-          Tty.Span.text (string_of_int r.state_machines);
-          Tty.Span.text (string_of_int r.topologies);
-          warn_cell;
-        ])
-      results
-  in
-  let table = Tty.Table.of_rows ~border:Tty.Border.rounded columns rows in
-  Fmt.pf ppf "@.%a" Tty.Table.pp table
-
 let pp_file_result ~verbose r =
   if r.status = `Fail then ()
   else if verbose then
@@ -167,23 +129,6 @@ let pp_file_result ~verbose r =
       r.topologies
       (if r.topologies <> 1 then "ies" else "y")
   else Fmt.pr "%a %s@." pp_ok () r.file
-
-let check ~verbose ~warning_spec ~error_spec files =
-  let config = Fpp.Check.config ~warning_spec ~error_spec in
-  let results = List.map (check_file config) files in
-  let multi = List.length files > 1 in
-  if verbose && multi then pp_summary_table Fmt.stdout results
-  else List.iter (pp_file_result ~verbose) results;
-  let n_ok = List.length (List.filter (fun r -> r.status = `Ok) results) in
-  let n_fail = List.length (List.filter (fun r -> r.status = `Fail) results) in
-  if n_fail > 0 then (
-    Fmt.pr "@.%a %d/%d file%s failed@." pp_err () n_fail (n_ok + n_fail)
-      (if n_ok + n_fail <> 1 then "s" else "");
-    1)
-  else (
-    if multi then
-      Fmt.pr "@.%a %d file%s ok@." pp_ok () n_ok (if n_ok <> 1 then "s" else "");
-    0)
 
 (* --- cmdliner terms --- *)
 
@@ -227,52 +172,6 @@ let error_spec_t =
   in
   let open Arg in
   value & opt_all spec_conv [] & info [ "e"; "error" ] ~doc ~docv:"SPEC"
-
-let files_t =
-  Arg.(
-    non_empty & pos_all file []
-    & info [] ~docv:"FILE" ~doc:"FPP files to check.")
-
-let check_term =
-  let check verbose warning_specs error_specs files =
-    let warning_spec = List.concat warning_specs in
-    let error_spec = List.concat error_specs in
-    check ~verbose ~warning_spec ~error_spec files
-  in
-  Term.(const check $ verbose_t $ warning_spec_t $ error_spec_t $ files_t)
-
-let check_cmd =
-  let info =
-    Cmd.info "check" ~doc:"Parse and validate FPP files."
-      ~man:
-        [
-          `S "DESCRIPTION";
-          `P
-            "Parse one or more FPP files and run static analysis. Reports \
-             errors (duplicate names, missing initial transitions, undefined \
-             references, unreachable states, choice cycles, type mismatches) \
-             and warnings (signal coverage gaps, liveness issues).";
-          `P
-            "All warning-level analyses run by default. Use $(b,-w) to \
-             selectively enable or disable analyses, and $(b,-e) to promote \
-             warnings to errors.";
-          `S "EXAMPLES";
-          `P "$(iname) Components/**/*.fpp";
-          `P "$(iname) -w -cov model.fpp";
-          `Noblank;
-          `Pre "  Disable the coverage analysis.";
-          `P "$(iname) -e all model.fpp";
-          `Noblank;
-          `Pre "  Promote all warnings to errors.";
-          `P "$(iname) -w -all,+deadlock model.fpp";
-          `Noblank;
-          `Pre "  Only run the deadlock analysis.";
-          `P "$(iname) -e cov,dea -w -sha model.fpp";
-          `Noblank;
-          `Pre "  Promote coverage and deadlock to errors, disable shadowing.";
-        ]
-  in
-  Cmd.v info check_term
 
 (* --- dot command --- *)
 
@@ -363,6 +262,111 @@ let merge_tus per_file =
       per_file
   in
   { Fpp.Ast.tu_members = members }
+
+let check_merged config files =
+  match parse_files files with
+  | None -> 1
+  | Some per_file ->
+      let tu = merge_tus per_file in
+      let diags = Fpp.Check.run config tu in
+      let errors =
+        List.filter
+          (fun (d : Fpp.Check.diagnostic) -> d.severity = `Error)
+          diags
+      in
+      let warnings =
+        List.filter
+          (fun (d : Fpp.Check.diagnostic) -> d.severity = `Warning)
+          diags
+      in
+      pp_warnings Fmt.stdout warnings;
+      if errors <> [] then (
+        List.iter
+          (fun d -> Fmt.epr "%a %a@." pp_err () Fpp.Check.pp_diagnostic d)
+          errors;
+        let file_set =
+          List.fold_left
+            (fun acc (d : Fpp.Check.diagnostic) ->
+              if List.mem d.loc.file acc then acc else d.loc.file :: acc)
+            [] errors
+          |> List.rev
+        in
+        Fmt.pr "@.%a %d/%d file%s failed@." pp_err () (List.length file_set)
+          (List.length files)
+          (if List.length files <> 1 then "s" else "");
+        1)
+      else (
+        List.iter (fun (file, _) -> Fmt.pr "%a %s@." pp_ok () file) per_file;
+        if List.length files > 1 then
+          Fmt.pr "@.%a %d files ok@." pp_ok () (List.length files);
+        0)
+
+let check ~verbose ~warning_spec ~error_spec files =
+  let config = Fpp.Check.config ~warning_spec ~error_spec in
+  match files with
+  | [ _ ] ->
+      let results = List.map (check_file config) files in
+      List.iter (pp_file_result ~verbose) results;
+      let n_fail =
+        List.length (List.filter (fun r -> r.status = `Fail) results)
+      in
+      if n_fail > 0 then (
+        Fmt.pr "@.%a 1/1 file failed@." pp_err ();
+        1)
+      else 0
+  | _ -> check_merged config files
+
+let check_files_t =
+  Arg.(
+    non_empty & pos_all file []
+    & info [] ~docv:"FILE" ~doc:"FPP files to check.")
+
+let check_term =
+  let run verbose warning_specs error_specs files =
+    let warning_spec = List.concat warning_specs in
+    let error_spec = List.concat error_specs in
+    check ~verbose ~warning_spec ~error_spec files
+  in
+  Term.(const run $ verbose_t $ warning_spec_t $ error_spec_t $ check_files_t)
+
+let check_cmd =
+  let info =
+    Cmd.info "check" ~doc:"Parse and validate FPP files."
+      ~man:
+        [
+          `S "DESCRIPTION";
+          `P
+            "Parse one or more FPP files and run static analysis. Reports \
+             errors (duplicate names, missing initial transitions, undefined \
+             references, unreachable states, choice cycles, type mismatches) \
+             and warnings (signal coverage gaps, liveness issues).";
+          `P
+            "When multiple files are given, they are merged into a single \
+             translation unit before checking, so cross-file references \
+             resolve correctly.";
+          `P
+            "All warning-level analyses run by default. Use $(b,-w) to \
+             selectively enable or disable analyses, and $(b,-e) to promote \
+             warnings to errors.";
+          `S "EXAMPLES";
+          `P "$(iname) Components/**/*.fpp";
+          `P "$(iname) -w -cov model.fpp";
+          `Noblank;
+          `Pre "  Disable the coverage analysis.";
+          `P "$(iname) -e all model.fpp";
+          `Noblank;
+          `Pre "  Promote all warnings to errors.";
+          `P "$(iname) -w -all,+deadlock model.fpp";
+          `Noblank;
+          `Pre "  Only run the deadlock analysis.";
+          `P "$(iname) -e cov,dea -w -sha model.fpp";
+          `Noblank;
+          `Pre "  Promote coverage and deadlock to errors, disable shadowing.";
+        ]
+  in
+  Cmd.v info check_term
+
+(* --- dot command --- *)
 
 let dot ~output ~sm_name ~topo_name files =
   if sm_name <> None && topo_name <> None then begin

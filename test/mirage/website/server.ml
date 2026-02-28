@@ -4,22 +4,27 @@
    trivial implementations.  Socket wrappers match the connect
    signatures that ofpp generates. *)
 
-module Udp_socket = struct
+module Runtime = struct
+  let ipv4_only = false
+  let ipv6_only = false
+end
+
+module Udpv4v6_socket = struct
   include Udpv4v6_socket
 
-  let connect () : t Lwt.t = assert false
+  let connect ~ipv4_only:_ ~ipv6_only:_ () : t Lwt.t = assert false
 end
 
-module Tcp_socket = struct
+module Tcpv4v6_socket = struct
   include Tcpv4v6_socket
 
-  let connect () : t Lwt.t = assert false
+  let connect ~ipv4_only:_ ~ipv6_only:_ () : t Lwt.t = assert false
 end
 
-module Socket_stack = struct
+module Stackv4v6 = struct
   include Tcpip_stack_socket.V4V6
 
-  let connect (_udp : Udp_socket.t) (_tcp : Tcp_socket.t) : t Lwt.t =
+  let connect (_udp : Udpv4v6_socket.t) (_tcp : Tcpv4v6_socket.t) : t Lwt.t =
     assert false
 end
 
@@ -31,7 +36,7 @@ end) (Stack : sig
   type t
 end) =
 struct
-  let connect (_ : DATA.t) (_ : KEYS.t) (_ : Stack.t) : unit Lwt.t =
+  let start (_ : DATA.t) (_ : KEYS.t) (_ : Stack.t) : unit Lwt.t =
     Lwt.return_unit
 end
 

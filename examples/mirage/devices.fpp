@@ -1,21 +1,40 @@
 @ MirageOS device catalogue.
 @
 @ Components model device constructors. Output ports declare
-@ dependencies; [sync input port connect] is the universal
+@ dependencies; [async input port connect] is the universal
 @ constructor-result port used as connection target.
 
 @ ── Leaf devices (no dependencies) ──────────────────────
 
-active component Backend { sync input port connect }
-active component Udpv4v6_socket { sync input port connect }
-active component Tcpv4v6_socket { sync input port connect }
-active component Block { sync input port connect }
-active component Kv { sync input port connect }
+active component Backend { async input port connect }
+active component Udpv4v6_socket { async input port connect }
+active component Tcpv4v6_socket { async input port connect }
+active component Block { async input port connect }
+active component Kv { async input port connect }
+
+@ ── Infrastructure services ───────────────────────────────
+
+passive component Pclock { sync input port connect }
+passive component Sleep { sync input port connect }
+passive component Ptime { sync input port connect }
+passive component Mtime { sync input port connect }
+passive component CryptoRng { sync input port connect }
+
+@ ── Runtime config ────────────────────────────────────────
+@
+@ A component named [Runtime] is a runtime config provider.
+@ Its output ports model labeled keyword arguments injected
+@ into the connect call of target instances.
+
+passive component Runtime {
+  output port ipv4_only: [2]
+  output port ipv6_only: [2]
+}
 
 @ ── Socket stack ────────────────────────────────────────
 
-active component SocketStack {
-  sync input port connect
+active component Stackv4v6 {
+  async input port connect
   output port udp
   output port tcp
 }
@@ -23,7 +42,7 @@ active component SocketStack {
 @ ── Network device ──────────────────────────────────────
 
 active component Vnetif {
-  sync input port connect
+  async input port connect
   output port backend
 }
 
@@ -31,67 +50,67 @@ active component Vnetif {
 
 @ ocaml.functor Tar_mirage.Make_KV_RO
 active component Tar_kv_ro {
-  sync input port connect
+  async input port connect
   output port block
 }
 
 @ ocaml.functor Fat.KV_RO
 active component Fat_kv_ro {
-  sync input port connect
+  async input port connect
   output port block
 }
 
 @ ── Protocol stack ──────────────────────────────────────
 
 active component Ethernet {
-  sync input port connect
+  async input port connect
   output port net
 }
 
 active component Arp {
-  sync input port connect
+  async input port connect
   output port eth
 }
 
 active component Static_ipv4 {
-  sync input port connect
+  async input port connect
   output port eth
   output port arp
 }
 
 active component Ipv6 {
-  sync input port connect
+  async input port connect
   output port net
   output port eth
 }
 
 @ ocaml.functor Tcpip_stack_direct.IPV4V6
 active component Ip {
-  sync input port connect
+  async input port connect
   output port ipv4
   output port ipv6
 }
 
 active component Icmpv4 {
-  sync input port connect
+  async input port connect
   output port ip
 }
 
 active component Udp {
-  sync input port connect
+  async input port connect
   output port ip
 }
 
 module Tcp {
   active component Flow {
-    sync input port connect
+    async input port connect
     output port ip
   }
 }
 
 @ ocaml.functor Tcpip_stack_direct.MakeV4V6
-active component TcpipStack {
-  sync input port connect
+active component DirectStackv4v6 {
+  async input port connect
   output port netif
   output port ethernet
   output port arpv4
@@ -102,10 +121,14 @@ active component TcpipStack {
 }
 
 @ ── Application ─────────────────────────────────────────
+@
+@ Dispatch takes KV stores and stack; creates conduit and
+@ CoHTTP modules internally (matching mirage-skeleton
+@ convention where these are not separate devices).
 
 @ ocaml.functor Server.HTTPS
-active component Server {
-  sync input port connect
+active component Dispatch {
+  async input port connect
   output port data
   output port certs
   output port stack
@@ -114,12 +137,12 @@ active component Server {
 @ ── DNS ─────────────────────────────────────────────────
 
 active component Happy_eyeballs_mirage {
-  sync input port connect
+  async input port connect
   output port stack
 }
 
 active component Dns_client_mirage {
-  sync input port connect
+  async input port connect
   output port stack
   output port happy_eyeballs
 }
@@ -129,9 +152,9 @@ active component Dns_client_mirage {
 @ Network
 instance backend: Backend base id 0x050
 instance net: Vnetif base id 0x100
-instance udp_socket: Udpv4v6_socket base id 0xD00
-instance tcp_socket: Tcpv4v6_socket base id 0xD10
-instance socket_stack: SocketStack base id 0xD20
+instance udpv4v6_socket: Udpv4v6_socket base id 0xD00
+instance tcpv4v6_socket: Tcpv4v6_socket base id 0xD10
+instance stackv4v6: Stackv4v6 base id 0xD20
 
 @ Protocol stack
 instance eth: Ethernet base id 0x200
@@ -142,7 +165,17 @@ instance ip: Ip base id 0x460
 instance icmp: Icmpv4 base id 0x500
 instance udp: Udp base id 0x600
 instance tcp: Tcp.Flow base id 0x700
-instance stack: TcpipStack base id 0xC00
+instance stack: DirectStackv4v6 base id 0xC00
+
+@ Infrastructure
+instance pclock: Pclock base id 0xF00
+instance sleep: Sleep base id 0xF10
+instance ptime: Ptime base id 0xF20
+instance mtime: Mtime base id 0xF30
+instance rng: CryptoRng base id 0xF40
+
+@ Runtime config
+instance runtime: Runtime base id 0xB00
 
 @ Key-value stores (leaf parameters or bound modules)
 instance data: Kv base id 0x800
@@ -157,7 +190,7 @@ instance fat_data: Fat_kv_ro base id 0x850
 instance fat_certs: Fat_kv_ro base id 0x860
 
 @ Application
-instance server: Server base id 0xA30
+instance dispatch: Dispatch base id 0xA30
 
 @ DNS
 instance happy_eyeballs: Happy_eyeballs_mirage base id 0xE00

@@ -189,12 +189,12 @@ Empty state machine body requires initial
 Mix of valid and failing files
   $ ofpp check ok.fpp dup_action.fpp external.fpp
   ! dup_action.fpp:3:9: warning in SM 'M': unused action 'a'
+  ✗ dup_action.fpp:1:14: error in SM '<tu>': duplicate definition 'M' (first defined at ok.fpp:1:14)
+  ✗ external.fpp:1:14: error in SM '<tu>': duplicate definition 'M' (first defined at ok.fpp:1:14)
   ✗ dup_action.fpp:3:9: error in SM 'M': duplicate action 'a' (first defined at dup_action.fpp:2:9)
   ✗ dup_action.fpp:2:2: error in SM 'M': state machine has no initial transition
-  ✓ ok.fpp
-  ✓ external.fpp
   
-  ✗ 1/3 files failed
+  ✗ 2/3 files failed
   [1]
 
 
