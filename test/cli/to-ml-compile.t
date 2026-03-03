@@ -393,10 +393,10 @@ Topology: simple 2-component wiring
   >   print_endline "topo: OK"
   > IMPL
   $ compile && run && echo "topo_compile: OK"
-  File "sm.ml", line 11, characters 18-24:
-  11 |   module Sensor = Sensor.Make(Logger)
-                         ^^^^^^
-  Error: Unbound module Sensor
+  File "sm.ml", line 4, characters 5-8:
+  4 | open Lwt.Syntax
+           ^^^
+  Error: Unbound module Lwt
   [2]
 
 Topology: typed port wiring compiles and field access works
@@ -439,10 +439,10 @@ Topology: typed port wiring compiles and field access works
   >   print_endline "typed_topo: OK"
   > IMPL
   $ compile && run && echo "typed_topo_compile: OK"
-  File "sm.ml", line 11, characters 20-28:
-  11 |   module Producer = Producer.Make(Consumer)
-                           ^^^^^^^^
-  Error: Unbound module Producer
+  File "sm.ml", line 4, characters 5-8:
+  4 | open Lwt.Syntax
+           ^^^
+  Error: Unbound module Lwt
   [2]
 
 Topology + SM merged in one file compiles
@@ -486,10 +486,10 @@ Topology + SM merged in one file compiles
   >   print_endline "merged: OK"
   > IMPL
   $ compile && run && echo "merged_compile: OK"
-  File "sm.ml", line 46, characters 18-24:
-  46 |   module Sensor = Sensor.Make(Logger)
-                         ^^^^^^
-  Error: Unbound module Sensor
+  File "sm.ml", line 39, characters 5-8:
+  39 | open Lwt.Syntax
+            ^^^
+  Error: Unbound module Lwt
   [2]
 
 Full pipeline: SM + topology wiring
@@ -591,8 +591,8 @@ Full pipeline: SM + topology wiring
   >   print_endline "pipeline: OK"
   > IMPL
   $ compile && run && echo "pipeline_compile: OK"
-  File "sm.ml", line 61, characters 18-24:
-  61 |   module Filter = Filter.Make(Logger)
-                         ^^^^^^
-  Error: Unbound module Filter
+  File "sm.ml", line 54, characters 5-8:
+  54 | open Lwt.Syntax
+            ^^^
+  Error: Unbound module Lwt
   [2]

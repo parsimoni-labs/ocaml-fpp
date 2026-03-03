@@ -1228,17 +1228,6 @@ let collect_general_ports_annotated (comp : Ast.def_component) =
       | _ -> None)
     comp.comp_members
 
-(** Whether a component is active (has async ports or is declared active). *)
-let is_active_component (comp : Ast.def_component) =
-  comp.comp_kind = Active
-  || List.exists
-       (fun ann ->
-         match (Ast.unannotate ann).Ast.data with
-         | Ast.Comp_spec_port_instance (Ast.Port_general p) ->
-             p.gen_kind = Async_input
-         | _ -> false)
-       comp.comp_members
-
 (* ── Port-based module type generation ────────────────────────────── *)
 
 (** Resolve a port definition by name from the translation unit. *)
@@ -1704,9 +1693,8 @@ let pp_one_connect_call ppf ~func_name inst_name comp connections group_sorted
   else
     let inst_var = sanitize_ident inst_name in
     let mod_name = constructor_name inst_name in
-    let bind = if is_active_component comp then "let* " else "let " in
     let config_ports = unconnected_input_ports inst_name comp connections in
-    pf ppf "@,    %s%s = %s.%s" bind inst_var mod_name func_name;
+    pf ppf "@,    let* %s = %s.%s" inst_var mod_name func_name;
     (* Runtime kwargs as bare labels in parameterised mode *)
     List.iter
       (fun (kwarg, optional) ->
@@ -1731,11 +1719,8 @@ let pp_annotated_connect_calls ppf ~func_name _tu group_sorted connections
     group_sorted
 
 (** Emit the connect function for annotated topology mode. Bound leaves (with
-    [@ ocaml.module]) are auto-initialised.
-
-    {b Lwt heuristic.} The connect function is asynchronous ([Lwt.Syntax],
-    [let*], [Lwt.return]) when at least one active component either has outgoing
-    connections (non-leaf) or is bound to a concrete module. *)
+    [@ ocaml.module]) are auto-initialised. All topology connect functions use
+    [Lwt.Syntax], [let*], and [Lwt.return] unconditionally. *)
 let pp_bound_leaf_inits ppf ~func_name inst_annots group_sorted connections =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
@@ -1743,36 +1728,22 @@ let pp_bound_leaf_inits ppf ~func_name inst_annots group_sorted connections =
       if targets = [] then
         match instance_bound_module inst_annots inst_name with
         | Some _ ->
-            let bind = if is_active_component comp then "let* " else "let " in
-            pf ppf "@,    %s%s = %s.%s () in" bind (sanitize_ident inst_name)
+            pf ppf "@,    let* %s = %s.%s () in" (sanitize_ident inst_name)
               (constructor_name inst_name)
               func_name
         | None -> ())
     group_sorted
 
-let pp_connect_return ppf ~has_active group_sorted =
-  if group_sorted = [] then
-    if has_active then pf ppf "@,    Lwt.return ()" else pf ppf "@,    ()"
+let pp_connect_return ppf group_sorted =
+  if group_sorted = [] then pf ppf "@,    Lwt.return ()"
   else
     let fields =
       List.map (fun (inst_name, _, _) -> sanitize_ident inst_name) group_sorted
     in
-    if has_active then
-      pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
-    else pf ppf "@,    { %s }" (String.concat "; " fields)
+    pf ppf "@,    Lwt.return { %s }" (String.concat "; " fields)
 
 let pp_annotated_connect ppf tu ~func_name inst_annots group_sorted connections
     sorted =
-  let has_active =
-    List.exists
-      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-        let targets =
-          target_instances inst_name comp connections group_sorted
-        in
-        is_active_component comp
-        && (targets <> [] || instance_bound_module inst_annots inst_name <> None))
-      group_sorted
-  in
   (* Collect runtime kwargs for all instances in this group, deduplicated *)
   let all_kwargs =
     let raw =
@@ -1825,10 +1796,9 @@ let pp_annotated_connect ppf tu ~func_name inst_annots group_sorted connections
   List.iter (fun p -> pf ppf " %s" p) leaf_params;
   if all_kwargs = [] && labeled_args = [] && leaf_params = [] then pf ppf " ()";
   pf ppf " =";
-  if has_active then pf ppf "@,    let open Lwt.Syntax in";
   pp_bound_leaf_inits ppf ~func_name inst_annots group_sorted connections;
   pp_annotated_connect_calls ppf ~func_name tu group_sorted connections sorted;
-  pp_connect_return ppf ~has_active group_sorted
+  pp_connect_return ppf group_sorted
 
 (** Pretty-print a parameterised topology in functor-application mode. Instances
     with [@ ocaml.module X] are bound to concrete modules and auto-initialised.
@@ -1899,7 +1869,6 @@ let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
   else
     let config_ports = unconnected_input_ports inst_name comp connections in
     pf ppf "let %s = lazy (" inst_var;
-    if targets <> [] then pf ppf "@,  let open Lwt.Syntax in";
     List.iter
       (fun (target_inst, _) ->
         pf ppf "@,  let* %s = Lazy.force %s in"
@@ -2131,10 +2100,18 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
   if non_rt = [] then ()
   else
     let inst_annots = instance_annotations topo in
+    let has_let_star =
+      List.exists
+        (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+          target_instances inst_name comp connections sorted <> []
+          || instance_bound_module inst_annots inst_name <> None)
+        non_rt
+    in
     let type_env = collect_type_env tu in
     let seen = Hashtbl.create 8 in
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
       topo.topo_name.data;
+    if has_let_star then pf ppf "@,@,open Lwt.Syntax";
     List.iter
       (fun (inst_name, _ci, (comp : Ast.def_component)) ->
         if
@@ -2260,15 +2237,7 @@ let pp_connect_val_sig ppf all_conns inst_annots group_sorted sorted gs conns
         else None)
       group_sorted
   in
-  let has_active =
-    List.exists
-      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-        let targets = target_instances inst_name comp conns gs in
-        is_active_component comp
-        && (targets <> [] || instance_bound_module inst_annots inst_name <> None))
-      group_sorted
-  in
-  let ret = if has_active then type_name ^ " Lwt.t" else type_name in
+  let ret = type_name ^ " Lwt.t" in
   pf ppf "@,  val %s :" name;
   List.iter
     (fun (kwarg, optional) ->

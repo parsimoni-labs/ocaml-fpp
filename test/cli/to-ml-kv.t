@@ -129,8 +129,8 @@ functor implementations, and a concrete module for the bound case.
   >   print_endline "fat_kv: OK"
   > TEST
   $ compile && run
-  File "sm.ml", line 49, characters 19-28:
-  49 |     let* service = Service.c data in
+  File "sm.ml", line 50, characters 19-28:
+  50 |     let* service = Service.c data in
                           ^^^^^^^^^
   Error: Unbound value Service.c
   [2]

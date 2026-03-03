@@ -117,7 +117,6 @@
   test_multi_bound)
  (libraries website_support)
  (modules
-  test_server
   test_unix_test
   test_unix_website
   test_unix_website_dns

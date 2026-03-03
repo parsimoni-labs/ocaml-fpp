@@ -1,19 +1,19 @@
 @ MirageOS device catalogue.
 @
 @ Components model device constructors. Output ports declare
-@ dependencies; [async input port connect] is the universal
+@ dependencies; [sync input port connect] is the universal
 @ constructor-result port used as connection target.
 
 @ ── Leaf devices (no dependencies) ──────────────────────
 
 @ ocaml.sig Vnetif.BACKEND
-active component Backend { async input port connect }
-active component Udpv4v6_socket { async input port connect }
-active component Tcpv4v6_socket { async input port connect }
+passive component Backend { sync input port connect }
+passive component Udpv4v6_socket { sync input port connect }
+passive component Tcpv4v6_socket { sync input port connect }
 @ ocaml.sig Mirage_block.S
-active component Block { async input port connect }
+passive component Block { sync input port connect }
 @ ocaml.sig Mirage_kv.RO
-active component Kv { async input port connect }
+passive component Kv { sync input port connect }
 
 @ ── Runtime config ────────────────────────────────────────
 @
@@ -27,84 +27,84 @@ active component Kv { async input port connect }
 
 @ ── Socket stack ────────────────────────────────────────
 
-active component Stackv4v6 {
-  async input port connect
+passive component Stackv4v6 {
+  sync input port connect
   output port udp
   output port tcp
 }
 
 @ ── Network device ──────────────────────────────────────
 
-active component Vnetif {
-  async input port connect
+passive component Vnetif {
+  sync input port connect
   output port backend
 }
 
 @ ── Block-backed KV stores ──────────────────────────────
 
 @ ocaml.functor Tar_mirage.Make_KV_RO
-active component Tar_kv_ro {
-  async input port connect
+passive component Tar_kv_ro {
+  sync input port connect
   output port block
 }
 
 @ ocaml.functor Fat.KV_RO
-active component Fat_kv_ro {
-  async input port connect
+passive component Fat_kv_ro {
+  sync input port connect
   output port block
 }
 
 @ ── Protocol stack ──────────────────────────────────────
 
-active component Ethernet {
-  async input port connect
+passive component Ethernet {
+  sync input port connect
   output port net
 }
 
-active component Arp {
-  async input port connect
+passive component Arp {
+  sync input port connect
   output port eth
 }
 
-active component Static_ipv4 {
-  async input port connect
+passive component Static_ipv4 {
+  sync input port connect
   output port eth
   output port arp
 }
 
-active component Ipv6 {
-  async input port connect
+passive component Ipv6 {
+  sync input port connect
   output port net
   output port eth
 }
 
 @ ocaml.functor Tcpip_stack_direct.IPV4V6
-active component Ip {
-  async input port connect
+passive component Ip {
+  sync input port connect
   output port ipv4
   output port ipv6
 }
 
-active component Icmpv4 {
-  async input port connect
+passive component Icmpv4 {
+  sync input port connect
   output port ip
 }
 
-active component Udp {
-  async input port connect
+passive component Udp {
+  sync input port connect
   output port ip
 }
 
 module Tcp {
-  active component Flow {
-    async input port connect
+  passive component Flow {
+    sync input port connect
     output port ip
   }
 }
 
 @ ocaml.functor Tcpip_stack_direct.MakeV4V6
-active component DirectStackv4v6 {
-  async input port connect
+passive component DirectStackv4v6 {
+  sync input port connect
   output port netif
   output port ethernet
   output port arpv4
@@ -120,22 +120,22 @@ active component DirectStackv4v6 {
 @ the connect functions are pass-throughs ([Lwt.return x]).
 
 @ ocaml.functor Conduit_mirage.TCP
-active component ConduitTcp {
-  async input port connect
+passive component ConduitTcp {
+  sync input port connect
   output port stack
 }
 
 @ ocaml.functor Conduit_mirage.TLS
-active component ConduitTls {
-  async input port connect
+passive component ConduitTls {
+  sync input port connect
   output port conduit
 }
 
 module Cohttp_mirage {
   module Server {
     @ ocaml.functor Cohttp_mirage.Server.Make
-    active component Make {
-      async input port connect
+    passive component Make {
+      sync input port connect
       output port conduit
     }
   }
@@ -148,8 +148,8 @@ module Cohttp_mirage {
 @ by the [Server.HTTPS] functor.
 
 @ ocaml.functor Server.HTTPS
-active component Dispatch {
-  async input port connect
+passive component Dispatch {
+  sync input port connect
   output port data
   output port certs
   output port stack
@@ -157,13 +157,13 @@ active component Dispatch {
 
 @ ── DNS ─────────────────────────────────────────────────
 
-active component Happy_eyeballs_mirage {
-  async input port connect
+passive component Happy_eyeballs_mirage {
+  sync input port connect
   output port stack
 }
 
-active component Dns_client_mirage {
-  async input port connect
+passive component Dns_client_mirage {
+  sync input port connect
   output port stack
   output port happy_eyeballs
 }
