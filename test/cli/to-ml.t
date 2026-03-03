@@ -201,6 +201,12 @@ Simple topology (2 components, 1 connection)
     let data logger =
       let* sensor = Sensor.data logger in
       Lwt.return { logger; sensor }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
 
 
@@ -254,6 +260,12 @@ Typed port topology
     let main consumer =
       let* producer = Producer.main consumer in
       Lwt.return { consumer; producer }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
 
 
@@ -306,6 +318,12 @@ Filter by topology name
     let c b =
       let* a = A.c b in
       Lwt.return { b; a }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
 
 
@@ -380,6 +398,12 @@ SM + topology merged in one file (wrapped in named modules)
     let data logger =
       let* sensor = Sensor.data logger in
       Lwt.return { logger; sensor }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
   end
 
@@ -486,6 +510,12 @@ Annotated topology (functor-application mode)
       let* eth = Eth.w net in
       let* ipv4 = Ipv4.w ~cidr eth in
       Lwt.return { net; eth; ipv4 }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
 
 
@@ -557,6 +587,12 @@ External types in port declarations
     let c net =
       let* eth = Eth.c net in
       Lwt.return { net; eth }
+  
+    let init () =
+      Printexc.record_backtrace true;
+      Mirage_crypto_rng_unix.use_default ();
+      Logs.set_reporter (Logs_fmt.reporter ());
+      Logs.set_level (Some Logs.Info)
   end
 
 
@@ -591,6 +627,12 @@ Entry point generation (--topologies generates topology + entry point)
   let srv = lazy (
     let* kv = Lazy.force kv in
     Srv.w kv)
+  let () = Printexc.record_backtrace true
+  let () = Mirage_crypto_rng_unix.use_default ()
+  let () =
+    Logs.set_reporter (Logs_fmt.reporter ());
+    Logs.set_level (Some Logs.Info)
+  
   let () =
     Lwt_main.run begin
       let open Lwt.Syntax in

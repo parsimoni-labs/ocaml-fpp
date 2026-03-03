@@ -1,5 +1,6 @@
-; Compilation tests for MirageOS topologies.
-; Generated code is compiled against real MirageOS library signatures.
+; Compilation and execution tests for MirageOS topologies.
+; Generated code is compiled against real MirageOS library signatures
+; and run end-to-end.
 
 ; ── Check: all mirage FPP files must pass ofpp check ─────────────
 
@@ -16,7 +17,16 @@
 
 (library
  (name website_support)
- (modules server socket_runtime dns_runtime htdocs_data tls_data fat)
+ (modules
+  server
+  socket_runtime
+  dns_runtime
+  htdocs_data
+  tls_data
+  fat
+  ramdisk
+  conduit_mirage
+  cohttp_mirage)
  (wrapped false)
  (libraries
   lwt
@@ -107,7 +117,7 @@
     %{s}
     %{w}))))
 
-; ── Build and run ──────────────────────────────────────────────────
+; ── Build and run flat topologies ─────────────────────────────────
 
 (executables
  (names
@@ -115,7 +125,7 @@
   test_unix_website
   test_unix_website_dns
   test_multi_bound)
- (libraries website_support)
+ (libraries website_support mirage-crypto-rng.unix logs logs.fmt fmt)
  (modules
   test_unix_test
   test_unix_website
@@ -124,13 +134,27 @@
 
 (rule
  (alias runtest)
- (deps
-  test_unix_test.exe
-  test_unix_website.exe
-  test_unix_website_dns.exe
-  test_multi_bound.exe)
+ (deps test_unix_test.exe)
  (action
-  (echo "website compilation tests: OK\n")))
+  (run ./test_unix_test.exe)))
+
+(rule
+ (alias runtest)
+ (deps test_unix_website.exe)
+ (action
+  (run ./test_unix_website.exe)))
+
+(rule
+ (alias runtest)
+ (deps test_unix_website_dns.exe)
+ (action
+  (run ./test_unix_website_dns.exe)))
+
+(rule
+ (alias runtest)
+ (deps test_multi_bound.exe)
+ (action
+  (run ./test_multi_bound.exe)))
 
 ; ── Parameterised (functor) topologies ─────────────────────────────
 ;
@@ -198,11 +222,49 @@
   gen_static_website_dns
   gen_tar_website
   gen_fat_website)
- (libraries website_support tar-mirage))
+ (wrapped false)
+ (libraries
+  website_support
+  tar-mirage
+  mirage-crypto-rng.unix
+  logs
+  logs.fmt
+  fmt))
+
+; ── Run parameterised topologies ──────────────────────────────────
+;
+; StaticWebsite and FatWebsite are instantiated with in-memory
+; backends and run end-to-end.  DNS topologies (StaticWebsiteWithDns,
+; TarWebsite) are compile-only: their connect_device/connect API
+; requires a pre-existing stack, which is a known codegen limitation.
+
+(executables
+ (names run_static_website run_fat_website)
+ (libraries
+  website_parameterised
+  mirage-vnetif
+  mirage-kv-mem
+  mirage-crypto-rng.unix
+  logs
+  logs.fmt
+  fmt)
+ (modules run_static_website run_fat_website))
+
+(rule
+ (alias runtest)
+ (deps run_static_website.exe)
+ (action
+  (run ./run_static_website.exe)))
+
+(rule
+ (alias runtest)
+ (deps run_fat_website.exe)
+ (action
+  (run ./run_fat_website.exe)))
 
 (rule
  (alias runtest)
  (deps
   (alias_rec default))
  (action
-  (echo "parameterised topology compilation tests: OK\n")))
+  (echo "all topology tests: OK\n")))

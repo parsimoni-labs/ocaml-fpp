@@ -1850,6 +1850,11 @@ let pp_topology_annotated ppf tu topo sorted groups =
         pf ppf " }");
       pp_annotated_connect ppf tu ~func_name:name inst_annots gs conns sorted)
     groups;
+  pf ppf "@,@,  let init () =";
+  pf ppf "@,    Printexc.record_backtrace true;";
+  pf ppf "@,    Mirage_crypto_rng_unix.use_default ();";
+  pf ppf "@,    Logs.set_reporter (Logs_fmt.reporter ());";
+  pf ppf "@,    Logs.set_level (Some Logs.Info)";
   pf ppf "@,end"
 
 (* ── Fully-bound topology mode ────────────────────────────────────── *)
@@ -2290,6 +2295,7 @@ let pp_topology_annotated_mli ppf _tu topo sorted groups =
   List.iteri
     (pp_group_sig ppf all_conns inst_annots non_rt multi orphans sorted)
     groups;
+  pf ppf "@,  val init : unit -> unit";
   pf ppf "@,end"
 
 (** Pretty-print the .mli for a flat (fully-bound) topology. Emits
@@ -2356,13 +2362,19 @@ let topology_active_instance_names tu (topo : Ast.def_topology) =
       (sanitize_ident inst_name, constructor_name inst_name))
     non_rt
 
-(** Emit a [let () = Lwt_main.run (...)] entry point that forces each lazy
-    binding with [let* _ = Lazy.force x in] and finishes with [Lwt.return ()].
-    Each element of [names] is [(var_name, module_name)]. *)
+(** Emit runtime initialisation (RNG, logging, backtraces) followed by a
+    [let () = Lwt_main.run (...)] entry point that forces each lazy binding with
+    [let* _ = Lazy.force x in] and finishes with [Lwt.return ()]. Each element
+    of [names] is [(var_name, module_name)]. *)
 let pp_flat_entry_point ppf names =
   match names with
   | [] -> ()
   | _ ->
+      pf ppf "let () = Printexc.record_backtrace true@.";
+      pf ppf "let () = Mirage_crypto_rng_unix.use_default ()@.";
+      pf ppf "let () =@.";
+      pf ppf "  Logs.set_reporter (Logs_fmt.reporter ());@.";
+      pf ppf "  Logs.set_level (Some Logs.Info)@.@.";
       pf ppf "let () =@.  Lwt_main.run begin@.";
       pf ppf "    let open Lwt.Syntax in@.";
       List.iter

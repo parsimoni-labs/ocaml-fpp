@@ -1,26 +1,31 @@
-(* Compilation-test stubs for the Server module.
+(* Test stubs for the Server module.
 
-   Mirrors the real examples/mirage/server.ml structure but with
-   trivial implementations.  Socket wrappers match the connect
-   signatures that ofpp generates. *)
+   Socket wrappers bridge the ofpp-generated [connect ~ipv4_only
+   ~ipv6_only ()] signatures to the real tcpip socket APIs that also
+   take IP prefix arguments.  Default addresses bind to [0.0.0.0/0]
+   so no real ports are opened until [listen] is called. *)
+
+let default_ipv4 = Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0"
 
 module Udpv4v6_socket = struct
   include Udpv4v6_socket
 
-  let connect ~ipv4_only:_ ~ipv6_only:_ () : t Lwt.t = assert false
+  let connect ~ipv4_only ~ipv6_only () : t Lwt.t =
+    Udpv4v6_socket.connect ~ipv4_only ~ipv6_only default_ipv4 None
 end
 
 module Tcpv4v6_socket = struct
   include Tcpv4v6_socket
 
-  let connect ~ipv4_only:_ ~ipv6_only:_ () : t Lwt.t = assert false
+  let connect ~ipv4_only ~ipv6_only () : t Lwt.t =
+    Tcpv4v6_socket.connect ~ipv4_only ~ipv6_only default_ipv4 None
 end
 
 module Stackv4v6 = struct
   include Tcpip_stack_socket.V4V6
 
-  let connect (_udp : Udpv4v6_socket.t) (_tcp : Tcpv4v6_socket.t) : t Lwt.t =
-    assert false
+  let connect (udp : Udpv4v6_socket.t) (tcp : Tcpv4v6_socket.t) : t Lwt.t =
+    Tcpip_stack_socket.V4V6.connect udp tcp
 end
 
 module HTTPS (DATA : sig

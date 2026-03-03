@@ -28,6 +28,12 @@ let dispatch = lazy (
   let* tls_data = Lazy.force tls_data in
   let* stackv4v6 = Lazy.force stackv4v6 in
   Dispatch.start htdocs_data tls_data stackv4v6)
+let () = Printexc.record_backtrace true
+let () = Mirage_crypto_rng_unix.use_default ()
+let () =
+  Logs.set_reporter (Logs_fmt.reporter ());
+  Logs.set_level (Some Logs.Info)
+
 let () =
   Lwt_main.run begin
     let open Lwt.Syntax in
