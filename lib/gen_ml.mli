@@ -58,10 +58,12 @@ val topology_active_instance_names :
     pairs for all instances in [topo], in topo-sorted order. These are the
     instances that receive lazy bindings in fully-bound topologies. *)
 
-val pp_flat_entry_point : Format.formatter -> (string * string) list -> unit
-(** [pp_flat_entry_point ppf names] emits a [let () = Lwt_main.run (...)] entry
-    point that forces each lazy binding with [let* _ = Lazy.force x in] and
-    finishes with [Lwt.return ()]. *)
+val pp_flat_entry_point :
+  Format.formatter -> topo_name:string -> (string * string) list -> unit
+(** [pp_flat_entry_point ppf ~topo_name names] emits a Mirage_runtime-based
+    entry point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
+    initialises RNG and logging, forces each lazy binding with
+    [let* _ = Lazy.force x in], and runs via [Unix_os.Main.run]. *)
 
 (** {2 .mli Generation} *)
 

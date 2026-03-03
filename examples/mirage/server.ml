@@ -9,6 +9,15 @@
    where these are not separate devices. *)
 
 open Lwt.Infix
+open Cmdliner
+
+let http_port =
+  let doc = Arg.info ~doc:"Listening HTTP port." [ "http" ] in
+  Mirage_runtime.register_arg Arg.(value & opt int 80 doc)
+
+let https_port =
+  let doc = Arg.info ~doc:"Listening HTTPS port." [ "https" ] in
+  Mirage_runtime.register_arg Arg.(value & opt int 443 doc)
 
 module type HTTP = Cohttp_mirage.Server.S
 
@@ -118,33 +127,45 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.make ~conn_closed ~callback ()
 end
 
-module HTTPS
+module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
+  module X509 = Tls_mirage.X509 (KEYS)
+  module D = Dispatch (DATA) (Http)
+
+  let tls_init kv =
+    X509.certificate kv `Default >>= fun cert ->
+    let conf =
+      Result.get_ok (Tls.Config.server ~certificates:(`Single cert) ())
+    in
+    Lwt.return conf
+
+  let start data keys http =
+    tls_init keys >>= fun cfg ->
+    let https_p = https_port () in
+    let http_p = http_port () in
+    let tls = `TLS (cfg, `TCP https_p) in
+    let tcp = `TCP http_p in
+    let https =
+      Https_log.info (fun f -> f "listening for HTTPS on %d/TCP" https_p);
+      http tls @@ D.serve (D.dispatcher data)
+    in
+    let http =
+      Http_log.info (fun f -> f "listening for HTTP on %d/TCP" http_p);
+      http tcp @@ D.serve (D.redirect https_p)
+    in
+    Lwt.join [ https; http ]
+end
+
+(* Wrapper for FPP codegen: takes Stack, builds conduit/CoHTTP chain,
+   applies HTTPS with the resulting listen function. *)
+module Make_dispatch
     (DATA : Mirage_kv.RO)
     (KEYS : Mirage_kv.RO)
     (Stack : Tcpip.Stack.V4V6) =
 struct
-  type t = unit
-
   module CT = Conduit_mirage.TCP (Stack)
   module C = Conduit_mirage.TLS (CT)
   module Http = Cohttp_mirage.Server.Make (C)
-  module X509 = Tls_mirage.X509 (KEYS)
-  module D = Dispatch (DATA) (Http)
+  module H = HTTPS (DATA) (KEYS) (Http)
 
-  let start data keys stack =
-    X509.certificate keys `Default >>= fun cert ->
-    let conf =
-      Result.get_ok (Tls.Config.server ~certificates:(`Single cert) ())
-    in
-    let tls = `TLS (conf, `TCP 443) in
-    let tcp = `TCP 80 in
-    let https =
-      Https_log.info (fun f -> f "listening for HTTPS on 443/TCP");
-      Http.listen stack tls (D.serve (D.dispatcher data))
-    in
-    let http =
-      Http_log.info (fun f -> f "listening for HTTP on 80/TCP");
-      Http.listen stack tcp (D.serve (D.redirect 443))
-    in
-    Lwt.join [ https; http ]
+  let start data keys stack = H.start data keys (Http.listen stack)
 end

@@ -28,7 +28,7 @@ module Stackv4v6 = struct
     Tcpip_stack_socket.V4V6.connect udp tcp
 end
 
-module HTTPS (DATA : sig
+module Make_dispatch (DATA : sig
   type t
 end) (KEYS : sig
   type t

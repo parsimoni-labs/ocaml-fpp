@@ -8,7 +8,7 @@ module type KV = Mirage_kv.RO
 module Udpv4v6_socket = Server.Udpv4v6_socket
 module Tcpv4v6_socket = Server.Tcpv4v6_socket
 module Stackv4v6 = Server.Stackv4v6
-module Dispatch = Server.HTTPS(Htdocs_data)(Tls_data)(Stackv4v6)
+module Dispatch = Server.Make_dispatch(Htdocs_data)(Tls_data)(Stackv4v6)
 
 let udpv4v6_socket = lazy (
   Udpv4v6_socket.connect ~ipv4_only:Socket_runtime.ipv4_only ~ipv6_only:Socket_runtime.ipv6_only ())
@@ -28,15 +28,22 @@ let dispatch = lazy (
   let* tls_data = Lazy.force tls_data in
   let* stackv4v6 = Lazy.force stackv4v6 in
   Dispatch.start htdocs_data tls_data stackv4v6)
-let () = Printexc.record_backtrace true
-let () = Mirage_crypto_rng_unix.use_default ()
-let () =
-  Logs.set_reporter (Logs_fmt.reporter ());
-  Logs.set_level (Some Logs.Info)
+let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
+let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
+let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
+  Cmdliner_stdlib.setup ~backtrace:(Some true) ~randomize_hashtables:(Some true) ()
 
 let () =
-  Lwt_main.run begin
+  let t =
     let open Lwt.Syntax in
+    let* () = Lwt.return (Mirage_runtime.(with_argv (runtime_args ()) "UnixWebsite" (Mirage_bootvar.argv ()))) in
+    let _ = cmdliner_stdlib__key () in
+    let* () = Mirage_sleep.ns (Duration.of_sec (mirage_runtime_delay__key ())) in
+    let reporter = Mirage_logs.create () in
+    Mirage_runtime.set_level ~default:(Some Logs.Info) (mirage_runtime_logs__key ());
+    Logs.set_reporter reporter;
+    let* _ = Mirage_crypto_rng_mirage.initialize (module Mirage_crypto_rng.Fortuna) in
+    Mirage_runtime.set_name "UnixWebsite";
     let* _ = Lazy.force udpv4v6_socket in
     let* _ = Lazy.force tcpv4v6_socket in
     let* _ = Lazy.force stackv4v6 in
@@ -44,4 +51,5 @@ let () =
     let* _ = Lazy.force tls_data in
     let* _ = Lazy.force dispatch in
     Lwt.return ()
-  end
+  in
+  Unix_os.Main.run t; exit 0

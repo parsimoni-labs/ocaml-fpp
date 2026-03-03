@@ -144,10 +144,10 @@ module Cohttp_mirage {
 @ ── Application ─────────────────────────────────────────
 @
 @ Dispatch takes KV stores and a network stack.
-@ Conduit / TLS / CoHTTP layers are created internally
-@ by the [Server.HTTPS] functor.
+@ [Server.Make_dispatch] wraps [Server.HTTPS] with the
+@ conduit / TLS / CoHTTP chain built from the stack.
 
-@ ocaml.functor Server.HTTPS
+@ ocaml.functor Server.Make_dispatch
 passive component Dispatch {
   sync input port connect
   output port data

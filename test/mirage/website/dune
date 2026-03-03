@@ -125,7 +125,22 @@
   test_unix_website
   test_unix_website_dns
   test_multi_bound)
- (libraries website_support mirage-crypto-rng.unix logs logs.fmt fmt)
+ (libraries
+  website_support
+  mirage-runtime
+  mirage-bootvar
+  cmdliner-stdlib
+  mirage-logs
+  mirage-unix
+  mirage-crypto-rng-mirage
+  mirage-crypto-rng
+  duration
+  mirage-sleep.unix
+  mirage-mtime.unix
+  mirage-ptime
+  mirage-ptime.unix
+  logs
+  fmt)
  (modules
   test_unix_test
   test_unix_website

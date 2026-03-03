@@ -2362,23 +2362,46 @@ let topology_active_instance_names tu (topo : Ast.def_topology) =
       (sanitize_ident inst_name, constructor_name inst_name))
     non_rt
 
-(** Emit runtime initialisation (RNG, logging, backtraces) followed by a
-    [let () = Lwt_main.run (...)] entry point that forces each lazy binding with
-    [let* _ = Lazy.force x in] and finishes with [Lwt.return ()]. Each element
-    of [names] is [(var_name, module_name)]. *)
-let pp_flat_entry_point ppf names =
+(** Emit a Mirage_runtime-based entry point that registers cmdliner arguments,
+    parses [Mirage_bootvar.argv], initialises RNG and logging, forces each lazy
+    binding with [let* _ = Lazy.force x in], and runs via [Unix_os.Main.run].
+    Each element of [names] is [(var_name, module_name)]. *)
+let pp_flat_entry_point ppf ~topo_name names =
   match names with
   | [] -> ()
   | _ ->
-      pf ppf "let () = Printexc.record_backtrace true@.";
-      pf ppf "let () = Mirage_crypto_rng_unix.use_default ()@.";
-      pf ppf "let () =@.";
-      pf ppf "  Logs.set_reporter (Logs_fmt.reporter ());@.";
-      pf ppf "  Logs.set_level (Some Logs.Info)@.@.";
-      pf ppf "let () =@.  Lwt_main.run begin@.";
+      pf ppf
+        "let mirage_runtime_delay__key = Mirage_runtime.register_arg @@@@ \
+         Mirage_runtime.delay@.";
+      pf ppf
+        "let mirage_runtime_logs__key = Mirage_runtime.register_arg @@@@ \
+         Mirage_runtime.logs@.";
+      pf ppf "let cmdliner_stdlib__key = Mirage_runtime.register_arg @@@@@.";
+      pf ppf
+        "  Cmdliner_stdlib.setup ~backtrace:(Some true) \
+         ~randomize_hashtables:(Some true) ()@.@.";
+      pf ppf "let () =@.  let t =@.";
       pf ppf "    let open Lwt.Syntax in@.";
+      pf ppf
+        "    let* () = Lwt.return (Mirage_runtime.(with_argv (runtime_args ()) \
+         %S (Mirage_bootvar.argv ()))) in@."
+        topo_name;
+      pf ppf "    let _ = cmdliner_stdlib__key () in@.";
+      pf ppf
+        "    let* () = Mirage_sleep.ns (Duration.of_sec \
+         (mirage_runtime_delay__key ())) in@.";
+      pf ppf "    let reporter = Mirage_logs.create () in@.";
+      pf ppf
+        "    Mirage_runtime.set_level ~default:(Some Logs.Info) \
+         (mirage_runtime_logs__key ());@.";
+      pf ppf "    Logs.set_reporter reporter;@.";
+      pf ppf
+        "    let* _ = Mirage_crypto_rng_mirage.initialize (module \
+         Mirage_crypto_rng.Fortuna) in@.";
+      pf ppf "    Mirage_runtime.set_name %S;@." topo_name;
       List.iter
         (fun (var, _) -> pf ppf "    let* _ = Lazy.force %s in@." var)
         names;
       pf ppf "    Lwt.return ()@.";
-      pf ppf "  end@."
+      pf ppf "  in@.";
+      pf ppf "  Unix_os.Main.run t; exit 0@."

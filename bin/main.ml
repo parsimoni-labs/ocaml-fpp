@@ -503,7 +503,21 @@ let gen_ml_topologies ppf tu topologies =
         else [])
       topos
   in
-  if flat_names <> [] then Fpp.Gen_ml.pp_flat_entry_point ppf flat_names
+  if flat_names <> [] then begin
+    let flat_topos =
+      List.filter
+        (fun (t : Fpp.Ast.def_topology) ->
+          Fpp.Gen_ml.topology_is_fully_bound tu t)
+        topos
+    in
+    let topo_name =
+      String.concat "+"
+        (List.map
+           (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data)
+           flat_topos)
+    in
+    Fpp.Gen_ml.pp_flat_entry_point ppf ~topo_name flat_names
+  end
 
 let gen_mli_topologies ppf tu topologies =
   let all_topos = Fpp.topologies tu in

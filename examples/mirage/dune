@@ -21,22 +21,18 @@
 ; Crunch static assets into Mirage_kv.RO-compatible modules
 
 (rule
- (target htdocs_data.ml)
+ (targets htdocs_data.ml htdocs_data.mli)
  (deps
   (source_tree htdocs))
  (action
-  (with-stdout-to
-   %{target}
-   (run ocaml-crunch --mode lwt htdocs))))
+  (run ocaml-crunch -o htdocs_data.ml htdocs)))
 
 (rule
- (target tls_data.ml)
+ (targets tls_data.ml tls_data.mli)
  (deps
   (source_tree tls))
  (action
-  (with-stdout-to
-   %{target}
-   (run ocaml-crunch --mode lwt tls))))
+  (run ocaml-crunch -o tls_data.ml tls)))
 
 (executable
  (name main)
@@ -71,9 +67,17 @@
   lwt
   lwt.unix
   ipaddr
-  mirage-crypto-rng.unix
+  mirage-runtime
+  mirage-bootvar
+  cmdliner-stdlib
+  mirage-logs
+  mirage-unix
+  mirage-crypto-rng-mirage
+  mirage-crypto-rng
+  duration
   mirage-sleep.unix
   mirage-mtime.unix
+  mirage-ptime
+  mirage-ptime.unix
   logs
-  logs.fmt
   fmt))
