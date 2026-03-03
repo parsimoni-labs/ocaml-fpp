@@ -31,6 +31,8 @@ end) (Stack : sig
   type t
 end) =
 struct
+  type t = unit
+
   let start (_ : DATA.t) (_ : KEYS.t) (_ : Stack.t) : unit Lwt.t =
     Lwt.return_unit
 end

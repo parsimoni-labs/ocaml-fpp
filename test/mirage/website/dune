@@ -16,7 +16,7 @@
 
 (library
  (name website_support)
- (modules server runtime htdocs_data tls_data)
+ (modules server socket_runtime dns_runtime htdocs_data tls_data fat)
  (wrapped false)
  (libraries
   lwt
@@ -24,6 +24,7 @@
   cstruct
   macaddr
   mirage-block
+  mirage-kv
   mirage-vnetif
   ethernet
   arp.mirage
@@ -132,12 +133,12 @@
  (action
   (echo "website compilation tests: OK\n")))
 
-; ── Code generation tests ─────────────────────────────────────────
+; ── Parameterised (functor) topologies ─────────────────────────────
 ;
-; Parameterised (functor) topologies: code generation succeeds but
-; the generated module types don't match real MirageOS signatures
-; (e.g. BACKEND is missing register/unregister/set_listen_fn).
-; We test that ofpp to-ml produces output without crashing.
+; Generated code uses [@ ocaml.sig] module type aliases, so module
+; types match real MirageOS signatures and topologies compile as
+; libraries.  Fat uses a local stub (fat-filesystem requires
+; mirage-kv < 5).
 
 (rule
  (target gen_static_website.ml)
@@ -191,12 +192,18 @@
    %{target}
    (run %{ofpp} to-ml --topologies FatWebsite %{t} %{d} %{s} %{w}))))
 
+(library
+ (name website_parameterised)
+ (modules
+  gen_static_website
+  gen_static_website_dns
+  gen_tar_website
+  gen_fat_website)
+ (libraries website_support tar-mirage))
+
 (rule
  (alias runtest)
  (deps
-  gen_static_website.ml
-  gen_static_website_dns.ml
-  gen_tar_website.ml
-  gen_fat_website.ml)
+  (alias_rec default))
  (action
-  (echo "topology code generation tests: OK\n")))
+  (echo "parameterised topology compilation tests: OK\n")))

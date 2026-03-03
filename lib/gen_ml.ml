@@ -901,6 +901,7 @@ let pp ppf (sm : Ast.def_state_machine) =
 type ocaml_annots = {
   functor_path : string option;
   module_path : string option;
+  sig_path : string option;
 }
 
 let starts_with ~prefix s =
@@ -922,8 +923,11 @@ let parse_ocaml_annotations annots =
       else if starts_with ~prefix:"ocaml.module " s then
         let v = String.trim (String.sub s 13 (String.length s - 13)) in
         { acc with module_path = Some v }
+      else if starts_with ~prefix:"ocaml.sig " s then
+        let v = String.trim (String.sub s 10 (String.length s - 10)) in
+        { acc with sig_path = Some v }
       else acc)
-    { functor_path = None; module_path = None }
+    { functor_path = None; module_path = None; sig_path = None }
     annots
 
 (** Extract pre-annotations for a component definition from tu_members. For
@@ -1278,12 +1282,20 @@ let port_type_parts ~type_env (port_def : Ast.def_port) =
   in
   (params, ret)
 
+(** Look up the [@ ocaml.sig] annotation for a component definition. *)
+let comp_sig_path tu (comp : Ast.def_component) =
+  let annots = component_annots tu (Ast.Unqualified comp.comp_name) in
+  let parsed = parse_ocaml_annotations annots in
+  parsed.sig_path
+
 (** Whether a component has a non-trivial module type. A component with only
     untyped input ports (e.g. [sync input port connect]) and no abstract types
     produces a trivial [sig type t val connect : t -> unit end] — not useful.
-    Returns [true] when the component has at least one typed input port or an
-    abstract type declaration. *)
+    Returns [true] when the component has at least one typed input port, an
+    abstract type declaration, or an [@ ocaml.sig] annotation. *)
 let has_nontrivial_module_type tu (comp : Ast.def_component) =
+  Option.is_some (comp_sig_path tu comp)
+  ||
   let has_abs_type =
     List.exists
       (fun ann ->
@@ -1303,42 +1315,47 @@ let has_nontrivial_module_type tu (comp : Ast.def_component) =
   in
   has_abs_type || has_typed_input_port
 
-(** Pretty-print a module type generated from a component's input ports. For
-    each [sync input port name: PortType], generates
+(** Pretty-print a module type generated from a component's input ports. When
+    the component has an [@ ocaml.sig Path] annotation, emits a module type
+    alias instead of generating from ports. For each
+    [sync input port name: PortType], generates
     [val name : t -> param_types -> return_type]. *)
 let pp_port_module_type ppf tu ~type_env (comp : Ast.def_component) =
   let name = String.uppercase_ascii (camel_to_snake comp.comp_name.data) in
-  pf ppf "@,@,module type %s = sig" name;
-  pf ppf "@,  type t";
-  (* Emit component abstract types *)
-  List.iter
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
-      | Ast.Comp_def_abs_type at ->
-          pf ppf "@,  type %s" (camel_to_snake at.abs_name.data)
-      | _ -> ())
-    comp.comp_members;
-  let ports = collect_general_ports comp in
-  let input_ports =
-    List.filter
-      (fun (p : Ast.port_instance_general) -> p.gen_kind <> Output)
-      ports
-  in
-  List.iter
-    (fun (p : Ast.port_instance_general) ->
-      let port_name = sanitize_ident p.gen_name.data in
-      match p.gen_port with
-      | Some port_qi -> (
-          match resolve_port_def tu port_qi.data with
-          | Some port_def ->
-              let param_types, ret = port_type_parts ~type_env port_def in
-              pf ppf "@,  val %s : t" port_name;
-              List.iter (fun t -> pf ppf " -> %s" t) param_types;
-              pf ppf " -> %s" ret
+  match comp_sig_path tu comp with
+  | Some path -> pf ppf "@,@,module type %s = %s" name path
+  | None ->
+      pf ppf "@,@,module type %s = sig" name;
+      pf ppf "@,  type t";
+      (* Emit component abstract types *)
+      List.iter
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Comp_def_abs_type at ->
+              pf ppf "@,  type %s" (camel_to_snake at.abs_name.data)
+          | _ -> ())
+        comp.comp_members;
+      let ports = collect_general_ports comp in
+      let input_ports =
+        List.filter
+          (fun (p : Ast.port_instance_general) -> p.gen_kind <> Output)
+          ports
+      in
+      List.iter
+        (fun (p : Ast.port_instance_general) ->
+          let port_name = sanitize_ident p.gen_name.data in
+          match p.gen_port with
+          | Some port_qi -> (
+              match resolve_port_def tu port_qi.data with
+              | Some port_def ->
+                  let param_types, ret = port_type_parts ~type_env port_def in
+                  pf ppf "@,  val %s : t" port_name;
+                  List.iter (fun t -> pf ppf " -> %s" t) param_types;
+                  pf ppf " -> %s" ret
+              | None -> pf ppf "@,  val %s : t -> unit" port_name)
           | None -> pf ppf "@,  val %s : t -> unit" port_name)
-      | None -> pf ppf "@,  val %s : t -> unit" port_name)
-    input_ports;
-  pf ppf "@,end"
+        input_ports;
+      pf ppf "@,end"
 
 (* ── Topology resolution ─────────────────────────────────────────── *)
 

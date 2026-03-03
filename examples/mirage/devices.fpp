@@ -6,10 +6,13 @@
 
 @ ── Leaf devices (no dependencies) ──────────────────────
 
+@ ocaml.sig Vnetif.BACKEND
 active component Backend { async input port connect }
 active component Udpv4v6_socket { async input port connect }
 active component Tcpv4v6_socket { async input port connect }
+@ ocaml.sig Mirage_block.S
 active component Block { async input port connect }
+@ ocaml.sig Mirage_kv.RO
 active component Kv { async input port connect }
 
 @ ── Runtime config ────────────────────────────────────────
@@ -17,34 +20,10 @@ active component Kv { async input port connect }
 @ A component named [Runtime] is a runtime config provider.
 @ Its output ports model labeled keyword arguments injected
 @ into the connect call of target instances.
-
-passive component Runtime {
-  @ Network config (required)
-  output port ipv4_only: [2]
-  output port ipv6_only: [2]
-
-  @ Happy Eyeballs tuning (optional)
-  @ ocaml.optional
-  output port aaaa_timeout
-  @ ocaml.optional
-  output port connect_delay
-  @ ocaml.optional
-  output port connect_timeout
-  @ ocaml.optional
-  output port resolve_timeout
-  @ ocaml.optional
-  output port resolve_retries
-  @ ocaml.optional
-  output port timer_interval
-
-  @ DNS client config (optional)
-  @ ocaml.optional
-  output port nameservers
-  @ ocaml.optional
-  output port timeout
-  @ ocaml.optional
-  output port cache_size
-}
+@
+@ Each sub-topology defines its own [Runtime] component inside
+@ an FPP module, so config is scoped to where it is used.
+@ See [stacks.fpp] for the concrete definitions.
 
 @ ── Socket stack ────────────────────────────────────────
 
@@ -208,9 +187,6 @@ instance icmp: Icmpv4 base id 0x500
 instance udp: Udp base id 0x600
 instance tcp: Tcp.Flow base id 0x700
 instance stack: DirectStackv4v6 base id 0xC00
-
-@ Runtime config
-instance runtime: Runtime base id 0xB00
 
 @ Key-value stores (leaf parameters or bound modules)
 instance data: Kv base id 0x800

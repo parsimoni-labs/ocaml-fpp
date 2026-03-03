@@ -123,6 +123,8 @@ module HTTPS
     (KEYS : Mirage_kv.RO)
     (Stack : Tcpip.Stack.V4V6) =
 struct
+  type t = unit
+
   module CT = Conduit_mirage.TCP (Stack)
   module C = Conduit_mirage.TLS (CT)
   module Http = Cohttp_mirage.Server.Make (C)

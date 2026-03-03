@@ -4,9 +4,72 @@
 @ deployment topologies.  Each sub-topology wires a
 @ layer of the stack; the parent provides missing
 @ connections (e.g. which network backend to use).
+@
+@ Each sub-topology defines its own [Runtime] component
+@ inside a module, scoping config to where it is used.
+
+@ ── Runtime components ────────────────────────────────
+
+@ Runtime config for TCP/IP stack topologies.
+module Tcpip {
+  passive component Runtime {
+    output port ipv4_only: [2]
+    output port ipv6_only: [2]
+    @ IPv4 config (required)
+    output port cidr
+    @ ocaml.optional
+    output port gateway
+  }
+}
+
+@ Runtime config for Unix socket stack topologies.
+module Socket {
+  passive component Runtime {
+    output port ipv4_only: [2]
+    output port ipv6_only: [2]
+  }
+}
+
+@ Runtime config for DNS topologies.
+module Dns {
+  passive component Runtime {
+    @ Happy Eyeballs tuning (optional)
+    @ ocaml.optional
+    output port aaaa_timeout
+    @ ocaml.optional
+    output port connect_delay
+    @ ocaml.optional
+    output port connect_timeout
+    @ ocaml.optional
+    output port resolve_timeout
+    @ ocaml.optional
+    output port resolve_retries
+    @ ocaml.optional
+    output port timer_interval
+
+    @ DNS client config (optional)
+    @ ocaml.optional
+    output port nameservers
+    @ ocaml.optional
+    output port timeout
+    @ ocaml.optional
+    output port cache_size
+  }
+}
+
+@ ── Runtime instances ─────────────────────────────────
+
+instance tcpip_runtime: Tcpip.Runtime base id 0xB01
+instance socket_runtime: Socket.Runtime base id 0xB02
+instance dns_runtime: Dns.Runtime base id 0xB03
+
+@ ── Sub-topologies ────────────────────────────────────
 
 @ Protocol stack: backend through [MakeV4V6].
+@ The [tcpip_runtime] instance provides [~cidr], [?gateway],
+@ [~ipv4_only] and [~ipv6_only] as keyword arguments.
 topology TcpipStack {
+  instance tcpip_runtime
   instance backend
   instance net
   instance eth
@@ -20,6 +83,10 @@ topology TcpipStack {
   instance stack
 
   connections Connect {
+    tcpip_runtime.cidr -> ipv4.connect
+    tcpip_runtime.gateway -> ipv4.connect
+    tcpip_runtime.ipv4_only -> ip.connect
+    tcpip_runtime.ipv6_only -> ip.connect
     net.backend -> backend.connect
     eth.net -> net.connect
     arp.eth -> eth.connect
@@ -48,19 +115,19 @@ topology TcpipStack {
 @ instances to wrapper modules via [@ ocaml.module] (the real
 @ connect signatures differ from the generated convention).
 @
-@ The [runtime] instance provides [~ipv4_only] and [~ipv6_only]
-@ as keyword arguments to the socket connect calls.
+@ The [socket_runtime] instance provides [~ipv4_only] and
+@ [~ipv6_only] as keyword arguments to the socket connect calls.
 topology SocketStack {
-  instance runtime
+  instance socket_runtime
   instance udpv4v6_socket
   instance tcpv4v6_socket
   instance stackv4v6
 
   connections Connect {
-    runtime.ipv4_only -> udpv4v6_socket.connect
-    runtime.ipv6_only -> udpv4v6_socket.connect
-    runtime.ipv4_only -> tcpv4v6_socket.connect
-    runtime.ipv6_only -> tcpv4v6_socket.connect
+    socket_runtime.ipv4_only -> udpv4v6_socket.connect
+    socket_runtime.ipv6_only -> udpv4v6_socket.connect
+    socket_runtime.ipv4_only -> tcpv4v6_socket.connect
+    socket_runtime.ipv6_only -> tcpv4v6_socket.connect
     stackv4v6.udp -> udpv4v6_socket.connect
     stackv4v6.tcp -> tcpv4v6_socket.connect
   }
@@ -70,7 +137,7 @@ topology SocketStack {
 @ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
 @ Happy Eyeballs uses [connect_device] for initialisation.
 @ Runtime kwargs (HE tuning, DNS config) are wired by the
-@ parent topology so they can be bound or left as parameters.
+@ parent topology via a [Dns.Runtime] instance.
 topology DnsStack {
   instance happy_eyeballs
   instance dns_client

@@ -24,25 +24,27 @@ topology StaticWebsite {
 topology StaticWebsiteWithDns {
   import TcpipStack
   import DnsStack
-  instance runtime
+  instance dns_runtime
+  @ ocaml.functor Server.Dns
+  instance dns_client
   instance data
   instance certs
   instance dispatch
 
   connections Connect_device {
-    runtime.aaaa_timeout -> happy_eyeballs.connect
-    runtime.connect_delay -> happy_eyeballs.connect
-    runtime.connect_timeout -> happy_eyeballs.connect
-    runtime.resolve_timeout -> happy_eyeballs.connect
-    runtime.resolve_retries -> happy_eyeballs.connect
-    runtime.timer_interval -> happy_eyeballs.connect
+    dns_runtime.aaaa_timeout -> happy_eyeballs.connect
+    dns_runtime.connect_delay -> happy_eyeballs.connect
+    dns_runtime.connect_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_retries -> happy_eyeballs.connect
+    dns_runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stack.connect
   }
 
   connections Connect {
-    runtime.nameservers -> dns_client.connect
-    runtime.timeout -> dns_client.connect
-    runtime.cache_size -> dns_client.connect
+    dns_runtime.nameservers -> dns_client.connect
+    dns_runtime.timeout -> dns_client.connect
+    dns_runtime.cache_size -> dns_client.connect
     dns_client.stack -> stack.connect
   }
 
@@ -58,7 +60,9 @@ topology StaticWebsiteWithDns {
 topology TarWebsite {
   import TcpipStack
   import DnsStack
-  instance runtime
+  instance dns_runtime
+  @ ocaml.functor Server.Dns
+  instance dns_client
   instance data_block
   instance certs_block
   instance tar_data
@@ -66,19 +70,19 @@ topology TarWebsite {
   instance dispatch
 
   connections Connect_device {
-    runtime.aaaa_timeout -> happy_eyeballs.connect
-    runtime.connect_delay -> happy_eyeballs.connect
-    runtime.connect_timeout -> happy_eyeballs.connect
-    runtime.resolve_timeout -> happy_eyeballs.connect
-    runtime.resolve_retries -> happy_eyeballs.connect
-    runtime.timer_interval -> happy_eyeballs.connect
+    dns_runtime.aaaa_timeout -> happy_eyeballs.connect
+    dns_runtime.connect_delay -> happy_eyeballs.connect
+    dns_runtime.connect_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_retries -> happy_eyeballs.connect
+    dns_runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stack.connect
   }
 
   connections Connect {
-    runtime.nameservers -> dns_client.connect
-    runtime.timeout -> dns_client.connect
-    runtime.cache_size -> dns_client.connect
+    dns_runtime.nameservers -> dns_client.connect
+    dns_runtime.timeout -> dns_client.connect
+    dns_runtime.cache_size -> dns_client.connect
     dns_client.stack -> stack.connect
     tar_data.block -> data_block.connect
     tar_certs.block -> certs_block.connect
@@ -115,11 +119,10 @@ topology FatWebsite {
 @ ── Unix topologies ─────────────────────────────────────
 
 @ Unix socket stack, crunch KV bound to concrete modules.
-@ Runtime kwargs inject [~ipv4_only] and [~ipv6_only] into
-@ socket connect calls.
+@ The [socket_runtime] instance (inherited from SocketStack)
+@ provides [~ipv4_only] and [~ipv6_only] kwargs.
 topology UnixWebsite {
   import SocketStack
-  instance runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.module Server.Tcpv4v6_socket
@@ -141,7 +144,7 @@ topology UnixWebsite {
 @ Happy Eyeballs uses [connect_device] for initialisation.
 topology UnixWebsiteWithDns {
   import SocketStack
-  instance runtime
+  instance dns_runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.module Server.Tcpv4v6_socket
@@ -156,19 +159,19 @@ topology UnixWebsiteWithDns {
   instance dispatch
 
   connections Connect_device {
-    runtime.aaaa_timeout -> happy_eyeballs.connect
-    runtime.connect_delay -> happy_eyeballs.connect
-    runtime.connect_timeout -> happy_eyeballs.connect
-    runtime.resolve_timeout -> happy_eyeballs.connect
-    runtime.resolve_retries -> happy_eyeballs.connect
-    runtime.timer_interval -> happy_eyeballs.connect
+    dns_runtime.aaaa_timeout -> happy_eyeballs.connect
+    dns_runtime.connect_delay -> happy_eyeballs.connect
+    dns_runtime.connect_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_timeout -> happy_eyeballs.connect
+    dns_runtime.resolve_retries -> happy_eyeballs.connect
+    dns_runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stackv4v6.connect
   }
 
   connections Connect {
-    runtime.nameservers -> dns_client.connect
-    runtime.timeout -> dns_client.connect
-    runtime.cache_size -> dns_client.connect
+    dns_runtime.nameservers -> dns_client.connect
+    dns_runtime.timeout -> dns_client.connect
+    dns_runtime.cache_size -> dns_client.connect
     dns_client.stack -> stackv4v6.connect
   }
 
@@ -182,7 +185,6 @@ topology UnixWebsiteWithDns {
 @ Unix socket stack, in-memory KV (for testing).
 topology UnixTestWebsite {
   import SocketStack
-  instance runtime
   @ ocaml.module Server.Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.module Server.Tcpv4v6_socket
