@@ -865,11 +865,11 @@ let test_annotated_topology () =
        {|
     port P
     active component Net { sync input port write: P }
-    @ ocaml.functor Eth.Make
+    @ ocaml.module Eth.Make
     active component Ethernet {
       output port net: P
     }
-    @ ocaml.functor Ipv4.Make
+    @ ocaml.module Ipv4.Make
     active component Ipv4 {
       output port eth: P
       sync input port cidr: P
@@ -919,7 +919,7 @@ let test_annotated_default_functor () =
     (render_topo
        {|
     port P
-    @ ocaml.functor Foo.Make
+    @ ocaml.module Foo.Make
     active component Foo { output port out: P }
     active component Bar { sync input port in_: P }
     instance foo: Foo base id 0x100
@@ -1006,7 +1006,7 @@ let test_topology_import () =
        {|
     port P
     active component Net { sync input port write: P }
-    @ ocaml.functor Eth.Make
+    @ ocaml.module Eth.Make
     active component Eth {
       output port net: P
     }
@@ -1082,7 +1082,7 @@ let test_passive_in_annotated () =
     (render_topo
        {|
     port P
-    @ ocaml.functor Crunch.Make
+    @ ocaml.module Crunch.Make
     passive component Kv { output port dep: P }
     active component Http { sync input port static: P }
     instance kv: Kv base id 0x100
@@ -1159,7 +1159,7 @@ let test_bound_leaf_instance () =
     (render_topo
        {|
     port P
-    @ ocaml.functor Eth.Make
+    @ ocaml.module Eth.Make
     active component Eth {
       output port net: P
     }
@@ -1208,7 +1208,7 @@ let test_mixed_bound_unbound () =
     (render_topo
        {|
     port P
-    @ ocaml.functor Srv.Make
+    @ ocaml.module Srv.Make
     active component Srv {
       output port kv: P
       output port certs: P
@@ -1260,7 +1260,7 @@ let test_all_leaves_bound () =
     (render_topo
        {|
     port P
-    @ ocaml.functor Srv.Make
+    @ ocaml.module Srv.Make
     active component Srv {
       output port kv: P
     }
@@ -1280,7 +1280,7 @@ open Lwt.Syntax
 module Kv = Embedded_data
 module Srv = Srv.Make(Kv)
 
-let kv = lazy (Kv.connect ())
+let kv = lazy (Kv.get ())
 
 let srv = lazy (
   let* kv = Lazy.force kv in
@@ -1359,7 +1359,7 @@ let test_bound_nonleaf () =
        {|
     port P
     port Dep
-    @ ocaml.functor Srv.Make
+    @ ocaml.module Srv.Make
     active component Srv {
       output port stack: Dep
     }
@@ -1381,7 +1381,7 @@ open Lwt.Syntax
 module Stack = Tcpip_stack_socket.V4V6
 module Srv = Srv.Make(Stack)
 
-let stack = lazy (Stack.connect ())
+let stack = lazy (Stack.provide ())
 
 let srv = lazy (
   let* stack = Lazy.force stack in
@@ -1441,7 +1441,7 @@ let test_runtime_flat () =
       output port ipv6_only
     }
     active component Socket { sync input port connect: P }
-    @ ocaml.functor Srv.Make
+    @ ocaml.module Srv.Make
     active component Srv { output port sock: P }
     instance runtime: Runtime base id 0xB00
     instance sock: Socket base id 0x100

@@ -898,11 +898,7 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = {
-  functor_path : string option;
-  module_path : string option;
-  sig_path : string option;
-}
+type ocaml_annots = { module_path : string option; sig_path : string option }
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -912,22 +908,14 @@ let parse_ocaml_annotations annots =
   List.fold_left
     (fun acc s ->
       let s = String.trim s in
-      if starts_with ~prefix:"ocaml.functor " s then
-        let v = String.trim (String.sub s 14 (String.length s - 14)) in
-        let path =
-          match String.index_opt v '(' with
-          | None -> v
-          | Some i -> String.sub v 0 i
-        in
-        { acc with functor_path = Some path }
-      else if starts_with ~prefix:"ocaml.module " s then
+      if starts_with ~prefix:"ocaml.module " s then
         let v = String.trim (String.sub s 13 (String.length s - 13)) in
         { acc with module_path = Some v }
       else if starts_with ~prefix:"ocaml.sig " s then
         let v = String.trim (String.sub s 10 (String.length s - 10)) in
         { acc with sig_path = Some v }
       else acc)
-    { functor_path = None; module_path = None; sig_path = None }
+    { module_path = None; sig_path = None }
     annots
 
 (** Extract pre-annotations for a component definition from tu_members. For
@@ -1046,33 +1034,31 @@ let instance_bound_module inst_annots inst_name =
       else acc)
     None inst_annots
 
-(** Find [@ ocaml.functor X] on an instance. Uses last-wins semantics like
-    {!instance_bound_module}, letting parent topology override imported functor
-    paths. *)
-let extract_functor_annotation annots =
-  List.find_map
-    (fun s ->
-      let s = String.trim s in
-      if starts_with ~prefix:"ocaml.functor " s then
-        let v = String.trim (String.sub s 14 (String.length s - 14)) in
-        let path =
-          match String.index_opt v '(' with
-          | None -> v
-          | Some i -> String.sub v 0 i
-        in
-        Some path
-      else None)
-    annots
-
-let instance_functor_override inst_annots inst_name =
-  List.fold_left
-    (fun acc (n, annots) ->
+(** Find [@ ocaml.param name "value"] annotations on an instance. Returns a
+    mapping from param name to the OCaml literal string. Multiple annotations
+    may override different params. *)
+let instance_param_annotations inst_annots inst_name =
+  let tbl = Hashtbl.create 4 in
+  List.iter
+    (fun (n, annots) ->
       if n = inst_name then
-        match extract_functor_annotation annots with
-        | Some _ as v -> v
-        | None -> acc
-      else acc)
-    None inst_annots
+        List.iter
+          (fun s ->
+            let s = String.trim s in
+            if starts_with ~prefix:"ocaml.param " s then
+              let rest = String.trim (String.sub s 12 (String.length s - 12)) in
+              match String.index_opt rest ' ' with
+              | Some i ->
+                  let name = String.sub rest 0 i in
+                  let value =
+                    String.trim
+                      (String.sub rest (i + 1) (String.length rest - i - 1))
+                  in
+                  Hashtbl.replace tbl name value
+              | None -> ())
+          annots)
+    inst_annots;
+  tbl
 
 (** Extract instance name from a port instance identifier. *)
 let pid_inst_name (pid : Ast.port_instance_id) =
@@ -1100,6 +1086,64 @@ let is_optional_runtime_port (comp : Ast.def_component) port_name =
           && List.exists (fun s -> String.trim s = "ocaml.optional") pre
       | _ -> false)
     comp.comp_members
+
+(** Return the name of the first [sync input port] on a component, if any. Used
+    as the default method name when an instance has no outgoing connections
+    (e.g. a standalone application with [sync input port start]). *)
+let sync_input_port_name (comp : Ast.def_component) =
+  List.find_map
+    (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with
+      | Ast.Comp_spec_port_instance (Ast.Port_general p)
+        when p.gen_kind = Sync_input ->
+          Some (camel_to_snake p.gen_name.data)
+      | _ -> None)
+    comp.comp_members
+
+(** Extract [param] declarations from a component, in declaration order. Each
+    param has a name, an FPP type, and an optional default expression. *)
+let component_params (comp : Ast.def_component) =
+  List.filter_map
+    (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with Ast.Comp_spec_param p -> Some p | _ -> None)
+    comp.comp_members
+
+(** Look up init spec overrides on a component instance. Phase [n] overrides
+    param [n] (0-indexed). Returns a mapping from param index to the raw OCaml
+    code string. *)
+let init_spec_overrides (ci : Ast.def_component_instance) =
+  let tbl = Hashtbl.create 4 in
+  List.iter
+    (fun ann ->
+      let si : Ast.spec_init = (Ast.unannotate ann).Ast.data in
+      match si.init_phase.data with
+      | Ast.Expr_literal (Lit_int s) -> (
+          match int_of_string_opt s with
+          | Some n -> Hashtbl.replace tbl n si.init_code.data
+          | None -> ())
+      | _ -> ())
+    ci.inst_init;
+  tbl
+
+(** Map an FPP type to its Cmdliner converter name. *)
+let cmdliner_conv_of_fpp_type (tn : Ast.type_name) =
+  match tn with
+  | Type_bool -> "bool"
+  | Type_int (I8 | I16 | U8 | U16) -> "int"
+  | Type_int (I32 | U32 | I64 | U64) -> "int"
+  | Type_float (F32 | F64) -> "float"
+  | Type_string _ -> "string"
+  | Type_qual _ -> "string"
+
+(** Render an FPP default expression as an OCaml literal. *)
+let rec ocaml_literal_of_expr (e : Ast.expr) =
+  match e with
+  | Expr_literal (Lit_string s) -> Printf.sprintf "%S" s
+  | Expr_literal (Lit_int s) -> s
+  | Expr_literal (Lit_float s) -> s
+  | Expr_literal (Lit_bool b) -> string_of_bool b
+  | Expr_paren e -> ocaml_literal_of_expr e.data
+  | _ -> "()"
 
 (** Collect runtime kwargs for a target instance: for each connection FROM a
     runtime instance TO [inst_name], return [(port_name, is_optional)]. The
@@ -1643,44 +1687,37 @@ let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
 (* ── Topology mode (functor-application) ──────────────────────────── *)
 
 (** Emit functor applications for non-leaf instances inside the Make struct.
-    Bound instances (with [@ ocaml.module]) are skipped — they already have
-    module aliases. *)
+    Instance-level [@ ocaml.module] overrides the functor path; otherwise the
+    component annotation or default [ComponentName.Make] is used. *)
 let pp_functor_apps ppf tu inst_annots sorted connections =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       let targets = target_instances inst_name comp connections sorted in
-      if targets <> [] && instance_bound_module inst_annots inst_name = None
-      then
+      if targets <> [] then (
         let mod_name = constructor_name inst_name in
         let ca =
           parse_ocaml_annotations
             (component_annots tu ci.Ast.inst_component.data)
         in
-        match ca.module_path with
-        | Some path ->
-            (* Concrete module alias — no functor application *)
-            pf ppf "@,  module %s = %s" mod_name path
-        | None ->
-            let functor_path =
-              match instance_functor_override inst_annots inst_name with
+        let functor_path =
+          match instance_bound_module inst_annots inst_name with
+          | Some s -> s
+          | None -> (
+              match ca.module_path with
               | Some s -> s
-              | None -> (
-                  match ca.functor_path with
-                  | Some s -> s
-                  | None ->
-                      let parts =
-                        Ast.qual_ident_to_list ci.Ast.inst_component.data
-                      in
-                      let segments =
-                        List.map (fun n -> constructor_name n.Ast.data) parts
-                      in
-                      String.concat "." segments ^ ".Make")
-            in
-            pf ppf "@,  module %s = %s" mod_name functor_path;
-            List.iter
-              (fun (target_inst, _) ->
-                pf ppf "(%s)" (constructor_name target_inst))
-              targets)
+              | None ->
+                  let parts =
+                    Ast.qual_ident_to_list ci.Ast.inst_component.data
+                  in
+                  let segments =
+                    List.map (fun n -> constructor_name n.Ast.data) parts
+                  in
+                  String.concat "." segments ^ ".Make")
+        in
+        pf ppf "@,  module %s = %s" mod_name functor_path;
+        List.iter
+          (fun (target_inst, _) -> pf ppf "(%s)" (constructor_name target_inst))
+          targets))
     sorted
 
 (** Emit individual connect calls for non-leaf instances. Runtime kwargs are
@@ -1823,15 +1860,17 @@ let pp_topology_annotated ppf tu topo sorted groups =
         pf ppf "@,  (%s : %s)" mod_name constraint_)
     non_rt;
   pf ppf " = struct";
-  (* Emit module aliases for all bound instances *)
+  (* Emit module aliases for bound leaf instances *)
   List.iter
-    (fun (inst_name, _ci, _comp) ->
-      match instance_bound_module inst_annots inst_name with
-      | Some concrete_mod ->
-          let mod_name = constructor_name inst_name in
-          if mod_name <> concrete_mod then
-            pf ppf "@,  module %s = %s" mod_name concrete_mod
-      | None -> ())
+    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+      let targets = target_instances inst_name comp all_conns sorted in
+      if targets = [] then
+        match instance_bound_module inst_annots inst_name with
+        | Some concrete_mod ->
+            let mod_name = constructor_name inst_name in
+            if mod_name <> concrete_mod then
+              pf ppf "@,  module %s = %s" mod_name concrete_mod
+        | None -> ())
     non_rt;
   pp_functor_apps ppf tu inst_annots non_rt all_conns;
   List.iteri
@@ -1859,17 +1898,29 @@ let pp_topology_annotated ppf tu topo sorted groups =
 
 (* ── Fully-bound topology mode ────────────────────────────────────── *)
 
-(** Emit a single top-level lazy binding for an instance. Leaf instances (no
-    deps) emit [let x = lazy (X.connect ())]. Non-leaf instances force
-    dependencies and pass values to [connect]. Runtime kwargs are injected as
-    labeled arguments before positional ones. *)
-let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
-    connections sorted inst_annots =
+(* Resolve the value for a component param on an instance.  Priority:
+   1. [@ ocaml.param name "value"] annotation (per-topology build-time)
+   2. Init spec [phase N "code"] where N = param index (per-instance)
+   3. [None] — runtime Cmdliner term using the param default *)
+let resolve_param_value inst_annots inst_name (ci : Ast.def_component_instance)
+    idx (p : Ast.spec_param) =
+  let param_name = camel_to_snake p.param_name.data in
+  let annot_overrides = instance_param_annotations inst_annots inst_name in
+  match Hashtbl.find_opt annot_overrides param_name with
+  | Some v -> Some v
+  | None ->
+      let init_overrides = init_spec_overrides ci in
+      Hashtbl.find_opt init_overrides idx
+
+let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
+    (comp : Ast.def_component) connections sorted inst_annots =
   let inst_var = sanitize_ident inst_name in
   let mod_name = constructor_name inst_name in
   let targets = target_instances inst_name comp connections sorted in
   let kwargs = runtime_kwargs inst_name sorted connections in
-  if targets = [] && kwargs = [] then
+  let params = component_params comp in
+  let has_params = params <> [] in
+  if targets = [] && kwargs = [] && not has_params then
     pf ppf "let %s = lazy (%s.%s ())" inst_var mod_name func_name
   else
     let config_ports = unconnected_input_ports inst_name comp connections in
@@ -1907,6 +1958,14 @@ let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
         | Some m -> pf ppf " %s%s:%s.%s" label kwarg m kwarg
         | None -> pf ppf " %s%s" label kwarg)
       kwargs;
+    (* Component params — build-time override or runtime Cmdliner key *)
+    List.iteri
+      (fun i (p : Ast.spec_param) ->
+        let param_name = camel_to_snake p.param_name.data in
+        match resolve_param_value inst_annots inst_name ci i p with
+        | Some code -> pf ppf " ~%s:%s" param_name code
+        | None -> pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
+      params;
     List.iter
       (fun (p : Ast.port_instance_general) ->
         pf ppf " ~%s" (sanitize_ident p.gen_name.data))
@@ -1914,22 +1973,58 @@ let pp_lazy_binding ppf ~func_name inst_name (comp : Ast.def_component)
     List.iter
       (fun (target_inst, _) -> pf ppf " %s" (sanitize_ident target_inst))
       targets;
-    (* When kwargs are present but no positional args, add () *)
-    if targets = [] && config_ports = [] then pf ppf " ()";
+    (* When kwargs are present but no positional args or params, add () *)
+    if targets = [] && config_ports = [] && not has_params then pf ppf " ()";
     pf ppf ")"
 
-let pp_module_aliases ppf inst_annots module_break sorted =
+(** Emit Cmdliner term registrations for component params that are not
+    overridden by annotations or init specs. Each unresolved param becomes a
+    [Mirage_runtime.register_arg] call with the default value from the component
+    declaration. *)
+let pp_param_cmdliner_terms ppf inst_annots sorted =
+  List.iter
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
+      if is_runtime_component comp then ()
+      else
+        let params = component_params comp in
+        let inst_var = sanitize_ident inst_name in
+        List.iteri
+          (fun i (p : Ast.spec_param) ->
+            if resolve_param_value inst_annots inst_name ci i p = None then (
+              let param_name = camel_to_snake p.param_name.data in
+              let conv = cmdliner_conv_of_fpp_type p.param_type.data in
+              let default =
+                match p.param_default with
+                | Some e -> ocaml_literal_of_expr e.data
+                | None -> "\"\""
+              in
+              pf ppf "@,let %s__%s =" inst_var param_name;
+              pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in"
+                param_name
+                (inst_var ^ "-"
+                ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
+              pf ppf
+                "@,\
+                \  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s \
+                 doc)"
+                conv default))
+          params)
+    sorted
+
+let pp_module_aliases ppf inst_annots all_conns module_break sorted =
   List.iter
     (fun (inst_name, _ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
       else
-        match instance_bound_module inst_annots inst_name with
-        | Some concrete_mod ->
-            let mod_name = constructor_name inst_name in
-            if mod_name <> concrete_mod then (
-              module_break ();
-              pf ppf "module %s = %s" mod_name concrete_mod)
-        | None -> ())
+        let targets = target_instances inst_name comp all_conns sorted in
+        if targets = [] then
+          match instance_bound_module inst_annots inst_name with
+          | Some concrete_mod ->
+              let mod_name = constructor_name inst_name in
+              if mod_name <> concrete_mod then (
+                module_break ();
+                pf ppf "module %s = %s" mod_name concrete_mod)
+          | None -> ())
     sorted
 
 let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
@@ -1938,39 +2033,33 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
       if is_runtime_component comp then ()
       else
         let targets = target_instances inst_name comp all_conns sorted in
-        if targets <> [] && instance_bound_module inst_annots inst_name = None
-        then
+        if targets <> [] then (
           let mod_name = constructor_name inst_name in
           let ca =
             parse_ocaml_annotations
               (component_annots tu ci.Ast.inst_component.data)
           in
-          match ca.module_path with
-          | Some path ->
-              module_break ();
-              pf ppf "module %s = %s" mod_name path
-          | None ->
-              module_break ();
-              let functor_path =
-                match instance_functor_override inst_annots inst_name with
+          let functor_path =
+            match instance_bound_module inst_annots inst_name with
+            | Some s -> s
+            | None -> (
+                match ca.module_path with
                 | Some s -> s
-                | None -> (
-                    match ca.functor_path with
-                    | Some s -> s
-                    | None ->
-                        let parts =
-                          Ast.qual_ident_to_list ci.Ast.inst_component.data
-                        in
-                        let segments =
-                          List.map (fun n -> constructor_name n.Ast.data) parts
-                        in
-                        String.concat "." segments ^ ".Make")
-              in
-              pf ppf "module %s = %s" mod_name functor_path;
-              List.iter
-                (fun (target_inst, _) ->
-                  pf ppf "(%s)" (constructor_name target_inst))
-                targets)
+                | None ->
+                    let parts =
+                      Ast.qual_ident_to_list ci.Ast.inst_component.data
+                    in
+                    let segments =
+                      List.map (fun n -> constructor_name n.Ast.data) parts
+                    in
+                    String.concat "." segments ^ ".Make")
+          in
+          module_break ();
+          pf ppf "module %s = %s" mod_name functor_path;
+          List.iter
+            (fun (target_inst, _) ->
+              pf ppf "(%s)" (constructor_name target_inst))
+            targets))
     sorted
 
 (** Pretty-print a flat topology for fully-bound mode. Module aliases and
@@ -1988,20 +2077,24 @@ let pp_topology_flat ppf tu topo sorted groups =
     pf ppf "@,"
   in
   let non_rt = filter_non_runtime sorted in
-  pp_module_aliases ppf inst_annots module_break non_rt;
+  pp_module_aliases ppf inst_annots all_conns module_break non_rt;
   pp_functor_applications ppf tu inst_annots all_conns module_break non_rt;
+  (* Cmdliner registrations for component params not overridden *)
+  pp_param_cmdliner_terms ppf inst_annots non_rt;
   (* Lazy bindings for non-runtime instances *)
   ignore
     (List.fold_left
-       (fun prev_leaf (inst_name, _ci, (comp : Ast.def_component)) ->
+       (fun prev_leaf (inst_name, ci, (comp : Ast.def_component)) ->
          let targets = target_instances inst_name comp all_conns sorted in
          let is_leaf = targets = [] in
          if prev_leaf && is_leaf then pf ppf "@," else pf ppf "@,@,";
          let func_name =
            Hashtbl.find_opt method_names inst_name
-           |> Option.value ~default:"connect"
+           |> Option.value
+                ~default:
+                  (sync_input_port_name comp |> Option.value ~default:"connect")
          in
-         pp_lazy_binding ppf ~func_name inst_name comp all_conns sorted
+         pp_lazy_binding ppf ~func_name inst_name ci comp all_conns sorted
            inst_annots;
          is_leaf)
        false non_rt)
@@ -2027,62 +2120,18 @@ let is_fully_bound inst_annots sorted connections =
             targets = [] && instance_bound_module inst_annots inst_name = None)
           non_rt)
 
-(** Structural heuristic: a topology is fully bound (flat) when it has at least
-    one [import] directive AND every non-runtime leaf instance is either
-    parent-declared or annotated with [@ ocaml.module]. This allows flat
-    topologies without requiring [@ ocaml.module] on every leaf. *)
-let is_fully_bound_structural (orig_topo : Ast.def_topology) inst_annots sorted
-    connections =
-  let has_imports =
-    List.exists
-      (fun ann ->
-        match (Ast.unannotate ann).Ast.data with
-        | Ast.Topo_spec_top_import _ -> true
-        | _ -> false)
-      orig_topo.topo_members
-  in
-  if not has_imports then false
-  else
-    let parent_declared =
-      List.fold_left
-        (fun acc ann ->
-          match (Ast.unannotate ann).Ast.data with
-          | Ast.Topo_spec_comp_instance ci -> (
-              match ci.ci_instance.data with
-              | Ast.Unqualified id -> Check_env.SSet.add id.data acc
-              | Ast.Qualified _ ->
-                  Check_env.SSet.add
-                    (Ast.qual_ident_to_string ci.ci_instance.data)
-                    acc)
-          | _ -> acc)
-        Check_env.SSet.empty orig_topo.topo_members
-    in
-    let non_rt = filter_non_runtime sorted in
-    non_rt <> []
-    && not
-         (List.exists
-            (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-              let targets =
-                target_instances inst_name comp connections sorted
-              in
-              targets = []
-              && (not (is_runtime_component comp))
-              && (not (Check_env.SSet.mem inst_name parent_declared))
-              && instance_bound_module inst_annots inst_name = None)
-            non_rt)
-
-(** Combined check: annotation-based OR structural heuristic. *)
-let is_flat orig_topo inst_annots sorted connections =
+(** A topology is flat when every non-runtime leaf instance has an explicit
+    [@ ocaml.module] binding. *)
+let is_flat _orig_topo inst_annots sorted connections =
   is_fully_bound inst_annots sorted connections
-  || is_fully_bound_structural orig_topo inst_annots sorted connections
 
 let topology_is_fully_bound tu (topo : Ast.def_topology) =
   let orig_topo = topo in
   let topo = flatten_topology tu topo in
-  let inst_annots = instance_annotations topo in
   let resolved = resolve_topology_instances tu topo in
   let connections = all_connections (collect_direct_connections topo) in
   let sorted = topo_sort_instances resolved connections in
+  let inst_annots = instance_annotations topo in
   is_flat orig_topo inst_annots sorted connections
 
 (** Return connect function names for a topology (one per connection group). *)
@@ -2108,8 +2157,7 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
     let has_let_star =
       List.exists
         (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-          target_instances inst_name comp connections sorted <> []
-          || instance_bound_module inst_annots inst_name <> None)
+          target_instances inst_name comp connections sorted <> [])
         non_rt
     in
     let type_env = collect_type_env tu in
@@ -2117,23 +2165,24 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
       topo.topo_name.data;
     if has_let_star then pf ppf "@,@,open Lwt.Syntax";
-    List.iter
-      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-        if
-          target_instances inst_name comp connections sorted = []
-          && instance_bound_module inst_annots inst_name = None
-          && (not (Hashtbl.mem seen comp.comp_name.data))
-          && has_nontrivial_module_type tu comp
-        then (
-          Hashtbl.add seen comp.comp_name.data ();
-          pp_port_module_type ppf tu ~type_env comp))
-      non_rt;
     if is_flat orig_topo inst_annots sorted connections then
       pp_topology_flat ppf tu topo sorted groups
-    else pp_topology_annotated ppf tu topo sorted groups;
+    else (
+      List.iter
+        (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+          if
+            target_instances inst_name comp connections sorted = []
+            && instance_bound_module inst_annots inst_name = None
+            && (not (Hashtbl.mem seen comp.comp_name.data))
+            && has_nontrivial_module_type tu comp
+          then (
+            Hashtbl.add seen comp.comp_name.data ();
+            pp_port_module_type ppf tu ~type_env comp))
+        non_rt;
+      pp_topology_annotated ppf tu topo sorted groups);
     pf ppf "@]@."
 
-(** Emit module types for leaf components in annotated topologies. The module
+(** Emit module types for leaf instances in annotated topologies. The module
     type is generated from the component's input ports. *)
 let is_unseen_leaf_comp tu seen inst_annots connections sorted inst_name
     (comp : Ast.def_component) =

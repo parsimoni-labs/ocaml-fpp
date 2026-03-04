@@ -601,7 +601,7 @@ Entry point generation (--topologies generates topology + entry point)
   $ cat > main_topo.fpp <<EOF
   > port P
   > port Dep
-  > @ ocaml.functor Srv.Make
+  > @ ocaml.module Srv.Make
   > active component Srv { output port kv: Dep }
   > active component Kv { sync input port get: P }
   > instance kv: Kv base id 0x100

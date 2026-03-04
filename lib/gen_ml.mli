@@ -15,10 +15,10 @@ val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology tu] is a pretty-printer for topology [topo] as an OCaml module.
     Generates component module type signatures for leaf components and a [Make]
     functor that wires connections via direct functor application. Follows the
-    device-centric MirageOS functor pattern: functor parameters are leaf
-    component module types (not per-port adapters). Non-leaf instances get
-    internal [module X = X.Make(Dep)] applications. Active components use
-    [Lwt.t] return types.
+    MirageOS functor pattern: components define module types (signatures),
+    instances become modules. Functor parameters are leaf module types (not
+    per-port adapters). Non-leaf instances get internal [module X = X.Make(Dep)]
+    applications. Active components use [Lwt.t] return types.
 
     Fully-bound topologies (all leaves bound via [@ ocaml.module]) produce
     top-level lazy bindings instead of a [Make] functor. Empty topologies

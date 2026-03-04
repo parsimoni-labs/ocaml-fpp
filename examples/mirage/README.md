@@ -1,7 +1,6 @@
 # MirageOS Example
 
-This example models the MirageOS device and unikernel composition layer
-in FPP.  The FPP topology graph drives functor application order and
+This example models the MirageOS module composition layer in FPP.  The FPP topology graph drives functor application order and
 `connect` call wiring — the same job `functoria` does today, but
 expressed as a typed connection graph instead of a combinator DSL.
 
@@ -9,11 +8,11 @@ expressed as a typed connection graph instead of a combinator DSL.
 
 FPP models MirageOS in two independent layers:
 
-### Layer 1: Device construction (current)
+### Layer 1: Module construction (current)
 
 What FPP models today:
 
-- **Dependency graph** — which devices plug into which constructors
+- **Dependency graph** — which modules plug into which functors
   (output ports → `sync input port connect`)
 - **Functor application** — `module Arp = Arp.Make(Ethernet)` from the
   connection graph
@@ -22,9 +21,9 @@ What FPP models today:
 
 What is **out of scope** at layer 1:
 
-- What functions a device exposes (`write`, `get`, `listen`, etc.)
+- What functions a module exposes (`write`, `get`, `listen`, etc.)
 - Module type signatures
-- How end-users call the device after construction
+- How end-users call the module after construction
 
 Every component declares `sync input port connect` as its universal
 connection target.  Output ports name constructor dependencies.  The
@@ -32,7 +31,7 @@ target port name is a validation gate — codegen ignores it and derives
 `connect` call arguments from the source-side output port declaration
 order.
 
-### Layer 2: Device interface (future, for interop)
+### Layer 2: Module interface (future, for interop)
 
 When C++ and OCaml MirageOS components share the same memory address
 space, FPP must be the source of truth for the interface contract —
@@ -72,9 +71,9 @@ Generated files (via `dune build`):
 
 ## Component correspondence
 
-Each FPP `component` maps to one MirageOS functor (or leaf module).
-Output ports declare functor dependencies; the connection graph
-determines application order.
+Each FPP component defines a module type; each instance becomes a module
+(via functor application or leaf alias). Output ports declare functor
+dependencies; the connection graph determines application order.
 
 | FPP component | OCaml module | Functor | Package |
 |---|---|---|---|
@@ -90,7 +89,7 @@ determines application order.
 | `Udp` | `Udp.Make` | `Make(IP)` | `tcpip.udp` |
 | `Tcp.Flow` | `Tcp.Flow.Make` | `Make(IP)` | `tcpip.tcp` |
 | `TcpipStack` | `Tcpip_stack_direct.MakeV4V6` | `MakeV4V6(Net,Eth,Arp,IP,Icmp,Udp,Tcp)` | `tcpip.stack-direct` |
-| `Server` | `Server.HTTPS` | `HTTPS(Data)(Certs)(Stack)` | *(user code)* |
+| `Dispatch` | `Server.Make_dispatch` | `Make_dispatch(Data)(Certs)(Stack)` | *(user code)* |
 | `Happy_eyeballs_mirage` | `Happy_eyeballs_mirage.Make` | `Make(Stack)` | `happy-eyeballs-mirage` |
 | `Dns_client_mirage` | `Dns_client_mirage.Make` | `Make(Stack)(HE)` | `dns-client-mirage` |
 | `Kv` | *(leaf parameter)* | — | `mirage-kv` |
@@ -102,13 +101,14 @@ determines application order.
 
 | FPP annotation | Effect | Example |
 |---|---|---|
-| `@ ocaml.functor X.Y` | Override default functor path | `@ ocaml.functor Tcpip_stack_direct.IPV4V6` on `Ip` |
-| `@ ocaml.module M` | Bind leaf to concrete module | `@ ocaml.module Mirage_kv_mem` on `instance data` |
+| `@ ocaml.module X.Y` | Override default module path | `@ ocaml.module Tcpip_stack_direct.IPV4V6` on `Ip` |
 | `@ ocaml.type T` | Map abstract FPP type to OCaml type | `@ ocaml.type Cstruct.t` on `type Buffer` |
 
-Default functor: `ComponentName.Make` (e.g. `Ethernet` → `Ethernet.Make`).
+Default module path: `ComponentName.Make` (e.g. `Ethernet` → `Ethernet.Make`).
 Only needs annotation when the OCaml path differs (e.g. `Ip` →
-`Tcpip_stack_direct.IPV4V6`).
+`Tcpip_stack_direct.IPV4V6`). The connection graph determines whether the
+path is used as a functor application (non-leaf instance with outgoing
+connections) or a module alias (leaf instance with no outgoing connections).
 
 ## Topology composition
 
@@ -139,8 +139,21 @@ the TCP/IP stack and KV stores into the server).
 | `StaticWebsite` | `backend`, `data`, `certs` (unbound) | Functor with 3 parameters |
 | `UnixWebsite` | all bound via `@ ocaml.module` | Flat (no functor parameters) |
 
-Fully-bound topologies generate a `let () = Lwt_main.run ...` entry
-point when passed to `ofpp to-ml --topologies`.
+Fully-bound topologies generate a `Mirage_runtime`-based entry point
+when passed to `ofpp to-ml --topologies`.
+
+### Functor semantics
+
+The generated code uses OCaml's default **applicative** functor semantics:
+`module X = F(A)` and `module Y = F(A)` share types (`X.t = Y.t`).
+This is correct for MirageOS — components that share the same TCP/IP
+stack should agree on types.
+
+For **runtime initialisation**, the flat-topology codegen uses lazy
+bindings: each `let x = lazy (...)` block forces its dependencies via
+`Lazy.force`. This mirrors generative behaviour at the value level —
+each `Lazy.force` creates a fresh runtime value — while keeping
+applicative type sharing at the module level.
 
 ## Generating code
 
@@ -159,8 +172,8 @@ ofpp to-ml --topologies UnixWebsite,UnixTestWebsite types.fpp devices.fpp stacks
 | Input format | OCaml combinator DSL (`config.ml`) | FPP connection graph |
 | Module naming | Mangled (`Tcpip_stack_socket_v4v6__13`) | Clean (`Socket_stack`) |
 | Async style | `Lwt.Infix` (`>>=`) | `Lwt.Syntax` (`let*`) |
-| Runtime args | Generated key registration | Not modelled (user code) |
-| Unikernel functor | Included in `main.ml` | Left to user |
+| Runtime args | `Mirage_runtime.register_arg` | User-code cmdliner args |
+| Application module | Included in `main.ml` | Left to user |
 | Socket stack | Models UDP/TCP sub-layers | Opaque module alias |
 | Boilerplate | ~90 lines per example | ~10-20 lines per example |
 

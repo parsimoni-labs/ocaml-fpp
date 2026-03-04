@@ -1,6 +1,6 @@
-@ MirageOS device catalogue.
+@ MirageOS module type and instance catalogue.
 @
-@ Components model device constructors. Output ports declare
+@ Components model module constructors (functors). Output ports declare
 @ dependencies; [sync input port connect] is the universal
 @ constructor-result port used as connection target.
 
@@ -11,7 +11,10 @@ passive component Backend { sync input port connect }
 passive component Udpv4v6_socket { sync input port connect }
 passive component Tcpv4v6_socket { sync input port connect }
 @ ocaml.sig Mirage_block.S
-passive component Block { sync input port connect }
+passive component Block {
+  param name: string default "disk"
+  sync input port connect
+}
 @ ocaml.sig Mirage_kv.RO
 passive component Kv { sync input port connect }
 
@@ -33,7 +36,7 @@ passive component Stackv4v6 {
   output port tcp
 }
 
-@ ── Network device ──────────────────────────────────────
+@ ── Network module ───────────────────────────────────────
 
 passive component Vnetif {
   sync input port connect
@@ -42,13 +45,13 @@ passive component Vnetif {
 
 @ ── Block-backed KV stores ──────────────────────────────
 
-@ ocaml.functor Tar_mirage.Make_KV_RO
+@ ocaml.module Tar_mirage.Make_KV_RO
 passive component Tar_kv_ro {
   sync input port connect
   output port block
 }
 
-@ ocaml.functor Fat.KV_RO
+@ ocaml.module Fat.KV_RO
 passive component Fat_kv_ro {
   sync input port connect
   output port block
@@ -78,7 +81,7 @@ passive component Ipv6 {
   output port eth
 }
 
-@ ocaml.functor Tcpip_stack_direct.IPV4V6
+@ ocaml.module Tcpip_stack_direct.IPV4V6
 passive component Ip {
   sync input port connect
   output port ipv4
@@ -102,7 +105,7 @@ module Tcp {
   }
 }
 
-@ ocaml.functor Tcpip_stack_direct.MakeV4V6
+@ ocaml.module Tcpip_stack_direct.MakeV4V6
 passive component DirectStackv4v6 {
   sync input port connect
   output port netif
@@ -119,13 +122,13 @@ passive component DirectStackv4v6 {
 @ Each layer wraps the previous one. In the generated code,
 @ the connect functions are pass-throughs ([Lwt.return x]).
 
-@ ocaml.functor Conduit_mirage.TCP
+@ ocaml.module Conduit_mirage.TCP
 passive component ConduitTcp {
   sync input port connect
   output port stack
 }
 
-@ ocaml.functor Conduit_mirage.TLS
+@ ocaml.module Conduit_mirage.TLS
 passive component ConduitTls {
   sync input port connect
   output port conduit
@@ -133,7 +136,7 @@ passive component ConduitTls {
 
 module Cohttp_mirage {
   module Server {
-    @ ocaml.functor Cohttp_mirage.Server.Make
+    @ ocaml.module Cohttp_mirage.Server.Make
     passive component Make {
       sync input port connect
       output port conduit
@@ -147,7 +150,7 @@ module Cohttp_mirage {
 @ [Server.Make_dispatch] wraps [Server.HTTPS] with the
 @ conduit / TLS / CoHTTP chain built from the stack.
 
-@ ocaml.functor Server.Make_dispatch
+@ ocaml.module Server.Make_dispatch
 passive component Dispatch {
   sync input port connect
   output port data

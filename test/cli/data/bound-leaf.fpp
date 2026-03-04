@@ -1,5 +1,5 @@
 port P
-@ ocaml.functor Srv.Make
+@ ocaml.module Srv.Make
 active component Srv {
   output port kv: P
 }
