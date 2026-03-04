@@ -86,8 +86,8 @@ DirectNetwork imports TcpipStack and generates 11 functor applications
   module Stack_app = Unikernel.Main(Stack)
 
 DirectNetwork uses params (not Runtime kwargs) for ipv4 and ip config
-  $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(cidr|gateway|ipv4_only|ipv6_only)' | head -2
-    Ipv4.connect ~cidr:(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24") ?gateway:None ethernet arp)
+  $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(cidr|ipv4_only|ipv6_only)' | head -2
+    Ipv4.connect ~cidr:(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24") ethernet arp)
     Ip.connect ~ipv4_only:false ~ipv6_only:false ipv4 ipv6)
 
 DirectNetwork has no runtime thunk calls (no tcpip_runtime references)

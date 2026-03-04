@@ -1605,9 +1605,9 @@ let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
             if positional then pf ppf " %s" code
             else pf ppf " %s%s:%s" prefix param_name code
         | None ->
-            if positional then pf ppf " (%s__%s ())" inst_var param_name
-            else
-              pf ppf " %s%s:(%s__%s ())" prefix param_name inst_var param_name)
+            if optional then () (* omit unresolved optional params *)
+            else if positional then pf ppf " (%s__%s ())" inst_var param_name
+            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
       params;
     List.iter
       (fun (p : Ast.port_instance_general) ->
@@ -1645,9 +1645,11 @@ let pp_param_cmdliner_terms ppf inst_annots sorted =
         let params = component_params comp in
         let inst_var = sanitize_ident inst_name in
         List.iteri
-          (fun i ((p : Ast.spec_param), _positional, _optional) ->
-            if resolve_param_value inst_annots inst_name ci i p = None then
-              pp_one_cmdliner_term ppf ~inst_var p)
+          (fun i ((p : Ast.spec_param), _positional, optional) ->
+            if
+              resolve_param_value inst_annots inst_name ci i p = None
+              && not optional
+            then pp_one_cmdliner_term ppf ~inst_var p)
           params)
     sorted
 
