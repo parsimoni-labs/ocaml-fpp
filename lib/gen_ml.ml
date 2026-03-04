@@ -1689,7 +1689,7 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
                 pf ppf "module %s = %s" mod_name concrete_mod
             | _ -> ()
           else
-            let path = resolve_functor_path tu inst_annots inst_name ca in
+            let path = resolve_functor_path inst_annots inst_name ca in
             module_break ();
             pf ppf "module %s = %s" mod_name path;
             List.iter
