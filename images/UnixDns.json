@@ -1,0 +1,48 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "dns_client_app",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "dns", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "dns_client",
+                   "inputPorts": [{"name": "start", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]},
+                                    {
+                                      "name": "happy_eyeballs",
+                                      "portNumbers": [0]
+                                    }]
+                 }],
+               [
+                 {
+                   "instanceName": "happy_eyeballs_mirage",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "stackv4v6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0, 1]}],
+                   "outputPorts": [{"name": "udp", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "udpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "tcpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[2, 0, 0, 0], [3, 0, 0, 0]], [[3, 0, 0, 0], [4, 0, 0, 0]],
+                   [[3, 0, 1, 0], [4, 1, 0, 0]],
+                   [[1, 0, 0, 0], [3, 0, 0, 1]],
+                   [[1, 0, 1, 0], [2, 0, 0, 0]], [[0, 0, 0, 0], [1, 0, 0, 0]]
+                 ]
+}

@@ -1,0 +1,16 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "net_app",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "netif",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]]]
+}

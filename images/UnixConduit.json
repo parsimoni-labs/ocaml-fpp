@@ -1,0 +1,36 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "conduit_app",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "conduit", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "conduit_tcp",
+                   "inputPorts": [{"name": "start", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "stackv4v6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "udp", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "udpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "tcpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[2, 0, 0, 0], [3, 0, 0, 0]], [[2, 0, 1, 0], [3, 1, 0, 0]],
+                   [[1, 0, 0, 0], [2, 0, 0, 0]], [[0, 0, 0, 0], [1, 0, 0, 0]]
+                 ]
+}

@@ -1,0 +1,205 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "runtime",
+                   "inputPorts": [],
+                   "outputPorts": [
+                                    {
+                                      "name": "nameservers",
+                                      "portNumbers": [0]
+                                    },
+                                    {"name": "timeout", "portNumbers": [0]},
+                                    {
+                                      "name": "cache_size",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "aaaa_timeout",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "connect_delay",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "connect_timeout",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "resolve_timeout",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "resolve_retries",
+                                      "portNumbers": [0]
+                                    },
+                                    {
+                                      "name": "timer_interval",
+                                      "portNumbers": [0]
+                                    }]
+                 },
+                 {
+                   "instanceName": "dispatch",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "data", "portNumbers": [0]},
+                                    {"name": "certs", "portNumbers": [0]},
+                                    {"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "dns_client",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [
+                                    {
+                                      "name": "happy_eyeballs",
+                                      "portNumbers": [0]
+                                    }, {"name": "stack", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "data",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "certs",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }],
+               [
+                 {
+                   "instanceName": "happy_eyeballs",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3, 4, 5, 6]
+                                   }],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "stack",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [{"name": "netif", "portNumbers": [0]},
+                                    {"name": "ethernet", "portNumbers": [0]},
+                                    {"name": "arpv4", "portNumbers": [0]},
+                                    {"name": "ipv4v6", "portNumbers": [0]},
+                                    {"name": "icmpv4", "portNumbers": [0]},
+                                    {"name": "udpv4v6", "portNumbers": [0]},
+                                    {"name": "tcpv4v6", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "icmp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "udp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "tcp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ip",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [{"name": "ipv4", "portNumbers": [0]},
+                                    {"name": "ipv6", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ipv4",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0, 1]}],
+                   "outputPorts": [{"name": "eth", "portNumbers": [0]},
+                                    {"name": "arp", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "ipv6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]},
+                                    {"name": "eth", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "arp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0, 1]}],
+                   "outputPorts": [{"name": "eth", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "eth",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3]
+                                   }],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "net",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [{"name": "backend", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "backend",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[9, 0, 0, 0], [10, 0, 0, 0]],
+                   [[8, 0, 0, 0], [9, 0, 0, 0]],
+                   [[7, 0, 0, 0], [8, 0, 0, 0]],
+                   [[6, 0, 0, 0], [8, 0, 0, 1]],
+                   [[6, 0, 1, 0], [7, 0, 0, 0]],
+                   [[6, 1, 0, 0], [9, 0, 0, 1]],
+                   [[6, 1, 1, 0], [8, 0, 0, 2]],
+                   [[5, 0, 0, 0], [6, 0, 0, 0]],
+                   [[5, 0, 1, 0], [6, 1, 0, 0]],
+                   [[4, 0, 0, 0], [6, 0, 0, 1]],
+                   [[4, 1, 0, 0], [5, 0, 0, 0]],
+                   [[4, 2, 0, 0], [5, 0, 0, 1]],
+                   [[3, 0, 0, 0], [9, 0, 0, 2]],
+                   [[3, 0, 1, 0], [8, 0, 0, 3]],
+                   [[3, 0, 2, 0], [7, 0, 0, 1]],
+                   [[3, 0, 3, 0], [5, 0, 0, 2]],
+                   [[3, 0, 4, 0], [4, 0, 0, 0]],
+                   [[3, 0, 5, 0], [4, 1, 0, 0]],
+                   [[3, 0, 6, 0], [4, 2, 0, 0]],
+                   [[1, 0, 0, 0], [2, 0, 0, 0]],
+                   [[0, 0, 0, 0], [1, 0, 0, 0]],
+                   [[0, 0, 1, 0], [1, 0, 0, 1]],
+                   [[0, 0, 2, 0], [1, 0, 0, 2]],
+                   [[1, 0, 1, 0], [3, 0, 0, 0]],
+                   [[0, 0, 3, 0], [2, 0, 0, 1]],
+                   [[0, 0, 4, 0], [2, 0, 0, 2]],
+                   [[0, 0, 5, 0], [2, 0, 0, 3]],
+                   [[0, 0, 6, 0], [2, 0, 0, 4]],
+                   [[0, 0, 7, 0], [2, 0, 0, 5]],
+                   [[0, 0, 8, 0], [2, 0, 0, 6]],
+                   [[2, 0, 0, 0], [3, 0, 0, 1]],
+                   [[0, 1, 0, 0], [1, 1, 0, 0]],
+                   [[0, 1, 1, 0], [1, 2, 0, 0]], [[0, 1, 2, 0], [3, 0, 0, 2]]
+                 ]
+}

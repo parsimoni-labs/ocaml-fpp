@@ -1,0 +1,20 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "dns_client",
+                   "inputPorts": [],
+                   "outputPorts": [
+                                    {
+                                      "name": "happy_eyeballs",
+                                      "portNumbers": [0]
+                                    }]
+                 }],
+               [
+                 {
+                   "instanceName": "happy_eyeballs_mirage",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]]]
+}

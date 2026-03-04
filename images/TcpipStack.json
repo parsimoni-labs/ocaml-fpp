@@ -1,0 +1,122 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "tcpip_runtime",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "cidr", "portNumbers": [0]},
+                                    {"name": "gateway", "portNumbers": [0]},
+                                    {"name": "ipv4_only", "portNumbers": [0]},
+                                    {"name": "ipv6_only", "portNumbers": [0]}
+                                  ]
+                 },
+                 {
+                   "instanceName": "stack",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "netif", "portNumbers": [0]},
+                                    {"name": "ethernet", "portNumbers": [0]},
+                                    {"name": "arpv4", "portNumbers": [0]},
+                                    {"name": "ipv4v6", "portNumbers": [0]},
+                                    {"name": "icmpv4", "portNumbers": [0]},
+                                    {"name": "udpv4v6", "portNumbers": [0]},
+                                    {"name": "tcpv4v6", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "icmp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "udp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "tcp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "ip", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ip",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3, 4]
+                                   }],
+                   "outputPorts": [{"name": "ipv4", "portNumbers": [0]},
+                                    {"name": "ipv6", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ipv4",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3]
+                                   }],
+                   "outputPorts": [{"name": "eth", "portNumbers": [0]},
+                                    {"name": "arp", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "ipv6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]},
+                                    {"name": "eth", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "arp",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0, 1]}],
+                   "outputPorts": [{"name": "eth", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ethernet",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3]
+                                   }],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "net",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [{"name": "backend", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "backend",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[0, 0, 0, 0], [3, 0, 0, 0]], [[0, 0, 1, 0], [3, 0, 0, 1]],
+                   [[0, 0, 2, 0], [2, 0, 0, 0]],
+                   [[0, 0, 3, 0], [2, 0, 0, 1]],
+                   [[6, 0, 0, 0], [7, 0, 0, 0]],
+                   [[5, 0, 0, 0], [6, 0, 0, 0]],
+                   [[4, 0, 0, 0], [5, 0, 0, 0]],
+                   [[3, 0, 0, 0], [5, 0, 0, 1]],
+                   [[3, 0, 1, 0], [4, 0, 0, 0]],
+                   [[3, 1, 0, 0], [6, 0, 0, 1]],
+                   [[3, 1, 1, 0], [5, 0, 0, 2]],
+                   [[2, 0, 0, 0], [3, 0, 0, 2]],
+                   [[2, 0, 1, 0], [3, 1, 0, 0]],
+                   [[1, 0, 0, 0], [3, 0, 0, 3]],
+                   [[1, 1, 0, 0], [2, 0, 0, 2]],
+                   [[1, 2, 0, 0], [2, 0, 0, 3]],
+                   [[0, 1, 0, 0], [6, 0, 0, 2]],
+                   [[0, 1, 1, 0], [5, 0, 0, 3]],
+                   [[0, 1, 2, 0], [4, 0, 0, 1]],
+                   [[0, 1, 3, 0], [2, 0, 0, 4]],
+                   [[0, 1, 4, 0], [1, 0, 0, 0]],
+                   [[0, 1, 5, 0], [1, 1, 0, 0]], [[0, 1, 6, 0], [1, 2, 0, 0]]
+                 ]
+}

@@ -1,0 +1,29 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "stack_app",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "stackv4v6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "udp", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "udpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "tcpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[1, 0, 0, 0], [2, 0, 0, 0]], [[1, 0, 1, 0], [2, 1, 0, 0]],
+                   [[0, 0, 0, 0], [1, 0, 0, 0]]]
+}
