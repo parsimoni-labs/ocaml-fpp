@@ -54,7 +54,6 @@ passive component Netif {
 
 @ ── Socket stack ────────────────────────────────────────
 
-@ ocaml.nofunctor
 passive component Stackv4v6 {
   sync input port connect
   output port udp

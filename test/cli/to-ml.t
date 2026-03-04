@@ -187,10 +187,10 @@ Simple topology (2 components, 1 connection)
   
   module Sensor = Sensor.Make(Logger)
   
-  let data () =
+  let data = lazy (
     let open Lwt.Syntax in
     let* logger = Logger.data_in () in
-    Sensor.connect logger
+    Sensor.connect logger)
 
 
 
@@ -229,10 +229,10 @@ Typed port topology
   
   module Producer = Producer.Make(Consumer)
   
-  let main () =
+  let main = lazy (
     let open Lwt.Syntax in
     let* consumer = Consumer.in_ () in
-    Producer.connect consumer
+    Producer.connect consumer)
 
 
 
@@ -270,10 +270,10 @@ Filter by topology name
   
   module A = A.Make(B)
   
-  let c () =
+  let c = lazy (
     let open Lwt.Syntax in
     let* b = B.in_ () in
-    A.connect b
+    A.connect b)
   let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
   let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
   let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
@@ -290,7 +290,7 @@ Filter by topology name
       Logs.set_reporter reporter;
       let* _ = Mirage_crypto_rng_mirage.initialize (module Mirage_crypto_rng.Fortuna) in
       Mirage_runtime.set_name "T2";
-      let* _ = c () in
+      let* _ = Lazy.force c in
       Lwt.return ()
     in
     Unix_os.Main.run t; exit 0
@@ -353,10 +353,10 @@ SM + topology merged in one file (wrapped in named modules)
   
   module Sensor = Sensor.Make(Logger)
   
-  let data () =
+  let data = lazy (
     let open Lwt.Syntax in
     let* logger = Logger.data_in () in
-    Sensor.connect logger
+    Sensor.connect logger)
   end
 
 
@@ -447,11 +447,11 @@ Annotated topology (functor-application mode)
   module Eth = Eth.Make(Net)
   module Ipv4 = Ipv4.Make(Eth)
   
-  let w () =
+  let w = lazy (
     let open Lwt.Syntax in
     let* net = Net.write () in
     let* eth = Eth.write net in
-    Ipv4.cidr eth
+    Ipv4.cidr eth)
 
 
 
@@ -463,10 +463,10 @@ Bound leaf instance (@ ocaml.module)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let w () =
+  let w = lazy (
     let open Lwt.Syntax in
     let* kv = Kv.get () in
-    Srv.connect kv
+    Srv.connect kv)
 
 
 
@@ -504,10 +504,10 @@ External types in port declarations
   
   module Eth = Eth.Make(Net)
   
-  let c () =
+  let c = lazy (
     let open Lwt.Syntax in
     let* net = Net.write ~mac in
-    Eth.connect net
+    Eth.connect net)
 
 
 
@@ -534,10 +534,10 @@ Entry point generation (--topologies generates topology + entry point)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let w () =
+  let w = lazy (
     let open Lwt.Syntax in
     let* kv = Kv.get () in
-    Srv.connect kv
+    Srv.connect kv)
   let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
   let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
   let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
@@ -554,7 +554,7 @@ Entry point generation (--topologies generates topology + entry point)
       Logs.set_reporter reporter;
       let* _ = Mirage_crypto_rng_mirage.initialize (module Mirage_crypto_rng.Fortuna) in
       Mirage_runtime.set_name "T";
-      let* _ = w () in
+      let* _ = Lazy.force w in
       Lwt.return ()
     in
     Unix_os.Main.run t; exit 0

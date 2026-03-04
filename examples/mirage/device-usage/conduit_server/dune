@@ -1,3 +1,9 @@
+(copy_files
+ (files ../../adapters/stackv4v6.ml))
+
+(copy_files
+ (files ../../adapters/conduit_tcp.ml))
+
 (rule
  (target main.ml)
  (deps
@@ -12,7 +18,7 @@
 
 (executable
  (name main)
- (modules main unikernel conduit_tcp)
+ (modules main unikernel conduit_tcp stackv4v6)
  (libraries
   lwt
   lwt.unix

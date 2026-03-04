@@ -1,3 +1,9 @@
+(copy_files
+ (files ../../adapters/stackv4v6.ml))
+
+(copy_files
+ (files ../../adapters/dns_client.ml))
+
 (rule
  (target main.ml)
  (deps
@@ -12,7 +18,7 @@
 
 (executable
  (name main)
- (modules main unikernel dns_client)
+ (modules main unikernel dns_client stackv4v6)
  (libraries
   lwt
   lwt.unix

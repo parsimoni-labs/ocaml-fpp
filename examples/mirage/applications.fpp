@@ -59,7 +59,7 @@ passive component ConduitApp {
 
 @ ── Application instances ─────────────────────────────────
 
-instance app: StandaloneApp base id 0x5000
+instance unikernel: StandaloneApp base id 0x5000
 instance block_app: BlockApp base id 0x5100
 instance kv_app: KvRoApp base id 0x5200
 instance stack_app: StackApp base id 0x5300
@@ -78,48 +78,39 @@ instance netif: Netif base id 0x6300
 @ ── Standalone topologies ─────────────────────────────────
 
 topology UnixHello {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixHelloKey {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixClock {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixCrypto {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixHeads1 {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixHeads2 {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixTimeout1 {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixTimeout2 {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 topology UnixEchoServer {
-  @ ocaml.module Unikernel
-  instance app
+  instance unikernel
 }
 
 @ ── Block topologies ──────────────────────────────────────
@@ -163,7 +154,6 @@ topology UnixKvRo {
 
 topology UnixNetwork {
   import SocketStack
-  @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   @ ocaml.module Unikernel.Main
   instance stack_app
@@ -175,7 +165,6 @@ topology UnixNetwork {
 
 topology UnixConduit {
   import SocketStack
-  @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   instance conduit_tcp
   @ ocaml.module Unikernel.Main
@@ -191,7 +180,6 @@ topology UnixConduit {
 
 topology UnixDns {
   import SocketStack
-  @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   instance happy_eyeballs_mirage
   instance dns_client

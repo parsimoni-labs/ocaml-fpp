@@ -2,15 +2,14 @@ MirageOS examples: generate main.ml from FPP topologies.
 
   $ F="../../examples/mirage"
 
-Standalone app generates Unikernel module alias and start entry point
-  $ ofpp to-ml --topologies UnixHello $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(module App|App.start)'
-  module App = Unikernel
-  let start () = App.start ()
+Standalone app generates start entry point (no module alias needed)
+  $ ofpp to-ml --topologies UnixHello $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E 'Unikernel.start'
+  let start = lazy (Unikernel.start ())
 
-All standalone topologies generate module alias and start call
+All standalone topologies generate start call
   $ for t in UnixHello UnixHelloKey UnixClock UnixCrypto UnixHeads1 UnixHeads2 UnixTimeout1 UnixTimeout2 UnixEchoServer; do
   >   out=$(ofpp to-ml --topologies "$t" $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null)
-  >   echo "$out" | grep -q 'App.start' && echo "$t: OK" || echo "$t: FAIL"
+  >   echo "$out" | grep -q 'Unikernel.start' && echo "$t: OK" || echo "$t: FAIL"
   > done
   UnixHello: OK
   UnixHelloKey: OK
@@ -37,17 +36,17 @@ KV topology wires static store via functor
 
 Socket stack topologies use params for connect args
   $ ofpp to-ml --topologies UnixNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(Stackv4v6|Udpv4v6|Tcpv4v6)' | head -5
-  module Stackv4v6 = Tcpip_stack_socket.V4V6
+  module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
   module Stack_app = Unikernel.Main(Stackv4v6)
     let* udpv4v6_socket = Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
     let* tcpv4v6_socket = Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
-    Stackv4v6.connect udpv4v6_socket tcpv4v6_socket
+    Stackv4v6.connect udpv4v6_socket tcpv4v6_socket)
 
 Dhcp topology uses Netif with positional device param
   $ ofpp to-ml --topologies UnixDhcp $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(Netif|Net_app)'
   module Net_app = Unikernel.Main(Netif)
     let* netif = Netif.connect (netif__device ()) in
-    Net_app.start netif
+    Net_app.start netif)
 
 Ping6 topology wires Ethernet and IPv6 functors
   $ ofpp to-ml --topologies UnixPing6 $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E 'module (Eth|Ipv6|Ping6)'
@@ -60,7 +59,7 @@ Conduit topology uses adapter with start method
   module Conduit_tcp = Conduit_tcp.Make(Stackv4v6)
   module Conduit_app = Unikernel.Main(Conduit_tcp)
     let* conduit_tcp = Conduit_tcp.start stackv4v6 in
-    Conduit_app.start conduit_tcp
+    Conduit_app.start conduit_tcp)
 
 DNS topology uses adapter with start method for tuple unpacking
   $ ofpp to-ml --topologies UnixDns $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(Dns_client|Happy_eyeballs|Dns_client_app)'
@@ -69,7 +68,7 @@ DNS topology uses adapter with start method for tuple unpacking
   module Dns_client_app = Unikernel.Make(Dns_client)
     let* happy_eyeballs_mirage = Happy_eyeballs_mirage.connect_device stackv4v6 in
     let* dns_client = Dns_client.start stackv4v6 happy_eyeballs_mirage in
-    Dns_client_app.start dns_client
+    Dns_client_app.start dns_client)
 
 DirectNetwork imports TcpipStack and generates 11 functor applications
   $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '^module '

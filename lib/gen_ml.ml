@@ -898,11 +898,7 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = {
-  module_path : string option;
-  sig_path : string option;
-  nofunctor : bool;
-}
+type ocaml_annots = { module_path : string option; sig_path : string option }
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -918,10 +914,8 @@ let parse_ocaml_annotations annots =
       else if starts_with ~prefix:"ocaml.sig " s then
         let v = String.trim (String.sub s 10 (String.length s - 10)) in
         { acc with sig_path = Some v }
-      else if String.trim s = "ocaml.nofunctor" then
-        { acc with nofunctor = true }
       else acc)
-    { module_path = None; sig_path = None; nofunctor = false }
+    { module_path = None; sig_path = None }
     annots
 
 (** Extract pre-annotations for a component definition from tu_members. For
@@ -1731,9 +1725,10 @@ let pp_instance_expr ppf inst_name (ci : Ast.def_component_instance)
     targets;
   if not !has_any_arg then pf ppf " ()"
 
-(** Emit a group function. [prev_group] is the name and exports of the previous
-    group (if any). [exports] lists instance names this group must return for
-    later groups. *)
+(** Emit a lazy group binding. [prev_group] is the name and exports of the
+    previous group (if any). [exports] lists instance names this group must
+    return for later groups. Each group is a [lazy] value that memoises its
+    result, so forcing it multiple times is safe. *)
 let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     inst_annots exports =
   let n = List.length insts in
@@ -1753,11 +1748,12 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     (* Single instance, no cross-deps: one-liner *)
     match insts with
     | [ (inst_name, ci, comp) ] ->
-        pf ppf "@,@,let %s () = " group_name;
-        pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots
+        pf ppf "@,@,let %s = lazy (" group_name;
+        pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots;
+        pf ppf ")"
     | _ -> ()
   else (
-    pf ppf "@,@,let %s () =" group_name;
+    pf ppf "@,@,let %s = lazy (" group_name;
     pf ppf "@,  let open Lwt.Syntax in";
     (* Cross-group deps from previous group *)
     (match prev_group with
@@ -1765,10 +1761,11 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     | Some (prev_name, prev_exports) -> (
         match prev_exports with
         | [ name ] ->
-            pf ppf "@,  let* %s = %s () in" (sanitize_ident name) prev_name
+            pf ppf "@,  let* %s = Lazy.force %s in" (sanitize_ident name)
+              prev_name
         | _ ->
             let names = List.map sanitize_ident prev_exports in
-            pf ppf "@,  let* (%s) = %s () in" (String.concat ", " names)
+            pf ppf "@,  let* (%s) = Lazy.force %s in" (String.concat ", " names)
               prev_name));
     (* let* chain for each instance *)
     List.iteri
@@ -1785,7 +1782,8 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     (* Tuple return for multi-export *)
     if need_tuple_return then
       pf ppf "@,  Lwt.return (%s)"
-        (String.concat ", " (List.map sanitize_ident exports)))
+        (String.concat ", " (List.map sanitize_ident exports));
+    pf ppf ")")
 
 (** Emit a single Cmdliner term registration for one unresolved param. *)
 let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
@@ -1859,20 +1857,13 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
             parse_ocaml_annotations
               (component_annots tu ci.Ast.inst_component.data)
           in
-          if ca.nofunctor then
-            match instance_bound_module inst_annots inst_name with
-            | Some concrete_mod when mod_name <> concrete_mod ->
-                module_break ();
-                pf ppf "module %s = %s" mod_name concrete_mod
-            | _ -> ()
-          else
-            let path = resolve_functor_path inst_annots inst_name ca in
-            module_break ();
-            pf ppf "module %s = %s" mod_name path;
-            List.iter
-              (fun (target_inst, _) ->
-                pf ppf "(%s)" (constructor_name target_inst))
-              targets))
+          let path = resolve_functor_path inst_annots inst_name ca in
+          module_break ();
+          pf ppf "module %s = %s" mod_name path;
+          List.iter
+            (fun (target_inst, _) ->
+              pf ppf "(%s)" (constructor_name target_inst))
+            targets))
     sorted
 
 (** Pretty-print topology body. Module aliases and functor applications are at
@@ -1944,7 +1935,7 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
     pf ppf "@]@.")
 
 (** Emit a [let () = Lwt_main.run (...)] entry point. Each element is
-    [(topo_module_name, func_name)] where [func_name] is a group function name.
+    [(topo_module_name, func_name)] where [func_name] is a lazy group binding.
     Uses [@.] (print_newline) instead of [@,] because this is called outside any
     formatting box. *)
 let pp_main_entry_multi ppf topos =
@@ -1952,7 +1943,8 @@ let pp_main_entry_multi ppf topos =
   match topos with
   | [] -> ()
   | [ (_, func_name) ] ->
-      pf ppf "let () =@.  Lwt_main.run (%s () |> Lwt.map ignore)@." func_name
+      pf ppf "let () =@.  Lwt_main.run (Lazy.force %s |> Lwt.map ignore)@."
+        func_name
   | _ ->
       pf ppf "let () =@.  Lwt_main.run begin@.";
       pf ppf "    let open Lwt.Syntax in@.";
@@ -1960,7 +1952,7 @@ let pp_main_entry_multi ppf topos =
         (fun (topo_name, func_name) ->
           let var = camel_to_snake topo_name in
           let prefix = if wrap then topo_name ^ "." else "" in
-          pf ppf "    let* _%s = %s%s () in@." var prefix func_name)
+          pf ppf "    let* _%s = Lazy.force %s%s in@." var prefix func_name)
         topos;
       pf ppf "    Lwt.return ()@.";
       pf ppf "  end@."
@@ -2013,7 +2005,7 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
                   (List.map (fun n -> constructor_name n ^ ".t") group_exports)
               ^ ") Lwt.t"
         in
-        pf ppf "@,val %s : unit -> %s" gname ret_type)
+        pf ppf "@,val %s : %s Lazy.t" gname ret_type)
       partitioned exports;
     pf ppf "@]@."
   end
@@ -2069,7 +2061,7 @@ let pp_entry_point ppf ~topo_name names =
          Mirage_crypto_rng.Fortuna) in@.";
       pf ppf "    Mirage_runtime.set_name %S;@." topo_name;
       let last_func = fst (List.nth names (List.length names - 1)) in
-      pf ppf "    let* _ = %s () in@." last_func;
+      pf ppf "    let* _ = Lazy.force %s in@." last_func;
       pf ppf "    Lwt.return ()@.";
       pf ppf "  in@.";
       pf ppf "  Unix_os.Main.run t; exit 0@."
