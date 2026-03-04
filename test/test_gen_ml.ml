@@ -894,7 +894,7 @@ let foo = lazy (
   Foo.c bar)|}
 
 let test_module_nested_default_functor () =
-  check_output ~msg:"Module.Component -> Module.Component.Make convention"
+  check_output ~msg:"Instance name -> Instance_name.Make convention"
     (render_topo
        {|
     port P
@@ -916,7 +916,7 @@ let test_module_nested_default_functor () =
 
 open Lwt.Syntax
 
-module Tcp = Tcp.Flow.Make(Net)
+module Tcp = Tcp.Make(Net)
 
 let net = lazy (Net.write ())
 

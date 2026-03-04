@@ -147,9 +147,8 @@ passive component DirectStackv4v6 {
 @ Each layer wraps the previous one. In the generated code,
 @ the connect functions are pass-throughs ([Lwt.return x]).
 
-@ ocaml.module Conduit_mirage.TCP
 passive component ConduitTcp {
-  sync input port connect
+  sync input port start
   output port stack
 }
 
@@ -191,7 +190,7 @@ passive component Happy_eyeballs_mirage {
 }
 
 passive component Dns_client_mirage {
-  sync input port connect
+  sync input port start
   output port stack
   output port happy_eyeballs
 }
@@ -206,7 +205,7 @@ instance tcpv4v6_socket: Tcpv4v6_socket base id 0xD10
 instance stackv4v6: Stackv4v6 base id 0xD20
 
 @ Protocol stack
-instance eth: Ethernet base id 0x200
+instance ethernet: Ethernet base id 0x200
 instance arp: Arp base id 0x300
 instance ipv4: Static_ipv4 base id 0x400
 instance ipv6: Ipv6 base id 0x450
@@ -234,5 +233,5 @@ instance fat_certs: Fat_kv_ro base id 0x860
 instance dispatch: Dispatch base id 0xA30
 
 @ DNS
-instance happy_eyeballs: Happy_eyeballs_mirage base id 0xE00
+instance happy_eyeballs_mirage: Happy_eyeballs_mirage base id 0xE00
 instance dns_client: Dns_client_mirage base id 0xE10

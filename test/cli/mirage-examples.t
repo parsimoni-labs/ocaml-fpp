@@ -51,9 +51,25 @@ Dhcp topology uses Netif with positional device param
 
 Ping6 topology wires Ethernet and IPv6 functors
   $ ofpp to-ml --topologies UnixPing6 $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E 'module (Eth|Ipv6|Ping6)'
-  module Eth = Ethernet.Make(Netif)
-  module Ipv6 = Ipv6.Make(Netif)(Eth)
-  module Ping6_app = Unikernel.Main(Netif)(Eth)(Ipv6)
+  module Ethernet = Ethernet.Make(Netif)
+  module Ipv6 = Ipv6.Make(Netif)(Ethernet)
+  module Ping6_app = Unikernel.Main(Netif)(Ethernet)(Ipv6)
+
+Conduit topology uses adapter with start method
+  $ ofpp to-ml --topologies UnixConduit $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(Conduit_tcp|Conduit_app)'
+  module Conduit_tcp = Conduit_tcp.Make(Stackv4v6)
+  module Conduit_app = Unikernel.Main(Conduit_tcp)
+    Conduit_tcp.start stackv4v6)
+    Conduit_app.start conduit_tcp)
+
+DNS topology uses adapter with start method for tuple unpacking
+  $ ofpp to-ml --topologies UnixDns $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(Dns_client|Happy_eyeballs|Dns_client_app)'
+  module Happy_eyeballs_mirage = Happy_eyeballs_mirage.Make(Stackv4v6)
+  module Dns_client = Dns_client.Make(Stackv4v6)(Happy_eyeballs_mirage)
+  module Dns_client_app = Unikernel.Make(Dns_client)
+    Happy_eyeballs_mirage.connect_device stackv4v6)
+    Dns_client.start stackv4v6 happy_eyeballs_mirage)
+    Dns_client_app.start dns_client)
 
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -c 'Mirage_runtime'

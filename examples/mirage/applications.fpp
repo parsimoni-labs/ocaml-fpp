@@ -126,7 +126,6 @@ topology UnixEchoServer {
 
 topology UnixBlock {
   @ ocaml.param name "block-test"
-  @ ocaml.module Ramdisk
   instance ramdisk
   @ ocaml.module Unikernel.Main
   instance block_app
@@ -138,7 +137,6 @@ topology UnixBlock {
 
 topology UnixDiskLottery {
   @ ocaml.param name "lottery-disk"
-  @ ocaml.module Ramdisk
   instance ramdisk
   @ ocaml.module Unikernel.Main
   instance block_app
@@ -168,13 +166,11 @@ topology UnixNetwork {
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.param ipv4_only false
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
@@ -196,13 +192,11 @@ topology UnixConduit {
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.param ipv4_only false
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
@@ -213,11 +207,11 @@ topology UnixConduit {
   connections Connect {
     stackv4v6.udp -> udpv4v6_socket.connect
     stackv4v6.tcp -> tcpv4v6_socket.connect
-    conduit_tcp.stack -> stackv4v6.connect
   }
 
   connections Start {
-    conduit_app.conduit -> conduit_tcp.connect
+    conduit_tcp.stack -> stackv4v6.connect
+    conduit_app.conduit -> conduit_tcp.start
   }
 }
 
@@ -228,32 +222,32 @@ topology UnixDns {
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
   @ ocaml.param ipv4_only false
   @ ocaml.param ipv6_only false
   @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
   @ ocaml.param ipv6_cidr None
-  @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
-  import DnsStack
+  instance happy_eyeballs_mirage
+  instance dns_client
   @ ocaml.module Unikernel.Make
   instance dns_client_app
 
   connections Connect_device {
-    happy_eyeballs.stack -> stackv4v6.connect
+    happy_eyeballs_mirage.stack -> stackv4v6.connect
   }
 
   connections Connect {
     stackv4v6.udp -> udpv4v6_socket.connect
     stackv4v6.tcp -> tcpv4v6_socket.connect
-    dns_client.stack -> stackv4v6.connect
   }
 
   connections Start {
-    dns_client_app.dns -> dns_client.connect
+    dns_client.stack -> stackv4v6.connect
+    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect
+    dns_client_app.dns -> dns_client.start
   }
 }
 
@@ -271,20 +265,20 @@ topology UnixDhcp {
 
 topology UnixPing6 {
   instance netif
-  instance eth
+  instance ethernet
   instance ipv6
   @ ocaml.module Unikernel.Main
   instance ping6_app
 
   connections Connect {
-    eth.net -> netif.connect
+    ethernet.net -> netif.connect
     ipv6.net -> netif.connect
-    ipv6.eth -> eth.connect
+    ipv6.eth -> ethernet.connect
   }
 
   connections Start {
     ping6_app.net -> netif.connect
-    ping6_app.eth -> eth.connect
+    ping6_app.eth -> ethernet.connect
     ping6_app.ipv6 -> ipv6.connect
   }
 }

@@ -72,7 +72,7 @@ topology TcpipStack {
   instance tcpip_runtime
   instance backend
   instance net
-  instance eth
+  instance ethernet
   instance arp
   instance ipv4
   instance ipv6
@@ -88,19 +88,19 @@ topology TcpipStack {
     tcpip_runtime.ipv4_only -> ip.connect
     tcpip_runtime.ipv6_only -> ip.connect
     net.backend -> backend.connect
-    eth.net -> net.connect
-    arp.eth -> eth.connect
-    ipv4.eth -> eth.connect
+    ethernet.net -> net.connect
+    arp.eth -> ethernet.connect
+    ipv4.eth -> ethernet.connect
     ipv4.arp -> arp.connect
     ipv6.net -> net.connect
-    ipv6.eth -> eth.connect
+    ipv6.eth -> ethernet.connect
     ip.ipv4 -> ipv4.connect
     ip.ipv6 -> ipv6.connect
     icmp.ip -> ipv4.connect
     udp.ip -> ip.connect
     tcp.ip -> ip.connect
     stack.netif -> net.connect
-    stack.ethernet -> eth.connect
+    stack.ethernet -> ethernet.connect
     stack.arpv4 -> arp.connect
     stack.ipv4v6 -> ip.connect
     stack.icmpv4 -> icmp.connect
@@ -134,15 +134,15 @@ topology SocketStack {
 }
 
 @ Happy Eyeballs + DNS client.  The parent must wire
-@ [happy_eyeballs.stack] and [dns_client.stack] to a stack.
+@ [happy_eyeballs_mirage.stack] and [dns_client.stack] to a stack.
 @ Happy Eyeballs uses [connect_device] for initialisation.
 @ Runtime kwargs (HE tuning, DNS config) are wired by the
 @ parent topology via a [Dns.Runtime] instance.
 topology DnsStack {
-  instance happy_eyeballs
+  instance happy_eyeballs_mirage
   instance dns_client
 
-  connections Connect {
-    dns_client.happy_eyeballs -> happy_eyeballs.connect
+  connections Start {
+    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect
   }
 }

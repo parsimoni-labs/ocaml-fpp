@@ -1660,6 +1660,16 @@ let pp_module_aliases ppf inst_annots all_conns module_break sorted =
           | None -> ())
     sorted
 
+(** Resolve the functor path for a non-leaf instance. Priority: instance
+    annotation, component annotation, default [Instance_name.Make]. *)
+let resolve_functor_path inst_annots inst_name ca =
+  match instance_bound_module inst_annots inst_name with
+  | Some s -> s
+  | None -> (
+      match ca.module_path with
+      | Some s -> s
+      | None -> constructor_name inst_name ^ ".Make")
+
 let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
@@ -1673,32 +1683,15 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
               (component_annots tu ci.Ast.inst_component.data)
           in
           if ca.nofunctor then
-            (* Component marked @ ocaml.nofunctor: emit a module alias,
-               not a functor application.  The output ports are value-level
-               dependencies passed at connect time, not functor params. *)
             match instance_bound_module inst_annots inst_name with
             | Some concrete_mod when mod_name <> concrete_mod ->
                 module_break ();
                 pf ppf "module %s = %s" mod_name concrete_mod
             | _ -> ()
           else
-            let functor_path =
-              match instance_bound_module inst_annots inst_name with
-              | Some s -> s
-              | None -> (
-                  match ca.module_path with
-                  | Some s -> s
-                  | None ->
-                      let parts =
-                        Ast.qual_ident_to_list ci.Ast.inst_component.data
-                      in
-                      let segments =
-                        List.map (fun n -> constructor_name n.Ast.data) parts
-                      in
-                      String.concat "." segments ^ ".Make")
-            in
+            let path = resolve_functor_path tu inst_annots inst_name ca in
             module_break ();
-            pf ppf "module %s = %s" mod_name functor_path;
+            pf ppf "module %s = %s" mod_name path;
             List.iter
               (fun (target_inst, _) ->
                 pf ppf "(%s)" (constructor_name target_inst))
