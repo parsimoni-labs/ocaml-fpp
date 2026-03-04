@@ -162,25 +162,11 @@ topology UnixKvRo {
 @ ── Socket stack topologies ───────────────────────────────
 
 topology UnixNetwork {
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance udpv4v6_socket
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance tcpv4v6_socket
+  import SocketStack
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   @ ocaml.module Unikernel.Main
   instance stack_app
-
-  connections Connect {
-    stackv4v6.udp -> udpv4v6_socket.connect
-    stackv4v6.tcp -> tcpv4v6_socket.connect
-  }
 
   connections Start {
     stack_app.stack -> stackv4v6.connect
@@ -188,26 +174,12 @@ topology UnixNetwork {
 }
 
 topology UnixConduit {
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance udpv4v6_socket
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance tcpv4v6_socket
+  import SocketStack
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   instance conduit_tcp
   @ ocaml.module Unikernel.Main
   instance conduit_app
-
-  connections Connect {
-    stackv4v6.udp -> udpv4v6_socket.connect
-    stackv4v6.tcp -> tcpv4v6_socket.connect
-  }
 
   connections Start {
     conduit_tcp.stack -> stackv4v6.connect
@@ -218,16 +190,7 @@ topology UnixConduit {
 @ ── Socket stack + DNS topology ───────────────────────────
 
 topology UnixDns {
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance udpv4v6_socket
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance tcpv4v6_socket
+  import SocketStack
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   instance happy_eyeballs_mirage
@@ -237,11 +200,6 @@ topology UnixDns {
 
   connections Connect_device {
     happy_eyeballs_mirage.stack -> stackv4v6.connect
-  }
-
-  connections Connect {
-    stackv4v6.udp -> udpv4v6_socket.connect
-    stackv4v6.tcp -> tcpv4v6_socket.connect
   }
 
   connections Start {

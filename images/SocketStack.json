@@ -2,19 +2,6 @@
   "columns": [
                [
                  {
-                   "instanceName": "socket_runtime",
-                   "inputPorts": [],
-                   "outputPorts": [
-                                    {
-                                      "name": "ipv4_only",
-                                      "portNumbers": [0, 1]
-                                    },
-                                    {
-                                      "name": "ipv6_only",
-                                      "portNumbers": [0, 1]
-                                    }]
-                 },
-                 {
                    "instanceName": "stackv4v6",
                    "inputPorts": [],
                    "outputPorts": [{"name": "udp", "portNumbers": [0]},
@@ -23,25 +10,13 @@
                [
                  {
                    "instanceName": "udpv4v6_socket",
-                   "inputPorts": [
-                                   {
-                                     "name": "connect",
-                                     "portNumbers": [0, 1, 2]
-                                   }],
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
                    "outputPorts": []
                  },
                  {
                    "instanceName": "tcpv4v6_socket",
-                   "inputPorts": [
-                                   {
-                                     "name": "connect",
-                                     "portNumbers": [0, 1, 2]
-                                   }],
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
                    "outputPorts": []
                  }]],
-  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]], [[0, 0, 1, 0], [1, 0, 0, 1]],
-                   [[0, 0, 0, 1], [1, 1, 0, 0]],
-                   [[0, 0, 1, 1], [1, 1, 0, 1]],
-                   [[0, 1, 0, 0], [1, 0, 0, 2]], [[0, 1, 1, 0], [1, 1, 0, 2]]
-                 ]
+  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]], [[0, 0, 1, 0], [1, 1, 0, 0]]]
 }
