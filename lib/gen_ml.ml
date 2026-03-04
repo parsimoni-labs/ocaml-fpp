@@ -1976,19 +1976,30 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
       topo.topo_name.data;
     let first_module = ref true in
     List.iter
-      (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+      (fun ( inst_name,
+             (ci : Ast.def_component_instance),
+             (comp : Ast.def_component) ) ->
+        let mod_name = constructor_name inst_name in
+        let ca =
+          parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+        in
         let targets = target_instances inst_name comp all_conns sorted in
-        if targets <> [] then ()
-        else
-          match instance_bound_module inst_annots inst_name with
-          | None -> ()
-          | Some concrete_mod ->
-              let mod_name = constructor_name inst_name in
-              if mod_name <> concrete_mod then (
-                if !first_module then (
-                  pf ppf "@,";
-                  first_module := false);
-                pf ppf "@,module %s = %s" mod_name concrete_mod))
+        match (ca.sig_path, targets) with
+        | Some sig_path, _ ->
+            if !first_module then (
+              pf ppf "@,";
+              first_module := false);
+            pf ppf "@,module %s : %s" mod_name sig_path
+        | None, [] -> (
+            match instance_bound_module inst_annots inst_name with
+            | None -> ()
+            | Some concrete_mod ->
+                if mod_name <> concrete_mod then (
+                  if !first_module then (
+                    pf ppf "@,";
+                    first_module := false);
+                  pf ppf "@,module %s = %s" mod_name concrete_mod))
+        | None, _ -> ())
       non_rt;
     let partitioned = partition_instances_by_group non_rt groups all_conns in
     let exports = cross_group_exports partitioned all_conns in
