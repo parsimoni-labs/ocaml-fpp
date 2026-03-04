@@ -193,7 +193,7 @@ passive component Happy_eyeballs_mirage {
   output port stack
 }
 
-passive component Dns_client_mirage {
+passive component Dns_client {
   sync input port start
   output port stack
   output port happy_eyeballs
@@ -238,4 +238,4 @@ instance dispatch: Dispatch base id 0xA30
 
 @ DNS
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage base id 0xE00
-instance dns_client: Dns_client_mirage base id 0xE10
+instance dns_client: Dns_client base id 0xE10

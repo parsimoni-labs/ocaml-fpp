@@ -1,0 +1,4 @@
+(library
+ (name adapters)
+ (wrapped false)
+ (libraries lwt tcpip tcpip.stack-socket conduit-mirage))
