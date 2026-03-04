@@ -95,6 +95,7 @@ passive component Arp {
 }
 
 passive component Static_ipv4 {
+  param cidr: string
   sync input port connect
   output port eth
   output port arp
@@ -108,6 +109,8 @@ passive component Ipv6 {
 
 @ ocaml.module Tcpip_stack_direct.IPV4V6
 passive component Ip {
+  param ipv4Only: bool default false
+  param ipv6Only: bool default false
   sync input port connect
   output port ipv4
   output port ipv6

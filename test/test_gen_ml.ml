@@ -1265,7 +1265,7 @@ let sensor = lazy (
 (* ── Topology: runtime component convention ───────────────────────── *)
 
 let test_runtime () =
-  check_output ~msg:"bound runtime kwargs inject thunk calls"
+  check_output ~msg:"bound runtime labelled args inject thunk calls"
     (render_topo
        {|
     port P
@@ -1306,7 +1306,7 @@ let srv = lazy (
   Srv.connect sock)|}
 
 let test_runtime_parameterised () =
-  check_output ~msg:"unbound runtime kwargs become thunk calls"
+  check_output ~msg:"unbound runtime labelled args become thunk calls"
     (render_topo
        {|
     port P
@@ -1404,6 +1404,6 @@ let suite =
       Alcotest.test_case "custom_group_name" `Quick test_custom_group_name;
       (* Topology — runtime component *)
       Alcotest.test_case "runtime" `Quick test_runtime;
-      Alcotest.test_case "runtime_unbound_kwargs" `Quick
+      Alcotest.test_case "runtime_unbound_labelled_args" `Quick
         test_runtime_parameterised;
     ] )

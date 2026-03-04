@@ -240,3 +240,17 @@ topology UnixPing6 {
     ping6_app.ipv6 -> ipv6.connect
   }
 }
+
+@ ── Direct network topology ─────────────────────────────
+
+topology DirectNetwork {
+  import TcpipStack
+  @ ocaml.module Backend
+  instance backend
+  @ ocaml.module Unikernel.Main
+  instance stack_app
+
+  connections Start {
+    stack_app.stack -> stack.connect
+  }
+}

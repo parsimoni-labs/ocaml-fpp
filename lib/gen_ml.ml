@@ -1082,8 +1082,9 @@ let sync_input_port_name (comp : Ast.def_component) =
     comp.comp_members
 
 (** Extract [param] declarations from a component, in declaration order. Each
-    param has a name, an FPP type, an optional default expression, and a flag
-    indicating whether it is positional ([@ ocaml.positional]). *)
+    param has a name, an FPP type, an optional default expression, a flag
+    indicating whether it is positional ([@ ocaml.positional]), and a flag
+    indicating whether it is optional ([@ ocaml.optional]). *)
 let component_params (comp : Ast.def_component) =
   List.filter_map
     (fun ((pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
@@ -1092,7 +1093,10 @@ let component_params (comp : Ast.def_component) =
           let positional =
             List.exists (fun a -> String.trim a = "ocaml.positional") pre
           in
-          Some (p, positional)
+          let optional =
+            List.exists (fun a -> String.trim a = "ocaml.optional") pre
+          in
+          Some (p, positional, optional)
       | _ -> None)
     comp.comp_members
 
@@ -1133,10 +1137,11 @@ let rec ocaml_literal_of_expr (e : Ast.expr) =
   | Expr_paren e -> ocaml_literal_of_expr e.data
   | _ -> "()"
 
-(** Collect runtime kwargs for a target instance: for each connection FROM a
-    runtime instance TO [inst_name], return [(port_name, is_optional)]. The
-    order follows the output port declaration order. *)
-let runtime_kwargs inst_name sorted connections =
+(** Collect runtime labelled arguments for a target instance: for each
+    connection FROM a runtime instance TO [inst_name], return
+    [(port_name, is_optional)]. The order follows the output port declaration
+    order. *)
+let runtime_labelled_args inst_name sorted connections =
   let raw =
     List.filter_map
       (fun (conn : Ast.connection) ->
@@ -1542,43 +1547,43 @@ let resolve_param_value inst_annots inst_name (ci : Ast.def_component_instance)
       let init_overrides = init_spec_overrides ci in
       Hashtbl.find_opt init_overrides idx
 
-(** Resolve the source instance variable for a runtime kwarg targeting
-    [inst_name]. Returns the sanitized instance name of the Runtime instance
-    providing the kwarg. *)
-let resolve_runtime_kwarg_source inst_name kwarg connections =
+(** Resolve the source instance variable for a runtime labelled argument
+    targeting [inst_name]. Returns the sanitized instance name of the Runtime
+    instance providing the argument. *)
+let resolve_runtime_arg_source inst_name arg connections =
   List.find_map
     (fun (conn : Ast.connection) ->
       let to_inst = pid_inst_name conn.conn_to_port.data in
       if
         to_inst = inst_name
-        && camel_to_snake conn.conn_from_port.data.pid_port.data = kwarg
+        && camel_to_snake conn.conn_from_port.data.pid_port.data = arg
       then Some (sanitize_ident (pid_inst_name conn.conn_from_port.data))
       else None)
     connections
 
-(** Emit runtime kwargs as labeled arguments on a connect call. Required kwargs
-    are emitted as [~kwarg:(inst__kwarg ())], referencing the
-    Cmdliner-registered arg. Optional kwargs are omitted entirely, letting the
-    callee use its default value. *)
-let pp_runtime_kwargs ppf _inst_annots inst_name kwargs connections =
+(** Emit runtime labelled arguments on a connect call. Required arguments are
+    emitted as [~arg:(inst__arg ())], referencing the Cmdliner-registered term.
+    Optional arguments are omitted entirely, letting the callee use its default
+    value. *)
+let pp_runtime_labelled_args ppf _inst_annots inst_name args connections =
   List.iter
-    (fun (kwarg, optional) ->
+    (fun (arg, optional) ->
       if optional then ()
       else
-        match resolve_runtime_kwarg_source inst_name kwarg connections with
-        | Some inst_var -> pf ppf " ~%s:(%s__%s ())" kwarg inst_var kwarg
-        | None -> pf ppf " ~%s" kwarg)
-    kwargs
+        match resolve_runtime_arg_source inst_name arg connections with
+        | Some inst_var -> pf ppf " ~%s:(%s__%s ())" arg inst_var arg
+        | None -> pf ppf " ~%s" arg)
+    args
 
 let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
     (comp : Ast.def_component) connections sorted inst_annots =
   let inst_var = sanitize_ident inst_name in
   let mod_name = constructor_name inst_name in
   let targets = target_instances inst_name comp connections sorted in
-  let kwargs = runtime_kwargs inst_name sorted connections in
+  let rt_args = runtime_labelled_args inst_name sorted connections in
   let params = component_params comp in
   let has_params = params <> [] in
-  if targets = [] && kwargs = [] && not has_params then
+  if targets = [] && rt_args = [] && not has_params then
     pf ppf "let %s = lazy (%s.%s ())" inst_var mod_name func_name
   else
     let config_ports = unconnected_input_ports inst_name comp connections in
@@ -1590,17 +1595,19 @@ let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
           (sanitize_ident target_inst))
       targets;
     pf ppf "@,  %s.%s" mod_name func_name;
-    pp_runtime_kwargs ppf inst_annots inst_name kwargs connections;
+    pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
     List.iteri
-      (fun i ((p : Ast.spec_param), positional) ->
+      (fun i ((p : Ast.spec_param), positional, optional) ->
         let param_name = camel_to_snake p.param_name.data in
+        let prefix = if optional then "?" else "~" in
         match resolve_param_value inst_annots inst_name ci i p with
         | Some code ->
             if positional then pf ppf " %s" code
-            else pf ppf " ~%s:%s" param_name code
+            else pf ppf " %s%s:%s" prefix param_name code
         | None ->
             if positional then pf ppf " (%s__%s ())" inst_var param_name
-            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
+            else
+              pf ppf " %s%s:(%s__%s ())" prefix param_name inst_var param_name)
       params;
     List.iter
       (fun (p : Ast.port_instance_general) ->
@@ -1638,7 +1645,7 @@ let pp_param_cmdliner_terms ppf inst_annots sorted =
         let params = component_params comp in
         let inst_var = sanitize_ident inst_name in
         List.iteri
-          (fun i ((p : Ast.spec_param), _positional) ->
+          (fun i ((p : Ast.spec_param), _positional, _optional) ->
             if resolve_param_value inst_annots inst_name ci i p = None then
               pp_one_cmdliner_term ppf ~inst_var p)
           params)
