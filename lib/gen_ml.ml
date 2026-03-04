@@ -1479,12 +1479,9 @@ let target_instances inst_name (comp : Ast.def_component) connections sorted =
 let filter_non_runtime sorted =
   List.filter (fun (_, _, comp) -> not (is_runtime_component comp)) sorted
 
-(** Assign each non-runtime instance to its earliest connection group. Returns
-    [(group_name, instances)] pairs in group order, with instances topo-sorted
-    within each group. Standalone instances (no connections) go into a synthetic
-    group named after their sync input port. Dependencies that would create a
-    backward cross-group reference are pulled into the earlier group. *)
-let partition_instances_by_group non_rt groups all_conns =
+(** Assign each instance to its earliest connection group, or to a synthetic
+    group named after its sync input port if it appears in no group. *)
+let assign_instances_to_groups non_rt groups =
   let assigned = Hashtbl.create 16 in
   List.iter
     (fun (inst_name, _, (comp : Ast.def_component)) ->
@@ -1509,6 +1506,11 @@ let partition_instances_by_group non_rt groups all_conns =
           in
           Hashtbl.replace assigned inst_name port)
     non_rt;
+  assigned
+
+(** Compute group order: declared groups first, then synthetic ones (deduped).
+*)
+let compute_group_order non_rt groups assigned =
   let declared = List.map fst groups in
   let synthetic =
     List.filter_map
@@ -1518,15 +1520,17 @@ let partition_instances_by_group non_rt groups all_conns =
       non_rt
   in
   let seen = Hashtbl.create 8 in
-  let group_order =
-    List.filter
-      (fun n ->
-        if Hashtbl.mem seen n then false
-        else (
-          Hashtbl.add seen n ();
-          true))
-      (declared @ synthetic)
-  in
+  List.filter
+    (fun n ->
+      if Hashtbl.mem seen n then false
+      else (
+        Hashtbl.add seen n ();
+        true))
+    (declared @ synthetic)
+
+(** Pull backward cross-group dependencies into the earlier group. If an
+    instance depends on one in a later group, the dependency moves forward. *)
+let pull_backward_deps non_rt all_conns assigned group_order =
   let group_index name =
     let rec find i = function
       | [] -> max_int
@@ -1554,7 +1558,12 @@ let partition_instances_by_group non_rt groups all_conns =
             | None -> ())
           deps)
       non_rt
-  done;
+  done
+
+let partition_instances_by_group non_rt groups all_conns =
+  let assigned = assign_instances_to_groups non_rt groups in
+  let group_order = compute_group_order non_rt groups assigned in
+  pull_backward_deps non_rt all_conns assigned group_order;
   List.filter_map
     (fun gname ->
       let insts =
