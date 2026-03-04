@@ -1265,7 +1265,7 @@ let sensor = lazy (
 (* ── Topology: runtime component convention ───────────────────────── *)
 
 let test_runtime () =
-  check_output ~msg:"bound runtime kwargs inject qualified paths"
+  check_output ~msg:"bound runtime kwargs inject thunk calls"
     (render_topo
        {|
     port P
@@ -1299,14 +1299,14 @@ module Sock = My.Socket
 module Srv = Srv.Make(Sock)
 
 let sock = lazy (
-  Sock.connect ~ipv4_only:My.Runtime.ipv4_only ~ipv6_only:My.Runtime.ipv6_only ())
+  Sock.connect ~ipv4_only:(runtime__ipv4_only ()) ~ipv6_only:(runtime__ipv6_only ()) ())
 
 let srv = lazy (
   let* sock = Lazy.force sock in
   Srv.connect sock)|}
 
 let test_runtime_parameterised () =
-  check_output ~msg:"unbound runtime kwargs become bare labels"
+  check_output ~msg:"unbound runtime kwargs become thunk calls"
     (render_topo
        {|
     port P
@@ -1344,9 +1344,9 @@ open Lwt.Syntax
 module Stack = Stack.Make(Udp)(Tcp)
 
 let udp = lazy (
-  Udp.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
+  Udp.connect ~ipv4_only:(runtime__ipv4_only ()) ~ipv6_only:(runtime__ipv6_only ()) ())
 let tcp = lazy (
-  Tcp.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
+  Tcp.connect ~ipv4_only:(runtime__ipv4_only ()) ~ipv6_only:(runtime__ipv6_only ()) ())
 
 let stack = lazy (
   let* udp = Lazy.force udp in

@@ -898,7 +898,11 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = { module_path : string option; sig_path : string option }
+type ocaml_annots = {
+  module_path : string option;
+  sig_path : string option;
+  nofunctor : bool;
+}
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -914,8 +918,10 @@ let parse_ocaml_annotations annots =
       else if starts_with ~prefix:"ocaml.sig " s then
         let v = String.trim (String.sub s 10 (String.length s - 10)) in
         { acc with sig_path = Some v }
+      else if String.trim s = "ocaml.nofunctor" then
+        { acc with nofunctor = true }
       else acc)
-    { module_path = None; sig_path = None }
+    { module_path = None; sig_path = None; nofunctor = false }
     annots
 
 (** Extract pre-annotations for a component definition from tu_members. For
@@ -1536,33 +1542,32 @@ let resolve_param_value inst_annots inst_name (ci : Ast.def_component_instance)
       let init_overrides = init_spec_overrides ci in
       Hashtbl.find_opt init_overrides idx
 
-(** Resolve the module providing a runtime kwarg for [inst_name]. *)
-let resolve_runtime_kwarg_module inst_annots inst_name kwarg connections =
+(** Resolve the source instance variable for a runtime kwarg targeting
+    [inst_name]. Returns the sanitized instance name of the Runtime instance
+    providing the kwarg. *)
+let resolve_runtime_kwarg_source inst_name kwarg connections =
   List.find_map
     (fun (conn : Ast.connection) ->
       let to_inst = pid_inst_name conn.conn_to_port.data in
       if
         to_inst = inst_name
         && camel_to_snake conn.conn_from_port.data.pid_port.data = kwarg
-      then
-        let from_inst = pid_inst_name conn.conn_from_port.data in
-        Some
-          (match instance_bound_module inst_annots from_inst with
-          | Some m -> m
-          | None -> constructor_name from_inst)
+      then Some (sanitize_ident (pid_inst_name conn.conn_from_port.data))
       else None)
     connections
 
-(** Emit runtime kwargs as labeled arguments on a connect call. *)
-let pp_runtime_kwargs ppf inst_annots inst_name kwargs connections =
+(** Emit runtime kwargs as labeled arguments on a connect call. Required kwargs
+    are emitted as [~kwarg:(inst__kwarg ())], referencing the
+    Cmdliner-registered arg. Optional kwargs are omitted entirely, letting the
+    callee use its default value. *)
+let pp_runtime_kwargs ppf _inst_annots inst_name kwargs connections =
   List.iter
     (fun (kwarg, optional) ->
-      let label = if optional then "?" else "~" in
-      match
-        resolve_runtime_kwarg_module inst_annots inst_name kwarg connections
-      with
-      | Some m -> pf ppf " %s%s:%s.%s" label kwarg m kwarg
-      | None -> pf ppf " %s%s" label kwarg)
+      if optional then ()
+      else
+        match resolve_runtime_kwarg_source inst_name kwarg connections with
+        | Some inst_var -> pf ppf " ~%s:(%s__%s ())" kwarg inst_var kwarg
+        | None -> pf ppf " ~%s" kwarg)
     kwargs
 
 let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
@@ -1667,27 +1672,37 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
             parse_ocaml_annotations
               (component_annots tu ci.Ast.inst_component.data)
           in
-          let functor_path =
+          if ca.nofunctor then
+            (* Component marked @ ocaml.nofunctor: emit a module alias,
+               not a functor application.  The output ports are value-level
+               dependencies passed at connect time, not functor params. *)
             match instance_bound_module inst_annots inst_name with
-            | Some s -> s
-            | None -> (
-                match ca.module_path with
-                | Some s -> s
-                | None ->
-                    let parts =
-                      Ast.qual_ident_to_list ci.Ast.inst_component.data
-                    in
-                    let segments =
-                      List.map (fun n -> constructor_name n.Ast.data) parts
-                    in
-                    String.concat "." segments ^ ".Make")
-          in
-          module_break ();
-          pf ppf "module %s = %s" mod_name functor_path;
-          List.iter
-            (fun (target_inst, _) ->
-              pf ppf "(%s)" (constructor_name target_inst))
-            targets))
+            | Some concrete_mod when mod_name <> concrete_mod ->
+                module_break ();
+                pf ppf "module %s = %s" mod_name concrete_mod
+            | _ -> ()
+          else
+            let functor_path =
+              match instance_bound_module inst_annots inst_name with
+              | Some s -> s
+              | None -> (
+                  match ca.module_path with
+                  | Some s -> s
+                  | None ->
+                      let parts =
+                        Ast.qual_ident_to_list ci.Ast.inst_component.data
+                      in
+                      let segments =
+                        List.map (fun n -> constructor_name n.Ast.data) parts
+                      in
+                      String.concat "." segments ^ ".Make")
+            in
+            module_break ();
+            pf ppf "module %s = %s" mod_name functor_path;
+            List.iter
+              (fun (target_inst, _) ->
+                pf ppf "(%s)" (constructor_name target_inst))
+              targets))
     sorted
 
 (** Pretty-print topology body. Module aliases and functor applications are at

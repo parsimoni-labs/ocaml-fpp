@@ -73,7 +73,7 @@ instance conduit_app: ConduitApp base id 0x5700
 instance ramdisk: Block base id 0x6000
 instance kv_store: Kv base id 0x6100
 instance conduit_tcp: ConduitTcp base id 0x6200
-instance netif: Backend base id 0x6300
+instance netif: Netif base id 0x6300
 
 @ ── Standalone topologies ─────────────────────────────────
 
@@ -164,9 +164,16 @@ topology UnixKvRo {
 @ ── Socket stack topologies ───────────────────────────────
 
 topology UnixNetwork {
-  import SocketStack
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
@@ -174,15 +181,27 @@ topology UnixNetwork {
   @ ocaml.module Unikernel.Main
   instance stack_app
 
+  connections Connect {
+    stackv4v6.udp -> udpv4v6_socket.connect
+    stackv4v6.tcp -> tcpv4v6_socket.connect
+  }
+
   connections Start {
     stack_app.stack -> stackv4v6.connect
   }
 }
 
 topology UnixConduit {
-  import SocketStack
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
@@ -192,6 +211,8 @@ topology UnixConduit {
   instance conduit_app
 
   connections Connect {
+    stackv4v6.udp -> udpv4v6_socket.connect
+    stackv4v6.tcp -> tcpv4v6_socket.connect
     conduit_tcp.stack -> stackv4v6.connect
   }
 
@@ -203,32 +224,31 @@ topology UnixConduit {
 @ ── Socket stack + DNS topology ───────────────────────────
 
 topology UnixDns {
-  import SocketStack
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Udpv4v6_socket
   instance udpv4v6_socket
+  @ ocaml.param ipv4_only false
+  @ ocaml.param ipv6_only false
+  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
+  @ ocaml.param ipv6_cidr None
   @ ocaml.module Tcpv4v6_socket
   instance tcpv4v6_socket
   @ ocaml.module Tcpip_stack_socket.V4V6
   instance stackv4v6
   import DnsStack
-  instance dns_runtime
   @ ocaml.module Unikernel.Make
   instance dns_client_app
 
   connections Connect_device {
-    dns_runtime.aaaa_timeout -> happy_eyeballs.connect
-    dns_runtime.connect_delay -> happy_eyeballs.connect
-    dns_runtime.connect_timeout -> happy_eyeballs.connect
-    dns_runtime.resolve_timeout -> happy_eyeballs.connect
-    dns_runtime.resolve_retries -> happy_eyeballs.connect
-    dns_runtime.timer_interval -> happy_eyeballs.connect
     happy_eyeballs.stack -> stackv4v6.connect
   }
 
   connections Connect {
-    dns_runtime.nameservers -> dns_client.connect
-    dns_runtime.timeout -> dns_client.connect
-    dns_runtime.cache_size -> dns_client.connect
+    stackv4v6.udp -> udpv4v6_socket.connect
+    stackv4v6.tcp -> tcpv4v6_socket.connect
     dns_client.stack -> stackv4v6.connect
   }
 
@@ -240,7 +260,6 @@ topology UnixDns {
 @ ── Netif topologies ──────────────────────────────────────
 
 topology UnixDhcp {
-  @ ocaml.module Netif
   instance netif
   @ ocaml.module Unikernel.Main
   instance net_app
@@ -251,7 +270,6 @@ topology UnixDhcp {
 }
 
 topology UnixPing6 {
-  @ ocaml.module Netif
   instance netif
   instance eth
   instance ipv6

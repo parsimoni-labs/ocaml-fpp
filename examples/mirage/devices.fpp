@@ -8,8 +8,24 @@
 
 @ ocaml.sig Vnetif.BACKEND
 passive component Backend { sync input port connect }
-passive component Udpv4v6_socket { sync input port connect }
-passive component Tcpv4v6_socket { sync input port connect }
+passive component Udpv4v6_socket {
+  param ipv4Only: bool default false
+  param ipv6Only: bool default false
+  @ ocaml.positional
+  param ipv4Cidr: string
+  @ ocaml.positional
+  param ipv6Cidr: string
+  sync input port connect
+}
+passive component Tcpv4v6_socket {
+  param ipv4Only: bool default false
+  param ipv6Only: bool default false
+  @ ocaml.positional
+  param ipv4Cidr: string
+  @ ocaml.positional
+  param ipv6Cidr: string
+  sync input port connect
+}
 @ ocaml.sig Mirage_block.S
 passive component Block {
   param name: string default "disk"
@@ -28,8 +44,17 @@ passive component Kv { sync input port connect }
 @ an FPP module, so config is scoped to where it is used.
 @ See [stacks.fpp] for the concrete definitions.
 
+@ ── Netif (Unix network interface) ──────────────────────
+
+passive component Netif {
+  @ ocaml.positional
+  param device: string default "tap0"
+  sync input port connect
+}
+
 @ ── Socket stack ────────────────────────────────────────
 
+@ ocaml.nofunctor
 passive component Stackv4v6 {
   sync input port connect
   output port udp
