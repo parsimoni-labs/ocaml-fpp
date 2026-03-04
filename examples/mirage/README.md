@@ -136,6 +136,24 @@ topology StaticWebsite {
 The parent topology wires cross-boundary connections (here: plugging
 the TCP/IP stack and KV stores into the server).
 
+## Configuration and runtime parameters
+
+FPP components can declare `param` values. The codegen resolves each
+parameter in priority order:
+
+1. **`@ ocaml.param name "code"`** annotation on the instance —
+   build-time override, emitted literally as `~name:code`.
+2. **Init spec** (`phase N "code"`) on the instance — same effect,
+   keyed by parameter index.
+3. **Cmdliner term** — when neither override is present, the codegen
+   emits a `Mirage_runtime.register_arg` call so the value becomes a
+   command-line flag at runtime.
+
+Runtime component output ports follow a different path: they are
+passed as labeled arguments (`~kwarg:Runtime_module.kwarg`) referring
+directly to module values exposed by the Runtime component.  They are
+not Cmdliner terms.
+
 ## Entry points
 
 Topologies passed to `ofpp to-ml --topologies` additionally generate a
@@ -171,7 +189,7 @@ ofpp to-ml --topologies UnixWebsite,UnixTestWebsite types.fpp devices.fpp stacks
 | Input format | OCaml combinator DSL (`config.ml`) | FPP connection graph |
 | Module naming | Mangled (`Tcpip_stack_socket_v4v6__13`) | Clean (`Socket_stack`) |
 | Async style | `Lwt.Infix` (`>>=`) | `Lwt.Syntax` (`let*`) |
-| Runtime args | `Mirage_runtime.register_arg` | User-code cmdliner args |
+| Runtime args | `Mirage_runtime.register_arg` | `Mirage_runtime.register_arg` from `param` declarations |
 | Application module | Included in `main.ml` | Left to user |
 | Socket stack | Models UDP/TCP sub-layers | Opaque module alias |
 | Boilerplate | ~90 lines per example | ~10-20 lines per example |

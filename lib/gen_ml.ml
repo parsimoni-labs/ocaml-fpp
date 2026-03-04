@@ -1002,30 +1002,37 @@ let instance_bound_module inst_annots inst_name =
       else acc)
     None inst_annots
 
+(** Parse a single [ocaml.param name "value"] annotation string. *)
+let parse_param_annotation s =
+  let s = String.trim s in
+  if starts_with ~prefix:"ocaml.param " s then
+    let rest = String.trim (String.sub s 12 (String.length s - 12)) in
+    match String.index_opt rest ' ' with
+    | Some i ->
+        let name = String.sub rest 0 i in
+        let value =
+          String.trim (String.sub rest (i + 1) (String.length rest - i - 1))
+        in
+        Some (name, value)
+    | None -> None
+  else None
+
 (** Find [@ ocaml.param name "value"] annotations on an instance. Returns a
     mapping from param name to the OCaml literal string. Multiple annotations
     may override different params. *)
 let instance_param_annotations inst_annots inst_name =
   let tbl = Hashtbl.create 4 in
+  let annots =
+    List.concat_map
+      (fun (n, annots) -> if n = inst_name then annots else [])
+      inst_annots
+  in
   List.iter
-    (fun (n, annots) ->
-      if n = inst_name then
-        List.iter
-          (fun s ->
-            let s = String.trim s in
-            if starts_with ~prefix:"ocaml.param " s then
-              let rest = String.trim (String.sub s 12 (String.length s - 12)) in
-              match String.index_opt rest ' ' with
-              | Some i ->
-                  let name = String.sub rest 0 i in
-                  let value =
-                    String.trim
-                      (String.sub rest (i + 1) (String.length rest - i - 1))
-                  in
-                  Hashtbl.replace tbl name value
-              | None -> ())
-          annots)
-    inst_annots;
+    (fun s ->
+      match parse_param_annotation s with
+      | Some (name, value) -> Hashtbl.replace tbl name value
+      | None -> ())
+    annots;
   tbl
 
 (** Extract instance name from a port instance identifier. *)
@@ -1069,11 +1076,18 @@ let sync_input_port_name (comp : Ast.def_component) =
     comp.comp_members
 
 (** Extract [param] declarations from a component, in declaration order. Each
-    param has a name, an FPP type, and an optional default expression. *)
+    param has a name, an FPP type, an optional default expression, and a flag
+    indicating whether it is positional ([@ ocaml.positional]). *)
 let component_params (comp : Ast.def_component) =
   List.filter_map
-    (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
-      match node.Ast.data with Ast.Comp_spec_param p -> Some p | _ -> None)
+    (fun ((pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with
+      | Ast.Comp_spec_param p ->
+          let positional =
+            List.exists (fun a -> String.trim a = "ocaml.positional") pre
+          in
+          Some (p, positional)
+      | _ -> None)
     comp.comp_members
 
 (** Look up init spec overrides on a component instance. Phase [n] overrides
@@ -1106,7 +1120,7 @@ let cmdliner_conv_of_fpp_type (tn : Ast.type_name) =
 (** Render an FPP default expression as an OCaml literal. *)
 let rec ocaml_literal_of_expr (e : Ast.expr) =
   match e with
-  | Expr_literal (Lit_string s) -> Printf.sprintf "%S" s
+  | Expr_literal (Lit_string s) -> Fmt.str "%S" s
   | Expr_literal (Lit_int s) -> s
   | Expr_literal (Lit_float s) -> s
   | Expr_literal (Lit_bool b) -> string_of_bool b
@@ -1522,6 +1536,35 @@ let resolve_param_value inst_annots inst_name (ci : Ast.def_component_instance)
       let init_overrides = init_spec_overrides ci in
       Hashtbl.find_opt init_overrides idx
 
+(** Resolve the module providing a runtime kwarg for [inst_name]. *)
+let resolve_runtime_kwarg_module inst_annots inst_name kwarg connections =
+  List.find_map
+    (fun (conn : Ast.connection) ->
+      let to_inst = pid_inst_name conn.conn_to_port.data in
+      if
+        to_inst = inst_name
+        && camel_to_snake conn.conn_from_port.data.pid_port.data = kwarg
+      then
+        let from_inst = pid_inst_name conn.conn_from_port.data in
+        Some
+          (match instance_bound_module inst_annots from_inst with
+          | Some m -> m
+          | None -> constructor_name from_inst)
+      else None)
+    connections
+
+(** Emit runtime kwargs as labeled arguments on a connect call. *)
+let pp_runtime_kwargs ppf inst_annots inst_name kwargs connections =
+  List.iter
+    (fun (kwarg, optional) ->
+      let label = if optional then "?" else "~" in
+      match
+        resolve_runtime_kwarg_module inst_annots inst_name kwarg connections
+      with
+      | Some m -> pf ppf " %s%s:%s.%s" label kwarg m kwarg
+      | None -> pf ppf " %s%s" label kwarg)
+    kwargs
+
 let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
     (comp : Ast.def_component) connections sorted inst_annots =
   let inst_var = sanitize_ident inst_name in
@@ -1542,39 +1585,17 @@ let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
           (sanitize_ident target_inst))
       targets;
     pf ppf "@,  %s.%s" mod_name func_name;
-    (* Runtime kwargs — look up bound module for the
-       runtime instance to qualify values *)
-    List.iter
-      (fun (kwarg, optional) ->
-        let label = if optional then "?" else "~" in
-        (* Find which runtime instance provides this kwarg *)
-        let rt_mod =
-          List.find_map
-            (fun (conn : Ast.connection) ->
-              let to_inst = pid_inst_name conn.conn_to_port.data in
-              if
-                to_inst = inst_name
-                && camel_to_snake conn.conn_from_port.data.pid_port.data = kwarg
-              then
-                let from_inst = pid_inst_name conn.conn_from_port.data in
-                Some
-                  (match instance_bound_module inst_annots from_inst with
-                  | Some m -> m
-                  | None -> constructor_name from_inst)
-              else None)
-            connections
-        in
-        match rt_mod with
-        | Some m -> pf ppf " %s%s:%s.%s" label kwarg m kwarg
-        | None -> pf ppf " %s%s" label kwarg)
-      kwargs;
-    (* Component params — build-time override or runtime Cmdliner key *)
+    pp_runtime_kwargs ppf inst_annots inst_name kwargs connections;
     List.iteri
-      (fun i (p : Ast.spec_param) ->
+      (fun i ((p : Ast.spec_param), positional) ->
         let param_name = camel_to_snake p.param_name.data in
         match resolve_param_value inst_annots inst_name ci i p with
-        | Some code -> pf ppf " ~%s:%s" param_name code
-        | None -> pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
+        | Some code ->
+            if positional then pf ppf " %s" code
+            else pf ppf " ~%s:%s" param_name code
+        | None ->
+            if positional then pf ppf " (%s__%s ())" inst_var param_name
+            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
       params;
     List.iter
       (fun (p : Ast.port_instance_general) ->
@@ -1583,14 +1604,27 @@ let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
     List.iter
       (fun (target_inst, _) -> pf ppf " %s" (sanitize_ident target_inst))
       targets;
-    (* When kwargs are present but no positional args or params, add () *)
     if targets = [] && config_ports = [] && not has_params then pf ppf " ()";
     pf ppf ")"
 
+(** Emit a single Cmdliner term registration for one unresolved param. *)
+let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
+  let param_name = camel_to_snake p.param_name.data in
+  let conv = cmdliner_conv_of_fpp_type p.param_type.data in
+  let default =
+    match p.param_default with
+    | Some e -> ocaml_literal_of_expr e.data
+    | None -> "\"\""
+  in
+  pf ppf "@,let %s__%s =" inst_var param_name;
+  pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name
+    (inst_var ^ "-"
+    ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
+  pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
+    conv default
+
 (** Emit Cmdliner term registrations for component params that are not
-    overridden by annotations or init specs. Each unresolved param becomes a
-    [Mirage_runtime.register_arg] call with the default value from the component
-    declaration. *)
+    overridden by annotations or init specs. *)
 let pp_param_cmdliner_terms ppf inst_annots sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
@@ -1599,25 +1633,9 @@ let pp_param_cmdliner_terms ppf inst_annots sorted =
         let params = component_params comp in
         let inst_var = sanitize_ident inst_name in
         List.iteri
-          (fun i (p : Ast.spec_param) ->
-            if resolve_param_value inst_annots inst_name ci i p = None then (
-              let param_name = camel_to_snake p.param_name.data in
-              let conv = cmdliner_conv_of_fpp_type p.param_type.data in
-              let default =
-                match p.param_default with
-                | Some e -> ocaml_literal_of_expr e.data
-                | None -> "\"\""
-              in
-              pf ppf "@,let %s__%s =" inst_var param_name;
-              pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in"
-                param_name
-                (inst_var ^ "-"
-                ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
-              pf ppf
-                "@,\
-                \  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s \
-                 doc)"
-                conv default))
+          (fun i ((p : Ast.spec_param), _positional) ->
+            if resolve_param_value inst_annots inst_name ci i p = None then
+              pp_one_cmdliner_term ppf ~inst_var p)
           params)
     sorted
 
