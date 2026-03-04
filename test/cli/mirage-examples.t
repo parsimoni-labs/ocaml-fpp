@@ -71,6 +71,29 @@ DNS topology uses adapter with start method for tuple unpacking
     Dns_client.start stackv4v6 happy_eyeballs_mirage)
     Dns_client_app.start dns_client)
 
+DirectNetwork imports TcpipStack and generates 11 functor applications
+  $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '^module '
+  module Net = Vnetif.Make(Backend)
+  module Ethernet = Ethernet.Make(Net)
+  module Arp = Arp.Make(Ethernet)
+  module Ipv4 = Static_ipv4.Make(Ethernet)(Arp)
+  module Ipv6 = Ipv6.Make(Net)(Ethernet)
+  module Ip = Tcpip_stack_direct.IPV4V6(Ipv4)(Ipv6)
+  module Icmp = Icmpv4.Make(Ipv4)
+  module Udp = Udp.Make(Ip)
+  module Tcp = Tcp.Flow.Make(Ip)
+  module Stack = Tcpip_stack_direct.MakeV4V6(Net)(Ethernet)(Arp)(Ip)(Icmp)(Udp)(Tcp)
+  module Stack_app = Unikernel.Main(Stack)
+
+DirectNetwork uses params (not Runtime kwargs) for ipv4 and ip config
+  $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -E '(cidr|gateway|ipv4_only|ipv6_only)' | head -2
+    Ipv4.connect ~cidr:(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24") ?gateway:None ethernet arp)
+    Ip.connect ~ipv4_only:false ~ipv6_only:false ipv4 ipv6)
+
+DirectNetwork has no runtime thunk calls (no tcpip_runtime references)
+  $ ofpp to-ml --topologies DirectNetwork $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep 'tcpip_runtime' || echo "none"
+  none
+
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/types.fpp $F/devices.fpp $F/stacks.fpp $F/applications.fpp 2>/dev/null | grep -c 'Mirage_runtime'
   6

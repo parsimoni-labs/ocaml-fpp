@@ -10,3 +10,6 @@ type Macaddr
 
 @ ocaml.type Ipaddr.V4.Prefix.t
 type Cidr
+
+@ ocaml.type Ipaddr.V4.t
+type Ipv4Addr

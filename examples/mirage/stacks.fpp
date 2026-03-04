@@ -16,6 +16,7 @@ topology TcpipStack {
   instance ethernet
   instance arp
   @ ocaml.param cidr (Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24")
+  @ ocaml.param gateway None
   @ ocaml.module Static_ipv4.Make
   instance ipv4
   instance ipv6

@@ -95,7 +95,9 @@ passive component Arp {
 }
 
 passive component Static_ipv4 {
-  param cidr: string
+  param cidr: Cidr
+  @ ocaml.optional
+  param gateway: Ipv4Addr
   sync input port connect
   output port eth
   output port arp
