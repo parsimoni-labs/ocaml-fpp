@@ -129,8 +129,8 @@ functor implementations, and a concrete module for the bound case.
   >   print_endline "fat_kv: OK"
   > TEST
   $ compile && run
-  File "sm.ml", line 38, characters 30-34:
-  38 | module Service = Service.Make(Data)
+  File "sm.ml", line 36, characters 30-34:
+  36 | module Service = Service.Make(Data)
                                      ^^^^
   Error: Unbound module Data
   [2]

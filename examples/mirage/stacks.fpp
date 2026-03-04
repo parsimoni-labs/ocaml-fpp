@@ -83,6 +83,6 @@ topology DnsStack {
   instance dns_client
 
   connections Start {
-    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect
+    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
   }
 }

@@ -204,7 +204,7 @@ topology UnixDns {
 
   connections Start {
     dns_client.stack -> stackv4v6.connect
-    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect
+    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
     dns_client_app.dns -> dns_client.start
   }
 }

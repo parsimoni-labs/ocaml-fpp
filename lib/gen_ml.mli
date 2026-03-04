@@ -3,7 +3,8 @@
     Produces idiomatic OCaml modules from FPP state machine definitions and
     topology definitions. State machines use GADTs for typed signals, module
     types for actions and guards, and functors for dependency injection.
-    Topologies produce module aliases, functor applications, and lazy bindings.
+    Topologies produce module aliases, functor applications, and group
+    functions.
 
     External state machines (no body) produce no output. *)
 
@@ -31,26 +32,26 @@ val topology_connect_names :
 val pp_main_entry_multi : Format.formatter -> (string * string) list -> unit
 (** [pp_main_entry_multi ppf topos] emits a [let () = Lwt_main.run (...)] entry
     point. Each element is [(topo_module_name, func_name)] where [func_name] is
-    a connection group name. *)
+    a group function name. *)
 
 val topology_active_instance_names :
   Ast.translation_unit -> Ast.def_topology -> (string * string) list
-(** [topology_active_instance_names tu topo] returns [(var_name, module_name)]
-    pairs for all instances in [topo], in topo-sorted order. These are the
-    instances that receive lazy bindings. *)
+(** [topology_active_instance_names tu topo] returns [(func_name, func_name)]
+    pairs for group functions in [topo]. Used by [pp_entry_point] to call the
+    last group function. *)
 
 val pp_entry_point :
   Format.formatter -> topo_name:string -> (string * string) list -> unit
 (** [pp_entry_point ppf ~topo_name names] emits a Mirage_runtime-based entry
     point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
-    initialises RNG and logging, forces each lazy binding with
-    [let* _ = Lazy.force x in], and runs via [Unix_os.Main.run]. *)
+    initialises RNG and logging, calls the last group function, and runs via
+    [Unix_os.Main.run]. *)
 
 (** {2 .mli Generation} *)
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits lazy
-    value bindings for each instance. *)
+(** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits
+    function signatures for each connection group. *)
 
 (** {2 Topology Helpers} *)
 

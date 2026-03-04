@@ -190,7 +190,7 @@ passive component Dispatch {
 @ ── DNS ─────────────────────────────────────────────────
 
 passive component Happy_eyeballs_mirage {
-  sync input port connect
+  sync input port connect_device
   output port stack
 }
 

@@ -1400,19 +1400,6 @@ let collect_direct_connections (topo : Ast.def_topology) =
 (** Merge all connection groups into a single list. *)
 let all_connections groups = List.concat_map snd groups
 
-(** Build a mapping from instance name to connection group name. For instances
-    appearing in multiple groups the last-seen group wins. *)
-let instance_method_names groups =
-  let tbl = Hashtbl.create 16 in
-  List.iter
-    (fun (gname, conns) ->
-      List.iter
-        (fun (conn : Ast.connection) ->
-          Hashtbl.replace tbl (pid_inst_name conn.conn_from_port.data) gname)
-        conns)
-    groups;
-  tbl
-
 (** Collect the names of instances that [inst_name] connects to. *)
 let connection_targets inst_name connections =
   List.filter_map
@@ -1498,6 +1485,121 @@ let target_instances inst_name (comp : Ast.def_component) connections sorted =
 let filter_non_runtime sorted =
   List.filter (fun (_, _, comp) -> not (is_runtime_component comp)) sorted
 
+(** Assign each non-runtime instance to its earliest connection group. Returns
+    [(group_name, instances)] pairs in group order, with instances topo-sorted
+    within each group. Standalone instances (no connections) go into a synthetic
+    group named after their sync input port. Dependencies that would create a
+    backward cross-group reference are pulled into the earlier group. *)
+let partition_instances_by_group non_rt groups all_conns =
+  let assigned = Hashtbl.create 16 in
+  List.iter
+    (fun (inst_name, _, (comp : Ast.def_component)) ->
+      let earliest =
+        List.find_map
+          (fun (gname, conns) ->
+            let appears =
+              List.exists
+                (fun (conn : Ast.connection) ->
+                  pid_inst_name conn.conn_from_port.data = inst_name
+                  || pid_inst_name conn.conn_to_port.data = inst_name)
+                conns
+            in
+            if appears then Some gname else None)
+          groups
+      in
+      match earliest with
+      | Some g -> Hashtbl.replace assigned inst_name g
+      | None ->
+          let port =
+            sync_input_port_name comp |> Option.value ~default:"connect"
+          in
+          Hashtbl.replace assigned inst_name port)
+    non_rt;
+  let declared = List.map fst groups in
+  let synthetic =
+    List.filter_map
+      (fun (inst_name, _, _) ->
+        let g = Hashtbl.find assigned inst_name in
+        if List.mem g declared then None else Some g)
+      non_rt
+  in
+  let seen = Hashtbl.create 8 in
+  let group_order =
+    List.filter
+      (fun n ->
+        if Hashtbl.mem seen n then false
+        else (
+          Hashtbl.add seen n ();
+          true))
+      (declared @ synthetic)
+  in
+  let group_index name =
+    let rec find i = function
+      | [] -> max_int
+      | n :: _ when n = name -> i
+      | _ :: rest -> find (i + 1) rest
+    in
+    find 0 group_order
+  in
+  let changed = ref true in
+  while !changed do
+    changed := false;
+    List.iter
+      (fun (inst_name, _, _) ->
+        let my_group = Hashtbl.find assigned inst_name in
+        let my_idx = group_index my_group in
+        let deps = connection_targets inst_name all_conns in
+        List.iter
+          (fun dep_name ->
+            match Hashtbl.find_opt assigned dep_name with
+            | Some dep_group ->
+                let dep_idx = group_index dep_group in
+                if dep_idx > my_idx then (
+                  Hashtbl.replace assigned dep_name my_group;
+                  changed := true)
+            | None -> ())
+          deps)
+      non_rt
+  done;
+  List.filter_map
+    (fun gname ->
+      let insts =
+        List.filter
+          (fun (inst_name, _, _) -> Hashtbl.find assigned inst_name = gname)
+          non_rt
+      in
+      if insts <> [] then Some (gname, insts) else None)
+    group_order
+
+(** For each group, compute which values it must return. This includes both
+    instances produced by this group and pass-through values received from
+    earlier groups that later groups still need. *)
+let cross_group_exports partitioned all_conns =
+  let n = List.length partitioned in
+  let all_up_to =
+    Array.init n (fun i ->
+        List.concat_map
+          (fun (_, insts) -> List.map (fun (name, _, _) -> name) insts)
+          (List.filteri (fun j _ -> j <= i) partitioned))
+  in
+  List.mapi
+    (fun i (_gname, _insts) ->
+      if i = n - 1 then []
+      else
+        let later_inst_names =
+          List.concat_map
+            (fun (_, later_insts) ->
+              List.map (fun (nm, _, _) -> nm) later_insts)
+            (List.filteri (fun j _ -> j > i) partitioned)
+        in
+        let later_deps =
+          List.concat_map
+            (fun later_name -> connection_targets later_name all_conns)
+            later_inst_names
+        in
+        List.filter (fun name -> List.mem name later_deps) all_up_to.(i))
+    partitioned
+
 (** Whether a port is a dependency-only marker ([port Dep]). Dep ports model
     functor arguments in the connection graph but should not surface as labeled
     connect parameters. *)
@@ -1575,49 +1677,115 @@ let pp_runtime_labelled_args ppf _inst_annots inst_name args connections =
         | None -> pf ppf " ~%s" arg)
     args
 
-let pp_lazy_binding ppf ~func_name inst_name (ci : Ast.def_component_instance)
+(** Emit the connect expression for a single instance: [Mod.method args]. Does
+    not emit the [let*] prefix or [in] suffix — those are added by the caller.
+*)
+let pp_instance_expr ppf inst_name (ci : Ast.def_component_instance)
     (comp : Ast.def_component) connections sorted inst_annots =
   let inst_var = sanitize_ident inst_name in
   let mod_name = constructor_name inst_name in
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
   let targets = target_instances inst_name comp connections sorted in
   let rt_args = runtime_labelled_args inst_name sorted connections in
   let params = component_params comp in
-  let has_params = params <> [] in
-  if targets = [] && rt_args = [] && not has_params then
-    pf ppf "let %s = lazy (%s.%s ())" inst_var mod_name func_name
-  else
-    let config_ports = unconnected_input_ports inst_name comp connections in
-    pf ppf "let %s = lazy (" inst_var;
-    List.iter
-      (fun (target_inst, _) ->
-        pf ppf "@,  let* %s = Lazy.force %s in"
-          (sanitize_ident target_inst)
-          (sanitize_ident target_inst))
-      targets;
-    pf ppf "@,  %s.%s" mod_name func_name;
-    pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
-    List.iteri
-      (fun i ((p : Ast.spec_param), positional, optional) ->
-        let param_name = camel_to_snake p.param_name.data in
-        let prefix = if optional then "?" else "~" in
-        match resolve_param_value inst_annots inst_name ci i p with
-        | Some code ->
-            if positional then pf ppf " %s" code
-            else pf ppf " %s%s:%s" prefix param_name code
-        | None ->
-            if optional then () (* omit unresolved optional params *)
-            else if positional then pf ppf " (%s__%s ())" inst_var param_name
-            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
-      params;
-    List.iter
+  let config_ports = unconnected_input_ports inst_name comp connections in
+  (* Exclude the sync input port from config_ports — it determines the method
+     name, not a labeled argument. *)
+  let config_ports =
+    List.filter
       (fun (p : Ast.port_instance_general) ->
-        pf ppf " ~%s" (sanitize_ident p.gen_name.data))
-      config_ports;
-    List.iter
-      (fun (target_inst, _) -> pf ppf " %s" (sanitize_ident target_inst))
-      targets;
-    if targets = [] && config_ports = [] && not has_params then pf ppf " ()";
-    pf ppf ")"
+        camel_to_snake p.gen_name.data <> method_name)
+      config_ports
+  in
+  pf ppf "%s.%s" mod_name method_name;
+  pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
+  let has_any_arg = rt_args <> [] in
+  let has_any_arg = ref has_any_arg in
+  List.iteri
+    (fun i ((p : Ast.spec_param), positional, optional) ->
+      let param_name = camel_to_snake p.param_name.data in
+      let prefix = if optional then "?" else "~" in
+      match resolve_param_value inst_annots inst_name ci i p with
+      | Some code ->
+          has_any_arg := true;
+          if positional then pf ppf " %s" code
+          else pf ppf " %s%s:%s" prefix param_name code
+      | None ->
+          if optional then () (* omit unresolved optional params *)
+          else (
+            has_any_arg := true;
+            if positional then pf ppf " (%s__%s ())" inst_var param_name
+            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
+    params;
+  List.iter
+    (fun (p : Ast.port_instance_general) ->
+      has_any_arg := true;
+      pf ppf " ~%s" (sanitize_ident p.gen_name.data))
+    config_ports;
+  List.iter
+    (fun (target_inst, _) ->
+      has_any_arg := true;
+      pf ppf " %s" (sanitize_ident target_inst))
+    targets;
+  if not !has_any_arg then pf ppf " ()"
+
+(** Emit a group function. [prev_group] is the name and exports of the previous
+    group (if any). [exports] lists instance names this group must return for
+    later groups. *)
+let pp_group_function ppf ~prev_group group_name insts all_conns sorted
+    inst_annots exports =
+  let n = List.length insts in
+  let has_cross_deps = prev_group <> None in
+  let needs_lwt_syntax = n > 1 || has_cross_deps in
+  (* Determine if we need a tuple return *)
+  let last_inst_name =
+    match List.rev insts with (name, _, _) :: _ -> name | [] -> ""
+  in
+  let need_tuple_return =
+    match exports with
+    | [] -> false
+    | [ single ] -> single <> last_inst_name
+    | _ -> true
+  in
+  if not needs_lwt_syntax then
+    (* Single instance, no cross-deps: one-liner *)
+    match insts with
+    | [ (inst_name, ci, comp) ] ->
+        pf ppf "@,@,let %s () = " group_name;
+        pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots
+    | _ -> ()
+  else (
+    pf ppf "@,@,let %s () =" group_name;
+    pf ppf "@,  let open Lwt.Syntax in";
+    (* Cross-group deps from previous group *)
+    (match prev_group with
+    | None -> ()
+    | Some (prev_name, prev_exports) -> (
+        match prev_exports with
+        | [ name ] ->
+            pf ppf "@,  let* %s = %s () in" (sanitize_ident name) prev_name
+        | _ ->
+            let names = List.map sanitize_ident prev_exports in
+            pf ppf "@,  let* (%s) = %s () in" (String.concat ", " names)
+              prev_name));
+    (* let* chain for each instance *)
+    List.iteri
+      (fun i (inst_name, ci, (comp : Ast.def_component)) ->
+        let is_last = i = n - 1 in
+        if is_last && not need_tuple_return then (
+          pf ppf "@,  ";
+          pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots)
+        else (
+          pf ppf "@,  let* %s = " (sanitize_ident inst_name);
+          pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots;
+          pf ppf " in"))
+      insts;
+    (* Tuple return for multi-export *)
+    if need_tuple_return then
+      pf ppf "@,  Lwt.return (%s)"
+        (String.concat ", " (List.map sanitize_ident exports)))
 
 (** Emit a single Cmdliner term registration for one unresolved param. *)
 let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
@@ -1708,11 +1876,10 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
     sorted
 
 (** Pretty-print topology body. Module aliases and functor applications are at
-    top level (no [Make] struct wrapper). All instances get [lazy] bindings. *)
+    top level, followed by one function per connection group. *)
 let pp_topology_body ppf tu topo sorted groups =
   let all_conns = all_connections groups in
   let inst_annots = instance_annotations topo in
-  let method_names = instance_method_names groups in
   let first_module = ref true in
   let module_break () =
     if !first_module then (
@@ -1725,23 +1892,18 @@ let pp_topology_body ppf tu topo sorted groups =
   pp_functor_applications ppf tu inst_annots all_conns module_break non_rt;
   (* Cmdliner registrations for component params not overridden *)
   pp_param_cmdliner_terms ppf inst_annots non_rt;
-  (* Lazy bindings for non-runtime instances *)
-  ignore
-    (List.fold_left
-       (fun prev_leaf (inst_name, ci, (comp : Ast.def_component)) ->
-         let targets = target_instances inst_name comp all_conns sorted in
-         let is_leaf = targets = [] in
-         if prev_leaf && is_leaf then pf ppf "@," else pf ppf "@,@,";
-         let func_name =
-           Hashtbl.find_opt method_names inst_name
-           |> Option.value
-                ~default:
-                  (sync_input_port_name comp |> Option.value ~default:"connect")
-         in
-         pp_lazy_binding ppf ~func_name inst_name ci comp all_conns sorted
-           inst_annots;
-         is_leaf)
-       false non_rt)
+  (* Group functions *)
+  let partitioned = partition_instances_by_group non_rt groups all_conns in
+  let exports = cross_group_exports partitioned all_conns in
+  let _prev =
+    List.fold_left2
+      (fun prev_group (gname, insts) group_exports ->
+        pp_group_function ppf ~prev_group gname insts all_conns sorted
+          inst_annots group_exports;
+        if group_exports = [] then None else Some (gname, group_exports))
+      None partitioned exports
+  in
+  ()
 
 (** Whether a topology would produce OCaml code. Any topology with non-runtime
     instances produces output. *)
@@ -1775,30 +1937,22 @@ let pp_topology tu ppf (topo : Ast.def_topology) =
   let sorted = topo_sort_instances resolved connections in
   let non_rt = filter_non_runtime sorted in
   if non_rt = [] then ()
-  else
-    let has_let_star =
-      List.exists
-        (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-          target_instances inst_name comp connections sorted <> [])
-        non_rt
-    in
+  else (
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s *)"
       topo.topo_name.data;
-    if has_let_star then pf ppf "@,@,open Lwt.Syntax";
     pp_topology_body ppf tu topo sorted groups;
-    pf ppf "@]@."
+    pf ppf "@]@.")
 
 (** Emit a [let () = Lwt_main.run (...)] entry point. Each element is
-    [(topo_module_name, func_name)] where [func_name] is a connection group
-    name. Uses [@.] (print_newline) instead of [@,] because this is called
-    outside any formatting box. *)
+    [(topo_module_name, func_name)] where [func_name] is a group function name.
+    Uses [@.] (print_newline) instead of [@,] because this is called outside any
+    formatting box. *)
 let pp_main_entry_multi ppf topos =
   let wrap = List.length topos > 1 in
   match topos with
   | [] -> ()
   | [ (_, func_name) ] ->
-      pf ppf "let () =@.  Lwt_main.run (Make.%s () |> Lwt.map ignore)@."
-        func_name
+      pf ppf "let () =@.  Lwt_main.run (%s () |> Lwt.map ignore)@." func_name
   | _ ->
       pf ppf "let () =@.  Lwt_main.run begin@.";
       pf ppf "    let open Lwt.Syntax in@.";
@@ -1806,15 +1960,15 @@ let pp_main_entry_multi ppf topos =
         (fun (topo_name, func_name) ->
           let var = camel_to_snake topo_name in
           let prefix = if wrap then topo_name ^ "." else "" in
-          pf ppf "    let* _%s = %sMake.%s () in@." var prefix func_name)
+          pf ppf "    let* _%s = %s%s () in@." var prefix func_name)
         topos;
       pf ppf "    Lwt.return ()@.";
       pf ppf "  end@."
 
 (* ── .mli generation ─────────────────────────────────────────────── *)
 
-(** Pretty-print the .mli for a topology. Emits [module X = ...] and
-    [val x : X.t Lazy.t]. Runtime instances are excluded. *)
+(** Pretty-print the .mli for a topology. Emits module aliases and function
+    signatures for each connection group. Runtime instances are excluded. *)
 let pp_topology_mli tu ppf (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
@@ -1844,32 +1998,43 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
                   first_module := false);
                 pf ppf "@,module %s = %s" mod_name concrete_mod))
       non_rt;
+    let partitioned = partition_instances_by_group non_rt groups all_conns in
+    let exports = cross_group_exports partitioned all_conns in
     pf ppf "@,";
-    List.iter
-      (fun (inst_name, _ci, _comp) ->
-        pf ppf "@,val %s : %s.t Lazy.t" (sanitize_ident inst_name)
-          (constructor_name inst_name))
-      non_rt;
+    List.iter2
+      (fun (gname, _insts) group_exports ->
+        let ret_type =
+          match group_exports with
+          | [] -> "unit Lwt.t"
+          | [ name ] -> constructor_name name ^ ".t Lwt.t"
+          | _ ->
+              "("
+              ^ String.concat " * "
+                  (List.map (fun n -> constructor_name n ^ ".t") group_exports)
+              ^ ") Lwt.t"
+        in
+        pf ppf "@,val %s : unit -> %s" gname ret_type)
+      partitioned exports;
     pf ppf "@]@."
   end
 
-(** Return [(var_name, module_name)] pairs for all instances that get lazy
-    bindings, in topo-sorted order. Runtime instances are excluded. *)
+(** Return group function names for the topology. Each element is
+    [(func_name, func_name)]. Used by [pp_entry_point] to call the last group
+    function. *)
 let topology_active_instance_names tu (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
-  let connections = all_connections (collect_direct_connections topo) in
+  let groups = collect_direct_connections topo in
+  let connections = all_connections groups in
   let sorted = topo_sort_instances resolved connections in
   let non_rt = filter_non_runtime sorted in
-  List.map
-    (fun (inst_name, _ci, _comp) ->
-      (sanitize_ident inst_name, constructor_name inst_name))
-    non_rt
+  let partitioned = partition_instances_by_group non_rt groups connections in
+  List.map (fun (gname, _) -> (gname, gname)) partitioned
 
 (** Emit a Mirage_runtime-based entry point that registers cmdliner arguments,
-    parses [Mirage_bootvar.argv], initialises RNG and logging, forces each lazy
-    binding with [let* _ = Lazy.force x in], and runs via [Unix_os.Main.run].
-    Each element of [names] is [(var_name, module_name)]. *)
+    parses [Mirage_bootvar.argv], initialises RNG and logging, calls the last
+    group function, and runs via [Unix_os.Main.run]. Each element of [names] is
+    [(func_name, func_name)]. *)
 let pp_entry_point ppf ~topo_name names =
   match names with
   | [] -> ()
@@ -1903,9 +2068,8 @@ let pp_entry_point ppf ~topo_name names =
         "    let* _ = Mirage_crypto_rng_mirage.initialize (module \
          Mirage_crypto_rng.Fortuna) in@.";
       pf ppf "    Mirage_runtime.set_name %S;@." topo_name;
-      List.iter
-        (fun (var, _) -> pf ppf "    let* _ = Lazy.force %s in@." var)
-        names;
+      let last_func = fst (List.nth names (List.length names - 1)) in
+      pf ppf "    let* _ = %s () in@." last_func;
       pf ppf "    Lwt.return ()@.";
       pf ppf "  in@.";
       pf ppf "  Unix_os.Main.run t; exit 0@."
