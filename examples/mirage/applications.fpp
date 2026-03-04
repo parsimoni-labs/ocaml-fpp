@@ -2,7 +2,7 @@
 @
 @ Components model application entry points. [sync input port start]
 @ declares the start function; output ports declare module
-@ dependencies. Flat topologies bind all instances and generate
+@ dependencies. Topologies bind all instances and generate
 @ [main.ml] with [Mirage_runtime] entry points.
 
 @ ── Application component shapes ────────────────────────────

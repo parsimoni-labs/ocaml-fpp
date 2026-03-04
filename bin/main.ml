@@ -490,7 +490,7 @@ let gen_ml_topologies ppf tu topologies =
   in
   let wrap = List.length topos > 1 in
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos;
-  let flat_names =
+  let entry_names =
     List.concat_map
       (fun (t : Fpp.Ast.def_topology) ->
         if Fpp.Gen_ml.topology_is_fully_bound tu t then
@@ -503,8 +503,8 @@ let gen_ml_topologies ppf tu topologies =
         else [])
       topos
   in
-  if flat_names <> [] then begin
-    let flat_topos =
+  if entry_names <> [] then begin
+    let entry_topos =
       List.filter
         (fun (t : Fpp.Ast.def_topology) ->
           Fpp.Gen_ml.topology_is_fully_bound tu t)
@@ -514,9 +514,9 @@ let gen_ml_topologies ppf tu topologies =
       String.concat "+"
         (List.map
            (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data)
-           flat_topos)
+           entry_topos)
     in
-    Fpp.Gen_ml.pp_flat_entry_point ppf ~topo_name flat_names
+    Fpp.Gen_ml.pp_entry_point ppf ~topo_name entry_names
   end
 
 let gen_mli_topologies ppf tu topologies =
@@ -526,7 +526,6 @@ let gen_mli_topologies ppf tu topologies =
       (fun (t : Fpp.Ast.def_topology) -> List.mem t.topo_name.data topologies)
       all_topos
   in
-  Fpp.Gen_ml.pp_module_types tu topos ppf;
   let wrap = List.length topos > 1 in
   List.iter
     (fun t ->

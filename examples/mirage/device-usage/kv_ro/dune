@@ -40,7 +40,6 @@
   mirage-kv
   mirage-kv-mem))
 
-(rule
- (alias runtest)
- (action
-  (run ./main.exe)))
+(alias
+ (name runtest)
+ (deps main.exe))

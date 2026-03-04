@@ -32,7 +32,6 @@
   fmt
   mirage-block-ramdisk))
 
-(rule
- (alias runtest)
- (action
-  (run ./main.exe)))
+(alias
+ (name runtest)
+ (deps main.exe))

@@ -10,9 +10,9 @@
     (enums, structs, arrays), catch-all patterns, external (bodyless) state
     machines.
 
-    {b Topology features}: parameterised and flat topologies, typed ports,
-    functor application, default functor convention, topology import, ocaml.type
-    annotations, passive components, bound leaf instances. *)
+    {b Topology features}: topologies, typed ports, functor application, default
+    functor convention, topology import, ocaml.type annotations, passive
+    components, bound leaf instances. *)
 
 (* ── Helpers ─────────────────────────────────────────────────────── *)
 
@@ -37,15 +37,6 @@ let render_topo s =
   let buf = Buffer.create 256 in
   let ppf = Format.formatter_of_buffer buf in
   List.iter (Fpp.Gen_ml.pp_topology tu ppf) topos;
-  Format.pp_print_flush ppf ();
-  Buffer.contents buf
-
-let render_module_types s =
-  let tu = parse s in
-  let topos = Fpp.topologies tu in
-  let buf = Buffer.create 256 in
-  let ppf = Format.formatter_of_buffer buf in
-  Fpp.Gen_ml.pp_module_types tu topos ppf;
   Format.pp_print_flush ppf ();
   Buffer.contents buf
 
@@ -795,30 +786,16 @@ let test_simple_topology () =
 
 open Lwt.Syntax
 
-module type LOGGER = sig
-  type t
-  val data_in : t -> unit
-end
+module Sensor = Sensor.Make(Logger)
 
-module Make
-  (Logger : LOGGER) = struct
-  module Sensor = Sensor.Make(Logger)
+let logger = lazy (Logger.data_in ())
 
-  type t = { logger : Logger.t; sensor : Sensor.t; }
-
-  let data logger =
-    let* sensor = Sensor.data logger in
-    Lwt.return { logger; sensor }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let sensor = lazy (
+  let* logger = Lazy.force logger in
+  Sensor.data logger)|}
 
 let test_typed_port_topology () =
-  check_output ~msg:"typed ports, functor application"
+  check_output ~msg:"typed ports"
     (render_topo
        {|
     port DataPort(value: U32) -> bool
@@ -835,27 +812,13 @@ let test_typed_port_topology () =
 
 open Lwt.Syntax
 
-module type CONSUMER = sig
-  type t
-  val in_ : t -> int32 -> bool
-end
+module Producer = Producer.Make(Consumer)
 
-module Make
-  (Consumer : CONSUMER) = struct
-  module Producer = Producer.Make(Consumer)
+let consumer = lazy (Consumer.in_ ())
 
-  type t = { consumer : Consumer.t; producer : Producer.t; }
-
-  let main consumer =
-    let* producer = Producer.main consumer in
-    Lwt.return { consumer; producer }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let producer = lazy (
+  let* consumer = Lazy.force consumer in
+  Producer.main consumer)|}
 
 (* ── Topology: functor-application ────────────────────────────────── *)
 
@@ -890,29 +853,18 @@ let test_annotated_topology () =
 
 open Lwt.Syntax
 
-module type NET = sig
-  type t
-  val write : t -> unit
-end
+module Eth = Eth.Make(Net)
+module Ipv4 = Ipv4.Make(Eth)
 
-module Make
-  (Net : NET) = struct
-  module Eth = Eth.Make(Net)
-  module Ipv4 = Ipv4.Make(Eth)
+let net = lazy (Net.write ())
 
-  type t = { net : Net.t; eth : Eth.t; ipv4 : Ipv4.t; }
+let eth = lazy (
+  let* net = Lazy.force net in
+  Eth.w net)
 
-  let w ~cidr net =
-    let* eth = Eth.w net in
-    let* ipv4 = Ipv4.w ~cidr eth in
-    Lwt.return { net; eth; ipv4 }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let ipv4 = lazy (
+  let* eth = Lazy.force eth in
+  Ipv4.w ~cidr eth)|}
 
 let test_annotated_default_functor () =
   check_output ~msg:"ComponentName.Make convention"
@@ -933,27 +885,13 @@ let test_annotated_default_functor () =
 
 open Lwt.Syntax
 
-module type BAR = sig
-  type t
-  val in_ : t -> unit
-end
+module Foo = Foo.Make(Bar)
 
-module Make
-  (Bar : BAR) = struct
-  module Foo = Foo.Make(Bar)
+let bar = lazy (Bar.in_ ())
 
-  type t = { bar : Bar.t; foo : Foo.t; }
-
-  let c bar =
-    let* foo = Foo.c bar in
-    Lwt.return { bar; foo }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let foo = lazy (
+  let* bar = Lazy.force bar in
+  Foo.c bar)|}
 
 let test_module_nested_default_functor () =
   check_output ~msg:"Module.Component -> Module.Component.Make convention"
@@ -978,27 +916,13 @@ let test_module_nested_default_functor () =
 
 open Lwt.Syntax
 
-module type NET = sig
-  type t
-  val write : t -> unit
-end
+module Tcp = Tcp.Flow.Make(Net)
 
-module Make
-  (Net : NET) = struct
-  module Tcp = Tcp.Flow.Make(Net)
+let net = lazy (Net.write ())
 
-  type t = { net : Net.t; tcp : Tcp.t; }
-
-  let c ~write net =
-    let* tcp = Tcp.c ~write net in
-    Lwt.return { net; tcp }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let tcp = lazy (
+  let* net = Lazy.force net in
+  Tcp.c ~write net)|}
 
 let test_topology_import () =
   check_output ~msg:"import merges public instances"
@@ -1028,54 +952,29 @@ let test_topology_import () =
 
 open Lwt.Syntax
 
-module type NET = sig
-  type t
-  val write : t -> unit
-end
+module Eth = Eth.Make(Net)
 
-module Make
-  (Net : NET) = struct
-  module Eth = Eth.Make(Net)
+let net = lazy (Net.write ())
 
-  type t = { net : Net.t; eth : Eth.t; }
-
-  let w net =
-    let* eth = Eth.w net in
-    Lwt.return { net; eth }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end
+let eth = lazy (
+  let* net = Lazy.force net in
+  Eth.w net)
 (* Generated by ofpp to-ml from topology App *)
 
 open Lwt.Syntax
 
-module type NET = sig
-  type t
-  val write : t -> unit
-end
+module Eth = Eth.Make(Net)
+module Srv = Srv.Make(Eth)
 
-module Make
-  (Net : NET) = struct
-  module Eth = Eth.Make(Net)
-  module Srv = Srv.Make(Eth)
+let net = lazy (Net.write ())
 
-  type t = { net : Net.t; eth : Eth.t; srv : Srv.t; }
+let eth = lazy (
+  let* net = Lazy.force net in
+  Eth.w net)
 
-  let w net =
-    let* eth = Eth.w net in
-    let* srv = Srv.w eth in
-    Lwt.return { net; eth; srv }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let srv = lazy (
+  let* eth = Lazy.force eth in
+  Srv.w eth)|}
 
 let test_passive_in_annotated () =
   check_output ~msg:"passive participates in record and connect"
@@ -1096,33 +995,19 @@ let test_passive_in_annotated () =
 
 open Lwt.Syntax
 
-module type HTTP = sig
-  type t
-  val static : t -> unit
-end
+module Kv = Crunch.Make(Http)
 
-module Make
-  (Http : HTTP) = struct
-  module Kv = Crunch.Make(Http)
+let http = lazy (Http.static ())
 
-  type t = { http : Http.t; kv : Kv.t; }
-
-  let c http =
-    let* kv = Kv.c http in
-    Lwt.return { http; kv }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let kv = lazy (
+  let* http = Lazy.force http in
+  Kv.c http)|}
 
 (* ── Module type generation ──────────────────────────────────────── *)
 
 let test_external_types () =
   check_output ~msg:"ocaml.type maps FPP types to OCaml"
-    (render_module_types
+    (render_topo
        {|
     @ ocaml.type Cstruct.t
     type Buffer
@@ -1144,13 +1029,17 @@ let test_external_types () =
       instance eth
       connections C { eth.net -> net.write }
     } |})
-    {|(* Module types generated by ofpp to-ml *)
+    {|(* Generated by ofpp to-ml from topology T *)
 
-module type NET = sig
-  type t
-  val write : t -> Cstruct.t -> unit
-  val mac : t -> Macaddr.t
-end|}
+open Lwt.Syntax
+
+module Eth = Eth.Make(Net)
+
+let net = lazy (Net.write ())
+
+let eth = lazy (
+  let* net = Lazy.force net in
+  Eth.c ~write net)|}
 
 (* ── Bound leaf instances ────────────────────────────────────────── *)
 
@@ -1179,29 +1068,16 @@ let test_bound_leaf_instance () =
 
 open Lwt.Syntax
 
-module type NET = sig
-  type t
-  val write : t -> unit
-end
+module Data = Htdocs_data
+module Eth = Eth.Make(Net)
 
-module Make
-  (Net : NET) = struct
-  module Data = Htdocs_data
-  module Eth = Eth.Make(Net)
+let net = lazy (Net.write ())
 
-  type t = { net : Net.t; eth : Eth.t; data : Data.t; }
+let eth = lazy (
+  let* net = Lazy.force net in
+  Eth.w net)
 
-  let w net =
-    let* data = Data.w () in
-    let* eth = Eth.w net in
-    Lwt.return { net; eth; data }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let data = lazy (Data.get ())|}
 
 let test_mixed_bound_unbound () =
   check_output ~msg:"bound + unbound leaves, functor params only for unbound"
@@ -1231,29 +1107,16 @@ let test_mixed_bound_unbound () =
 
 open Lwt.Syntax
 
-module type KV = sig
-  type t
-  val get : t -> unit
-end
+module Kv = Static_data
+module Srv = Srv.Make(Kv)(Certs)
 
-module Make
-  (Certs : KV) = struct
-  module Kv = Static_data
-  module Srv = Srv.Make(Kv)(Certs)
+let kv = lazy (Kv.get ())
+let certs = lazy (Certs.get ())
 
-  type t = { kv : Kv.t; certs : Certs.t; srv : Srv.t; }
-
-  let w certs =
-    let* kv = Kv.w () in
-    let* srv = Srv.w kv certs in
-    Lwt.return { kv; certs; srv }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let srv = lazy (
+  let* kv = Lazy.force kv in
+  let* certs = Lazy.force certs in
+  Srv.w kv certs)|}
 
 let test_all_leaves_bound () =
   check_output ~msg:"all leaves bound, top-level lazy bindings"
@@ -1313,34 +1176,18 @@ let test_multi_group () =
 
 open Lwt.Syntax
 
-module type C = sig
-  type t
-  val in_ : t -> unit
-end
+module B = B.Make(C)
+module A = A.Make(B)
 
-module Make
-  (C : C) = struct
-  module B = B.Make(C)
-  module A = A.Make(B)
+let c = lazy (C.in_ ())
 
-  type connect = { b : B.t; a : A.t; }
+let b = lazy (
+  let* c = Lazy.force c in
+  B.start c)
 
-  let connect b =
-    let* a = A.connect b in
-    Lwt.return { b; a }
-
-  type start = { c : C.t; b : B.t; }
-
-  let start ~in_ c =
-    let* b = B.start ~in_ c in
-    Lwt.return { c; b }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let a = lazy (
+  let* b = Lazy.force b in
+  A.connect b)|}
 
 (* ── Topology: empty ──────────────────────────────────────────────── *)
 
@@ -1407,31 +1254,17 @@ let test_custom_group_name () =
 
 open Lwt.Syntax
 
-module type LOGGER = sig
-  type t
-  val data_in : t -> unit
-end
+module Sensor = Sensor.Make(Logger)
 
-module Make
-  (Logger : LOGGER) = struct
-  module Sensor = Sensor.Make(Logger)
+let logger = lazy (Logger.data_in ())
 
-  type t = { logger : Logger.t; sensor : Sensor.t; }
-
-  let connect_device logger =
-    let* sensor = Sensor.connect_device logger in
-    Lwt.return { logger; sensor }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let sensor = lazy (
+  let* logger = Lazy.force logger in
+  Sensor.connect_device logger)|}
 
 (* ── Topology: runtime component convention ───────────────────────── *)
 
-let test_runtime_flat () =
+let test_runtime () =
   check_output ~msg:"bound runtime kwargs inject qualified paths"
     (render_topo
        {|
@@ -1508,30 +1341,17 @@ let test_runtime_parameterised () =
 
 open Lwt.Syntax
 
-module type SOCKET = sig
-  type t
-  val connect : t -> unit
-end
+module Stack = Stack.Make(Udp)(Tcp)
 
-module Make
-  (Udp : SOCKET)
-  (Tcp : SOCKET) = struct
-  module Stack = Stack.Make(Udp)(Tcp)
+let udp = lazy (
+  Udp.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
+let tcp = lazy (
+  Tcp.connect ~ipv4_only:Runtime.ipv4_only ~ipv6_only:Runtime.ipv6_only ())
 
-  type t = { udp : Udp.t; tcp : Tcp.t; stack : Stack.t; }
-
-  let connect ~ipv4_only ~ipv6_only udp tcp =
-    let* udp = Udp.connect ~ipv4_only ~ipv6_only () in
-    let* tcp = Tcp.connect ~ipv4_only ~ipv6_only () in
-    let* stack = Stack.connect udp tcp in
-    Lwt.return { udp; tcp; stack }
-
-  let init () =
-    Printexc.record_backtrace true;
-    Mirage_crypto_rng_unix.use_default ();
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
-end|}
+let stack = lazy (
+  let* udp = Lazy.force udp in
+  let* tcp = Lazy.force tcp in
+  Stack.connect udp tcp)|}
 
 (* ── Suite ───────────────────────────────────────────────────────── *)
 
@@ -1557,7 +1377,7 @@ let suite =
       (* State machines — edge cases *)
       Alcotest.test_case "external_sm" `Quick test_external_sm;
       Alcotest.test_case "catchall_pattern" `Quick test_catchall_pattern;
-      (* Topology — parameterised *)
+      (* Topology — basic *)
       Alcotest.test_case "simple_topology" `Quick test_simple_topology;
       Alcotest.test_case "typed_port_topology" `Quick test_typed_port_topology;
       (* Topology — functor application *)
@@ -1583,7 +1403,7 @@ let suite =
       (* Topology — custom group name *)
       Alcotest.test_case "custom_group_name" `Quick test_custom_group_name;
       (* Topology — runtime component *)
-      Alcotest.test_case "runtime_flat" `Quick test_runtime_flat;
-      Alcotest.test_case "runtime_parameterised" `Quick
+      Alcotest.test_case "runtime" `Quick test_runtime;
+      Alcotest.test_case "runtime_unbound_kwargs" `Quick
         test_runtime_parameterised;
     ] )

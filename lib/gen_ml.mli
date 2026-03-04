@@ -3,7 +3,7 @@
     Produces idiomatic OCaml modules from FPP state machine definitions and
     topology definitions. State machines use GADTs for typed signals, module
     types for actions and guards, and functors for dependency injection.
-    Topologies become OCaml functors with typed wiring.
+    Topologies produce module aliases, functor applications, and lazy bindings.
 
     External state machines (no body) produce no output. *)
 
@@ -12,16 +12,7 @@ val pp : Ast.def_state_machine Fmt.t
     machines (no body) produce no output. *)
 
 val pp_topology : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology tu] is a pretty-printer for topology [topo] as an OCaml module.
-    Generates component module type signatures for leaf components and a [Make]
-    functor that wires connections via direct functor application. Follows the
-    MirageOS functor pattern: components define module types (signatures),
-    instances become modules. Functor parameters are leaf module types (not
-    per-port adapters). Non-leaf instances get internal [module X = X.Make(Dep)]
-    applications. Active components use [Lwt.t] return types.
-
-    Fully-bound topologies (all leaves bound via [@ ocaml.module]) produce
-    top-level lazy bindings instead of a [Make] functor. Empty topologies
+(** [pp_topology tu] pretty-prints a topology as OCaml code. Empty topologies
     produce no output. *)
 
 val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
@@ -29,18 +20,8 @@ val topology_has_output : Ast.translation_unit -> Ast.def_topology -> bool
     code. Returns [false] for empty topologies (no instances). *)
 
 val topology_is_fully_bound : Ast.translation_unit -> Ast.def_topology -> bool
-(** [topology_is_fully_bound tu topo] is [true] when every leaf instance in
-    [topo] is bound via [@ ocaml.module]. A fully-bound topology has no functor
-    parameters and its [Make.connect] can be called with [()]. *)
-
-val pp_module_types :
-  Ast.translation_unit -> Ast.def_topology list -> Format.formatter -> unit
-(** [pp_module_types tu topos ppf] emits port-based module types for leaf
-    components in [topos], preceded by a comment header. *)
-
-val has_module_types : Ast.translation_unit -> Ast.def_topology list -> bool
-(** [has_module_types tu topos] is [true] if [topos] have leaf component module
-    types to emit. *)
+(** [topology_is_fully_bound tu topo] is [true] when [topo] has non-runtime
+    instances. *)
 
 val topology_connect_names :
   Ast.translation_unit -> Ast.def_topology -> string list
@@ -56,22 +37,20 @@ val topology_active_instance_names :
   Ast.translation_unit -> Ast.def_topology -> (string * string) list
 (** [topology_active_instance_names tu topo] returns [(var_name, module_name)]
     pairs for all instances in [topo], in topo-sorted order. These are the
-    instances that receive lazy bindings in fully-bound topologies. *)
+    instances that receive lazy bindings. *)
 
-val pp_flat_entry_point :
+val pp_entry_point :
   Format.formatter -> topo_name:string -> (string * string) list -> unit
-(** [pp_flat_entry_point ppf ~topo_name names] emits a Mirage_runtime-based
-    entry point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
+(** [pp_entry_point ppf ~topo_name names] emits a Mirage_runtime-based entry
+    point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
     initialises RNG and logging, forces each lazy binding with
     [let* _ = Lazy.force x in], and runs via [Unix_os.Main.run]. *)
 
 (** {2 .mli Generation} *)
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology_mli tu] is a pretty-printer for the interface of a topology.
-    For parameterised topologies, emits the Make functor signature with type and
-    connect declarations. For fully-bound topologies, emits lazy value bindings
-    for each instance. *)
+(** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits lazy
+    value bindings for each instance. *)
 
 (** {2 Topology Helpers} *)
 
@@ -99,7 +78,7 @@ val collect_direct_connections :
     grouped by graph name. Groups with the same name are merged. *)
 
 val all_connections : (string * Ast.connection list) list -> Ast.connection list
-(** [all_connections groups] merges all connection groups into a flat list. *)
+(** [all_connections groups] merges all connection groups into a single list. *)
 
 val pid_inst_name : Ast.port_instance_id -> string
 (** [pid_inst_name pid] extracts the instance name from a port instance

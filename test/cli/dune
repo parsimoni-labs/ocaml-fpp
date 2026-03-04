@@ -1,4 +1,8 @@
 (cram
  (deps
   %{bin:ofpp}
-  (source_tree data)))
+  (source_tree data)
+  ../../examples/mirage/types.fpp
+  ../../examples/mirage/devices.fpp
+  ../../examples/mirage/stacks.fpp
+  ../../examples/mirage/applications.fpp))

@@ -187,27 +187,13 @@ Simple topology (2 components, 1 connection)
   
   open Lwt.Syntax
   
-  module type LOGGER = sig
-    type t
-    val data_in : t -> unit
-  end
+  module Sensor = Sensor.Make(Logger)
   
-  module Make
-    (Logger : LOGGER) = struct
-    module Sensor = Sensor.Make(Logger)
+  let logger = lazy (Logger.data_in ())
   
-    type t = { logger : Logger.t; sensor : Sensor.t; }
-  
-    let data logger =
-      let* sensor = Sensor.data logger in
-      Lwt.return { logger; sensor }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let sensor = lazy (
+    let* logger = Lazy.force logger in
+    Sensor.data logger)
 
 
 
@@ -246,27 +232,13 @@ Typed port topology
   
   open Lwt.Syntax
   
-  module type CONSUMER = sig
-    type t
-    val in_ : t -> int32 -> bool
-  end
+  module Producer = Producer.Make(Consumer)
   
-  module Make
-    (Consumer : CONSUMER) = struct
-    module Producer = Producer.Make(Consumer)
+  let consumer = lazy (Consumer.in_ ())
   
-    type t = { consumer : Consumer.t; producer : Producer.t; }
-  
-    let main consumer =
-      let* producer = Producer.main consumer in
-      Lwt.return { consumer; producer }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let producer = lazy (
+    let* consumer = Lazy.force consumer in
+    Producer.main consumer)
 
 
 
@@ -304,27 +276,34 @@ Filter by topology name
   
   open Lwt.Syntax
   
-  module type B = sig
-    type t
-    val in_ : t -> unit
-  end
+  module A = A.Make(B)
   
-  module Make
-    (B : B) = struct
-    module A = A.Make(B)
+  let b = lazy (B.in_ ())
   
-    type t = { b : B.t; a : A.t; }
+  let a = lazy (
+    let* b = Lazy.force b in
+    A.c b)
+  let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
+  let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
+  let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
+    Cmdliner_stdlib.setup ~backtrace:(Some true) ~randomize_hashtables:(Some true) ()
   
-    let c b =
-      let* a = A.c b in
-      Lwt.return { b; a }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let () =
+    let t =
+      let open Lwt.Syntax in
+      let* () = Lwt.return (Mirage_runtime.(with_argv (runtime_args ()) "T2" (Mirage_bootvar.argv ()))) in
+      let _ = cmdliner_stdlib__key () in
+      let* () = Mirage_sleep.ns (Duration.of_sec (mirage_runtime_delay__key ())) in
+      let reporter = Mirage_logs.create () in
+      Mirage_runtime.set_level ~default:(Some Logs.Info) (mirage_runtime_logs__key ());
+      Logs.set_reporter reporter;
+      let* _ = Mirage_crypto_rng_mirage.initialize (module Mirage_crypto_rng.Fortuna) in
+      Mirage_runtime.set_name "T2";
+      let* _ = Lazy.force b in
+      let* _ = Lazy.force a in
+      Lwt.return ()
+    in
+    Unix_os.Main.run t; exit 0
 
 
 
@@ -384,27 +363,13 @@ SM + topology merged in one file (wrapped in named modules)
   
   open Lwt.Syntax
   
-  module type LOGGER = sig
-    type t
-    val data_in : t -> unit
-  end
+  module Sensor = Sensor.Make(Logger)
   
-  module Make
-    (Logger : LOGGER) = struct
-    module Sensor = Sensor.Make(Logger)
+  let logger = lazy (Logger.data_in ())
   
-    type t = { logger : Logger.t; sensor : Sensor.t; }
-  
-    let data logger =
-      let* sensor = Sensor.data logger in
-      Lwt.return { logger; sensor }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let sensor = lazy (
+    let* logger = Lazy.force logger in
+    Sensor.data logger)
   end
 
 
@@ -494,29 +459,18 @@ Annotated topology (functor-application mode)
   
   open Lwt.Syntax
   
-  module type NET = sig
-    type t
-    val write : t -> unit
-  end
+  module Eth = Eth.Make(Net)
+  module Ipv4 = Ipv4.Make(Eth)
   
-  module Make
-    (Net : NET) = struct
-    module Eth = Eth.Make(Net)
-    module Ipv4 = Ipv4.Make(Eth)
+  let net = lazy (Net.write ())
   
-    type t = { net : Net.t; eth : Eth.t; ipv4 : Ipv4.t; }
+  let eth = lazy (
+    let* net = Lazy.force net in
+    Eth.w net)
   
-    let w ~cidr net =
-      let* eth = Eth.w net in
-      let* ipv4 = Ipv4.w ~cidr eth in
-      Lwt.return { net; eth; ipv4 }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let ipv4 = lazy (
+    let* eth = Lazy.force eth in
+    Ipv4.w ~cidr eth)
 
 
 
@@ -530,7 +484,7 @@ Bound leaf instance (@ ocaml.module)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.connect ())
+  let kv = lazy (Kv.get ())
   
   let srv = lazy (
     let* kv = Lazy.force kv in
@@ -572,28 +526,13 @@ External types in port declarations
   
   open Lwt.Syntax
   
-  module type NET = sig
-    type t
-    val write : t -> Cstruct.t -> unit
-    val mac : t -> Macaddr.t
-  end
+  module Eth = Eth.Make(Net)
   
-  module Make
-    (Net : NET) = struct
-    module Eth = Eth.Make(Net)
+  let net = lazy (Net.write ())
   
-    type t = { net : Net.t; eth : Eth.t; }
-  
-    let c net =
-      let* eth = Eth.c net in
-      Lwt.return { net; eth }
-  
-    let init () =
-      Printexc.record_backtrace true;
-      Mirage_crypto_rng_unix.use_default ();
-      Logs.set_reporter (Logs_fmt.reporter ());
-      Logs.set_level (Some Logs.Info)
-  end
+  let eth = lazy (
+    let* net = Lazy.force net in
+    Eth.c net)
 
 
 
@@ -622,24 +561,32 @@ Entry point generation (--topologies generates topology + entry point)
   module Kv = Embedded_data
   module Srv = Srv.Make(Kv)
   
-  let kv = lazy (Kv.connect ())
+  let kv = lazy (Kv.get ())
   
   let srv = lazy (
     let* kv = Lazy.force kv in
     Srv.w kv)
-  let () = Printexc.record_backtrace true
-  let () = Mirage_crypto_rng_unix.use_default ()
-  let () =
-    Logs.set_reporter (Logs_fmt.reporter ());
-    Logs.set_level (Some Logs.Info)
+  let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
+  let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
+  let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
+    Cmdliner_stdlib.setup ~backtrace:(Some true) ~randomize_hashtables:(Some true) ()
   
   let () =
-    Lwt_main.run begin
+    let t =
       let open Lwt.Syntax in
+      let* () = Lwt.return (Mirage_runtime.(with_argv (runtime_args ()) "T" (Mirage_bootvar.argv ()))) in
+      let _ = cmdliner_stdlib__key () in
+      let* () = Mirage_sleep.ns (Duration.of_sec (mirage_runtime_delay__key ())) in
+      let reporter = Mirage_logs.create () in
+      Mirage_runtime.set_level ~default:(Some Logs.Info) (mirage_runtime_logs__key ());
+      Logs.set_reporter reporter;
+      let* _ = Mirage_crypto_rng_mirage.initialize (module Mirage_crypto_rng.Fortuna) in
+      Mirage_runtime.set_name "T";
       let* _ = Lazy.force kv in
       let* _ = Lazy.force srv in
       Lwt.return ()
-    end
+    in
+    Unix_os.Main.run t; exit 0
 
 
 

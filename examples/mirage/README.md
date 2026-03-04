@@ -104,11 +104,16 @@ dependencies; the connection graph determines application order.
 | `@ ocaml.module X.Y` | Override default module path | `@ ocaml.module Tcpip_stack_direct.IPV4V6` on `Ip` |
 | `@ ocaml.type T` | Map abstract FPP type to OCaml type | `@ ocaml.type Cstruct.t` on `type Buffer` |
 
-Default module path: `ComponentName.Make` (e.g. `Ethernet` → `Ethernet.Make`).
-Only needs annotation when the OCaml path differs (e.g. `Ip` →
-`Tcpip_stack_direct.IPV4V6`). The connection graph determines whether the
-path is used as a functor application (non-leaf instance with outgoing
-connections) or a module alias (leaf instance with no outgoing connections).
+`@ ocaml.module` is purely a name override.  Every instance already has
+a module name — its instance name, capitalised (e.g. `instance eth` →
+module `Eth`).  The annotation replaces that default when the OCaml
+module path differs (e.g. `@ ocaml.module Tcpip_stack_direct.IPV4V6` on
+`Ip`).  The connection graph determines whether the path is used as a
+functor application (non-leaf instance with outgoing connections) or a
+module alias (leaf instance with no outgoing connections).
+
+Default functor path for non-leaf instances: `ComponentName.Make`
+(e.g. `Ethernet` → `Ethernet.Make`).
 
 ## Topology composition
 
@@ -131,16 +136,10 @@ topology StaticWebsite {
 The parent topology wires cross-boundary connections (here: plugging
 the TCP/IP stack and KV stores into the server).
 
-## Fully-bound vs parameterised topologies
+## Entry points
 
-| Topology | Leaves | Mode |
-|---|---|---|
-| `TcpipStack` | `backend` (unbound) | Functor with `BACKEND` parameter |
-| `StaticWebsite` | `backend`, `data`, `certs` (unbound) | Functor with 3 parameters |
-| `UnixWebsite` | all bound via `@ ocaml.module` | Flat (no functor parameters) |
-
-Fully-bound topologies generate a `Mirage_runtime`-based entry point
-when passed to `ofpp to-ml --topologies`.
+Topologies passed to `ofpp to-ml --topologies` additionally generate a
+`Mirage_runtime`-based entry point.
 
 ### Functor semantics
 
@@ -149,7 +148,7 @@ The generated code uses OCaml's default **applicative** functor semantics:
 This is correct for MirageOS — components that share the same TCP/IP
 stack should agree on types.
 
-For **runtime initialisation**, the flat-topology codegen uses lazy
+For **runtime initialisation**, the codegen uses lazy
 bindings: each `let x = lazy (...)` block forces its dependencies via
 `Lazy.force`. This mirrors generative behaviour at the value level —
 each `Lazy.force` creates a fresh runtime value — while keeping

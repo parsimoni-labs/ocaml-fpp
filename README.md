@@ -285,8 +285,7 @@ machine contracts at compile time.
 Topologies map to OCaml's module system: each FPP **component** defines a
 **module type** (signature), each **instance** becomes a **module**
 (implementation — either a functor application or a leaf alias), and a
-**topology** orchestrates the wiring. Parameterised topologies become
-functors; fully-bound topologies become flat executables.
+**topology** orchestrates the wiring.
 
 For a state machine with actions and guards, the generated output includes:
 
