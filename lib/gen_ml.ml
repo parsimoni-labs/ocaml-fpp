@@ -2001,23 +2001,6 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
                   pf ppf "@,module %s = %s" mod_name concrete_mod))
         | None, _ -> ())
       non_rt;
-    let partitioned = partition_instances_by_group non_rt groups all_conns in
-    let exports = cross_group_exports partitioned all_conns in
-    pf ppf "@,";
-    List.iter2
-      (fun (gname, _insts) group_exports ->
-        let ret_type =
-          match group_exports with
-          | [] -> "unit Lwt.t"
-          | [ name ] -> constructor_name name ^ ".t Lwt.t"
-          | _ ->
-              "("
-              ^ String.concat " * "
-                  (List.map (fun n -> constructor_name n ^ ".t") group_exports)
-              ^ ") Lwt.t"
-        in
-        pf ppf "@,val %s : %s Lazy.t" gname ret_type)
-      partitioned exports;
     pf ppf "@]@."
   end
 

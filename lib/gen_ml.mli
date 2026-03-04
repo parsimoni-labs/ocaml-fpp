@@ -51,7 +51,8 @@ val pp_entry_point :
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits
-    function signatures for each connection group. *)
+    [module X : Sig] constraints for instances whose component has an
+    [@ ocaml.sig] annotation. *)
 
 (** {2 Topology Helpers} *)
 
