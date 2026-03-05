@@ -171,11 +171,13 @@ passive component DirectStackv4v6 {
 @ Each layer wraps the previous one. In the generated code,
 @ the connect functions are pass-throughs ([Lwt.return x]).
 
+@ ocaml.sig Conduit_mirage.S
 passive component ConduitTcp {
   sync input port start
   output port stack
 }
 
+@ ocaml.sig Conduit_mirage.S
 @ ocaml.module Conduit_mirage.TLS
 passive component ConduitTls {
   sync input port connect
@@ -184,6 +186,7 @@ passive component ConduitTls {
 
 module Cohttp_mirage {
   module Server {
+    @ ocaml.sig Cohttp_mirage.Server.S
     @ ocaml.module Cohttp_mirage.Server.Make
     passive component Make {
       sync input port connect
@@ -208,11 +211,13 @@ passive component Dispatch {
 
 @ ── DNS ─────────────────────────────────────────────────
 
+@ ocaml.sig Happy_eyeballs_mirage.S
 passive component Happy_eyeballs_mirage {
   sync input port connect_device
   output port stack
 }
 
+@ ocaml.sig Dns_client_mirage.S
 passive component Dns_client {
   sync input port start
   output port stack
