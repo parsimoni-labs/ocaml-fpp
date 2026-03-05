@@ -1,4 +1,5 @@
 (rule
+ (mode promote)
  (targets static_t.ml static_t.mli)
  (deps
   (source_tree t))
@@ -6,16 +7,15 @@
   (run ocaml-crunch t -o static_t.ml)))
 
 (rule
- (target main.ml)
+ (mode promote)
+ (targets main.ml main.mli)
  (deps
   (:t ../../types.fpp)
   (:d ../../devices.fpp)
   (:s ../../stacks.fpp)
   (:a ../../applications.fpp))
  (action
-  (with-stdout-to
-   %{target}
-   (run %{bin:ofpp} to-ml --topologies UnixKvRo %{t} %{d} %{s} %{a}))))
+  (run %{bin:ofpp} to-ml --topologies UnixKvRo %{t} %{d} %{s} %{a})))
 
 (executable
  (name main)

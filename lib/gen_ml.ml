@@ -1648,28 +1648,71 @@ let build_type_env tu =
   in
   from_members tu.Ast.tu_members
 
-(** Collect typed sync input ports from a component, excluding [connect] and
-    [start] (which are structural, not interface ports). Returns
-    [(port_name, port_type_qi option, gen_name)] triples. *)
+(** Extract [@ ocaml.type] annotations from pre-annotations. Returns all
+    matching values — on components these are extra type declarations for the
+    derived sig; on ports they give the raw OCaml val type. *)
+let ocaml_type_annots (pre : string list) =
+  List.filter_map
+    (fun s ->
+      let s = String.trim s in
+      if starts_with ~prefix:"ocaml.type " s then
+        Some (String.trim (String.sub s 11 (String.length s - 11)))
+      else None)
+    pre
+
+(** Extract a single [@ ocaml.name] annotation, if present. *)
+let port_ocaml_name (pre : string list) =
+  List.find_map
+    (fun s ->
+      let s = String.trim s in
+      if starts_with ~prefix:"ocaml.name " s then
+        Some (String.trim (String.sub s 11 (String.length s - 11)))
+      else None)
+    pre
+
+(** Extract a single [@ ocaml.type] annotation, if present. *)
+let port_ocaml_type (pre : string list) =
+  List.find_map
+    (fun s ->
+      let s = String.trim s in
+      if starts_with ~prefix:"ocaml.type " s then
+        Some (String.trim (String.sub s 11 (String.length s - 11)))
+      else None)
+    pre
+
+(** Collect interface sync input ports from a component, excluding [connect] and
+    [start] (which are structural, not interface ports). A port is an interface
+    port if it has a typed port reference OR an [@ ocaml.type] annotation.
+    Returns [(val_name, port_type_qi option, ocaml_type option)] triples. *)
 let interface_ports (comp : Ast.def_component) =
   let method_name =
     sync_input_port_name comp |> Option.value ~default:"connect"
   in
   List.filter_map
-    (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
+    (fun ((pre, node, _) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with
       | Ast.Comp_spec_port_instance (Ast.Port_general p)
         when p.gen_kind = Sync_input ->
-          let name = camel_to_snake p.gen_name.data in
-          if name = method_name || name = "connect" then None
-          else Some (name, p.gen_port, p.gen_name)
+          let fpp_name = camel_to_snake p.gen_name.data in
+          if fpp_name = method_name || fpp_name = "connect" then None
+          else
+            let ot = port_ocaml_type pre in
+            if p.gen_port <> None || ot <> None then
+              let name =
+                match port_ocaml_name pre with Some n -> n | None -> fpp_name
+              in
+              Some (name, p.gen_port, ot)
+            else None
       | _ -> None)
     comp.comp_members
 
 (** Whether a port is an interface declaration (layer 2). Interface ports have a
-    port type that defines a return type or parameters — they model module API
-    operations, not connection-graph dependencies. *)
-let is_interface_port tu (p : Ast.port_instance_general) =
+    port type that defines a return type or parameters, or an [@ ocaml.type]
+    annotation — they model module API operations, not connection-graph
+    dependencies. *)
+let is_interface_port tu (pre : string list) (p : Ast.port_instance_general) =
+  port_ocaml_type pre <> None
+  ||
   match p.gen_port with
   | None -> false
   | Some qi -> (
@@ -1685,11 +1728,11 @@ let unconnected_input_ports tu inst_name (comp : Ast.def_component) connections
     =
   let input_ports =
     List.filter_map
-      (fun (_pre, (p : Ast.port_instance_general)) ->
+      (fun (pre, (p : Ast.port_instance_general)) ->
         if
           p.gen_kind <> Output
           && (not (is_dep_port p))
-          && not (is_interface_port tu p)
+          && not (is_interface_port tu pre p)
         then Some p
         else None)
       (collect_general_ports_annotated comp)
@@ -1952,41 +1995,56 @@ let pp_derived_module_types ppf tu module_break non_rt =
   let type_env = build_type_env tu in
   List.iter
     (fun ( _inst_name,
-           (_ci : Ast.def_component_instance),
+           (ci : Ast.def_component_instance),
            (comp : Ast.def_component) ) ->
       if is_runtime_component comp then ()
       else
         let ports = interface_ports comp in
-        if ports = [] then ()
+        let ca =
+          parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+        in
+        if ports = [] || ca.sig_path = None then ()
         else begin
           let comp_name = constructor_name comp.comp_name.data in
           module_break ();
           pf ppf "module type %s = sig" comp_name;
+          (* Extra type declarations from component-level @ ocaml.type *)
+          let comp_pre = component_annots tu ci.inst_component.data in
+          let extra_types = ocaml_type_annots comp_pre in
+          (* Always emit [type t] first, then extra types *)
           pf ppf "@,  type t";
+          List.iter (fun ty -> pf ppf "@,  %s" ty) extra_types;
           List.iter
-            (fun (name, port_qi, _gen_name) ->
-              match port_qi with
-              | Some qi -> (
-                  match resolve_port_def tu qi.Ast.data with
-                  | Some port_def ->
-                      let param_types =
-                        List.map
-                          (fun ann ->
-                            let (fp : Ast.formal_param) =
-                              (Ast.unannotate ann).Ast.data
-                            in
-                            ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
-                          port_def.port_params
-                      in
-                      let ret =
-                        match port_def.port_return with
-                        | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
-                        | None -> "unit"
-                      in
-                      let all = ("t" :: param_types) @ [ ret ] in
-                      pf ppf "@,  val %s : %s" name (String.concat " -> " all)
-                  | None -> pf ppf "@,  val %s : t -> unit" name)
-              | None -> pf ppf "@,  val %s : t -> unit" name)
+            (fun (name, port_qi, ocaml_ty) ->
+              match ocaml_ty with
+              | Some ty ->
+                  (* Raw OCaml type from @ ocaml.type on the port *)
+                  pf ppf "@,  val %s : %s" name ty
+              | None -> (
+                  match port_qi with
+                  | Some qi -> (
+                      match resolve_port_def tu qi.Ast.data with
+                      | Some port_def ->
+                          let param_types =
+                            List.map
+                              (fun ann ->
+                                let (fp : Ast.formal_param) =
+                                  (Ast.unannotate ann).Ast.data
+                                in
+                                ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
+                              port_def.port_params
+                          in
+                          let ret =
+                            match port_def.port_return with
+                            | Some tn ->
+                                ocaml_type_of_fpp_type ~type_env tn.data
+                            | None -> "unit"
+                          in
+                          let all = ("t" :: param_types) @ [ ret ] in
+                          pf ppf "@,  val %s : %s" name
+                            (String.concat " -> " all)
+                      | None -> pf ppf "@,  val %s : t -> unit" name)
+                  | None -> pf ppf "@,  val %s : t -> unit" name))
             ports;
           pf ppf "@,end"
         end)
@@ -2119,40 +2177,43 @@ let pp_main_entry_multi ppf topos =
 let pp_mli_derived_sig tu ppf (comp : Ast.def_component) =
   let type_env = build_type_env tu in
   let ports = interface_ports comp in
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  let has_type_t = method_name <> "start" in
   match ports with
-  | [] -> pf ppf "sig type t end"
+  | [] when has_type_t -> pf ppf "sig type t end"
+  | [] -> pf ppf "sig end"
   | _ ->
       pf ppf "sig";
-      pf ppf "@,  type t";
+      if has_type_t then pf ppf "@,  type t";
       List.iter
-        (fun (name, port_qi, _gen_name) ->
-          match port_qi with
-          | Some qi -> (
-              match resolve_port_def tu qi.Ast.data with
-              | Some port_def ->
-                  (* Port with params: val name : t -> p1 -> p2 -> ret *)
-                  let param_types =
-                    List.map
-                      (fun ann ->
-                        let (fp : Ast.formal_param) =
-                          (Ast.unannotate ann).Ast.data
-                        in
-                        ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
-                      port_def.port_params
-                  in
-                  let ret =
-                    match port_def.port_return with
-                    | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
-                    | None -> "unit"
-                  in
-                  let all = ("t" :: param_types) @ [ ret ] in
-                  pf ppf "@,  val %s : %s" name (String.concat " -> " all)
-              | None ->
-                  (* Unresolved port type — treat as getter *)
-                  pf ppf "@,  val %s : t -> unit" name)
-          | None ->
-              (* Untyped port — simple val *)
-              pf ppf "@,  val %s : t -> unit" name)
+        (fun (name, port_qi, ocaml_ty) ->
+          match ocaml_ty with
+          | Some ty -> pf ppf "@,  val %s : %s" name ty
+          | None -> (
+              match port_qi with
+              | Some qi -> (
+                  match resolve_port_def tu qi.Ast.data with
+                  | Some port_def ->
+                      let param_types =
+                        List.map
+                          (fun ann ->
+                            let (fp : Ast.formal_param) =
+                              (Ast.unannotate ann).Ast.data
+                            in
+                            ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
+                          port_def.port_params
+                      in
+                      let ret =
+                        match port_def.port_return with
+                        | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
+                        | None -> "unit"
+                      in
+                      let all = ("t" :: param_types) @ [ ret ] in
+                      pf ppf "@,  val %s : %s" name (String.concat " -> " all)
+                  | None -> pf ppf "@,  val %s : t -> unit" name)
+              | None -> pf ppf "@,  val %s : t -> unit" name))
         ports;
       pf ppf "@,end"
 
@@ -2178,7 +2239,7 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
   else begin
     let all_conns = connections in
     let inst_annots = instance_annotations topo in
-    pf ppf "@[<v>(** Generated by ofpp to-ml from topology %s. *)"
+    pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s. *)"
       topo.topo_name.data;
     let first_module = ref true in
     let module_break () =
@@ -2223,26 +2284,33 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
           ca.sig_path <> None && interface_ports comp <> []
         in
         let targets = target_instances inst_name comp all_conns sorted in
-        match (ca.sig_path, targets) with
-        | Some _, _ when has_sig_module_type ->
-            (* Use the module type name defined above *)
-            let comp_name = constructor_name comp.comp_name.data in
-            module_break ();
-            pf ppf "module %s : %s" mod_name comp_name
-        | Some sig_path, _ ->
-            module_break ();
-            pf ppf "module %s : %s" mod_name sig_path
-        | None, [] -> (
-            match instance_bound_module inst_annots inst_name with
-            | None -> ()
-            | Some concrete_mod ->
-                module_break ();
-                if mod_name = concrete_mod then
-                  pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp
-                else pf ppf "module %s = %s" mod_name concrete_mod)
-        | None, _ ->
-            module_break ();
-            pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)
+        let bound = instance_bound_module inst_annots inst_name in
+        (* Mirror the .ml: skip leaves that don't produce a module binding *)
+        let has_ml_binding =
+          match (targets, bound) with
+          | [], None -> false
+          | [], Some concrete_mod -> mod_name <> concrete_mod
+          | _ -> true
+        in
+        if not has_ml_binding then ()
+        else
+          match (ca.sig_path, targets) with
+          | Some _, _ when has_sig_module_type ->
+              let comp_name = constructor_name comp.comp_name.data in
+              module_break ();
+              pf ppf "module %s : %s" mod_name comp_name
+          | Some sig_path, _ ->
+              module_break ();
+              pf ppf "module %s : %s" mod_name sig_path
+          | None, [] -> (
+              match bound with
+              | Some concrete_mod ->
+                  module_break ();
+                  pf ppf "module %s = %s" mod_name concrete_mod
+              | None -> ())
+          | None, _ ->
+              module_break ();
+              pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)
       non_rt;
     (* Val declarations for lazy group bindings *)
     let partitioned = partition_instances_by_group non_rt groups all_conns in

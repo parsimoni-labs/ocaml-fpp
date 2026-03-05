@@ -91,13 +91,22 @@ passive component Fat_kv_ro {
 @ ── Protocol stack ──────────────────────────────────────
 
 @ ocaml.sig Ethernet.S
+@ ocaml.type type nonrec error = private [> `Exceeds_mtu ]
 passive component Ethernet {
   sync input port connect
   output port net
 
-  @ Layer 2 operations.
+  @ ocaml.type error Fmt.t
+  sync input port ppError
+  @ ocaml.type t -> unit Lwt.t
+  sync input port disconnect
+  @ ocaml.type t -> ?src:Macaddr.t -> Macaddr.t -> Ethernet.Packet.proto -> ?size:int -> (Cstruct.t -> int) -> (unit, error) result Lwt.t
+  sync input port write
   sync input port mac: GetMac
   sync input port mtu: GetMtu
+  @ ocaml.type arpv4:(Cstruct.t -> unit Lwt.t) -> ipv4:(Cstruct.t -> unit Lwt.t) -> ipv6:(Cstruct.t -> unit Lwt.t) -> t -> Cstruct.t -> unit Lwt.t
+  @ ocaml.name input
+  sync input port ethInput
 }
 
 @ ocaml.sig Arp.S
@@ -195,20 +204,6 @@ module Cohttp_mirage {
   }
 }
 
-@ ── Application ─────────────────────────────────────────
-@
-@ Dispatch takes KV stores and a network stack.
-@ [Server.Make_dispatch] wraps [Server.HTTPS] with the
-@ conduit / TLS / CoHTTP chain built from the stack.
-
-@ ocaml.module Server.Make_dispatch
-passive component Dispatch {
-  sync input port connect
-  output port data
-  output port certs
-  output port stack
-}
-
 @ ── DNS ─────────────────────────────────────────────────
 
 @ ocaml.sig Happy_eyeballs_mirage.S
@@ -257,9 +252,6 @@ instance tar_data: Tar_kv_ro base id 0x830
 instance tar_certs: Tar_kv_ro base id 0x840
 instance fat_data: Fat_kv_ro base id 0x850
 instance fat_certs: Fat_kv_ro base id 0x860
-
-@ Application
-instance dispatch: Dispatch base id 0xA30
 
 @ DNS
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage base id 0xE00

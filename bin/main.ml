@@ -481,7 +481,7 @@ let trim_trailing_newlines s =
   done;
   String.sub s 0 (!i + 1) ^ "\n"
 
-let gen_ml_topologies ~module_types ppf tu topologies =
+let gen_ml_topologies ppf tu topologies =
   let all_topos = Fpp.topologies tu in
   let topos =
     List.filter
@@ -489,13 +489,12 @@ let gen_ml_topologies ~module_types ppf tu topologies =
       all_topos
   in
   let wrap = List.length topos > 1 in
+  List.iter
+    (fun t ->
+      if Fpp.Gen_ml.topology_has_output tu t then
+        Fpp.Gen_ml.pp_topology_module_types tu ppf t)
+    topos;
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos;
-  if module_types then
-    List.iter
-      (fun t ->
-        if Fpp.Gen_ml.topology_has_output tu t then
-          Fpp.Gen_ml.pp_topology_module_types tu ppf t)
-      topos;
   let entry_names =
     List.concat_map
       (fun (t : Fpp.Ast.def_topology) ->
@@ -566,8 +565,8 @@ let gen_ml_all ppf tu ~sm_name =
     sms;
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos
 
-let gen_ml_for_tu ~module_types ppf tu ~sm_name ~topologies =
-  if topologies <> [] then gen_ml_topologies ~module_types ppf tu topologies
+let gen_ml_for_tu ppf tu ~sm_name ~topologies =
+  if topologies <> [] then gen_ml_topologies ppf tu topologies
   else gen_ml_all ppf tu ~sm_name
 
 let to_ml ~output ~sm_name ~topologies files =
@@ -575,15 +574,17 @@ let to_ml ~output ~sm_name ~topologies files =
   | None -> 1
   | Some per_file ->
       let tu = merge_tus per_file in
+      let output =
+        if topologies <> [] && output = None then Some "main.ml" else output
+      in
       let buf = Buffer.create 4096 in
       let ppf = Fmt.with_buffer buf in
       Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-      let module_types = output <> None && topologies <> [] in
-      gen_ml_for_tu ~module_types ppf tu ~sm_name ~topologies;
+      gen_ml_for_tu ppf tu ~sm_name ~topologies;
       Fmt.flush ppf ();
       let text = Buffer.contents buf in
       if text <> "" then write_output output text;
-      (* Generate .mli when writing to a file and topologies are specified *)
+      (* Generate .mli alongside .ml for topologies *)
       (match output with
       | Some path when topologies <> [] ->
           let buf = Buffer.create 4096 in

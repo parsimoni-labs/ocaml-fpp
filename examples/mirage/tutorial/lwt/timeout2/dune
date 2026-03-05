@@ -1,14 +1,13 @@
 (rule
- (target main.ml)
+ (mode promote)
+ (targets main.ml main.mli)
  (deps
   (:t ../../../types.fpp)
   (:d ../../../devices.fpp)
   (:s ../../../stacks.fpp)
   (:a ../../../applications.fpp))
  (action
-  (with-stdout-to
-   %{target}
-   (run %{bin:ofpp} to-ml --topologies UnixTimeout2 %{t} %{d} %{s} %{a}))))
+  (run %{bin:ofpp} to-ml --topologies UnixTimeout2 %{t} %{d} %{s} %{a})))
 
 (executable
  (name main)
