@@ -1763,7 +1763,6 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     | _ -> ()
   else (
     pf ppf "@,@,let %s = lazy (" group_name;
-    pf ppf "@,  let open Lwt.Syntax in";
     (* Cross-group deps from previous group *)
     (match prev_group with
     | None -> ()
@@ -1892,9 +1891,22 @@ let pp_topology_body ppf tu topo sorted groups =
   pp_functor_applications ppf tu inst_annots all_conns module_break non_rt;
   (* Cmdliner registrations for component params not overridden *)
   pp_param_cmdliner_terms ppf inst_annots non_rt;
-  (* Group functions *)
+  (* Group bindings *)
   let partitioned = partition_instances_by_group non_rt groups all_conns in
   let exports = cross_group_exports partitioned all_conns in
+  (* Emit [open Lwt.Syntax] once if any group uses let* *)
+  let any_needs_lwt =
+    let _, needs =
+      List.fold_left2
+        (fun (has_prev_exports, acc) (_gname, insts) group_exports ->
+          let n = List.length insts in
+          let has_cross_deps = has_prev_exports in
+          (group_exports <> [], acc || n > 1 || has_cross_deps))
+        (false, false) partitioned exports
+    in
+    needs
+  in
+  if any_needs_lwt then pf ppf "@,@,open Lwt.Syntax";
   let _prev =
     List.fold_left2
       (fun prev_group (gname, insts) group_exports ->
