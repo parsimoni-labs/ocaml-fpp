@@ -1239,8 +1239,8 @@ let test_runtime () =
        {|
     port P
     passive component Runtime {
-      output port ipv4_only
-      output port ipv6_only
+      output port ipv4_only: serial
+      output port ipv6_only: serial
     }
     active component Socket { sync input port connect: P }
     @ ocaml.module Srv.Make
@@ -1277,8 +1277,8 @@ let test_runtime_parameterised () =
        {|
     port P
     passive component Runtime {
-      output port ipv4_only
-      output port ipv6_only
+      output port ipv4_only: serial
+      output port ipv6_only: serial
     }
     active component Socket { sync input port connect: P }
     active component Stack {
@@ -1322,13 +1322,13 @@ let test_mli_sig_path () =
        {|
     port P
     @ ocaml.sig Net.S
-    passive component Net { sync input port connect }
+    passive component Net { sync input port connect: serial }
     @ ocaml.sig Block.S
-    passive component Block { sync input port connect }
+    passive component Block { sync input port connect: serial }
     passive component App {
       output port net: P
       output port block: P
-      sync input port start
+      sync input port start: serial
     }
     instance net: Net base id 0x100
     instance block: Block base id 0x200
@@ -1364,10 +1364,10 @@ let test_mli_typed_ports () =
     port GetMac -> Mac
     port GetMtu -> U32
 
-    passive component Net { sync input port connect }
+    passive component Net { sync input port connect: serial }
     passive component Eth {
-      sync input port connect
-      output port net
+      sync input port connect: serial
+      output port net: serial
       sync input port mac: GetMac
       sync input port mtu: GetMtu
     }
@@ -1405,15 +1405,15 @@ let test_mli_sig_with_typed_ports () =
 
     @ ocaml.sig Ethernet.S
     passive component Eth {
-      sync input port connect
-      output port net
+      sync input port connect: serial
+      output port net: serial
       sync input port mac: GetMac
       sync input port mtu: GetMtu
     }
-    passive component Net { sync input port connect }
+    passive component Net { sync input port connect: serial }
     passive component App {
-      output port eth
-      sync input port start
+      output port eth: serial
+      sync input port start: serial
     }
     instance net: Net base id 0x100
     instance eth: Eth base id 0x200

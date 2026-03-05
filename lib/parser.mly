@@ -29,7 +29,7 @@ let node startpos data = { Ast.loc = mk_loc startpos; data }
 %token IMPORT INCLUDE INITIAL INPUT INSTANCE INTERFACE INTERNAL
 %token LOCATE MATCH MODULE OPCODE OUTPUT PACKET PACKETS PARAM PHASE PORT PRIORITY
 %token PRIVATE PRODUCT PUBLIC RECORD RECV REG REQUEST RESP SAVE SEND
-%token SET GET SEVERITY SIGNAL SIZE STATE STRUCT TELEMETRY TEXT THROTTLE
+%token SERIAL SET GET SEVERITY SIGNAL SIZE STATE STRUCT TELEMETRY TEXT THROTTLE
 %token TIME TOPOLOGY TYPE UNMATCHED UPDATE WITH
 %token ASYNC SYNC GUARDED
 %token FATAL WARNING ACTIVITY DIAGNOSTIC HIGH LOW
@@ -252,18 +252,14 @@ general_port_kind:
   | INPUT { Sync_input }  (* default to sync *)
   | OUTPUT { Output }
 
-qual_ident_node_opt:
-  | %prec PREC_BELOW { None }
+port_instance_type:
   | q = qual_ident_node { Some q }
-
-port_type_clause:
-  | COLON sz = option(array_size) pt = qual_ident_node_opt { (sz, pt) }
+  | SERIAL { None }
 
 port_instance_general:
-  k = general_port_kind PORT n = ident tc = option(port_type_clause)
+  k = general_port_kind PORT n = ident COLON sz = option(array_size) pt = port_instance_type
   pri = option(priority_clause) qf = option(queue_full_clause)
-  { let sz, pt = match tc with Some (s, p) -> (s, p) | None -> (None, None) in
-    Port_general {
+  { Port_general {
       gen_kind = k;
       gen_name = n;
       gen_size = sz;

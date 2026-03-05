@@ -12,10 +12,6 @@ type Ipv4Addr
 type Macaddr
 
 @ ── Port types ──────────────────────────────────────────
-@
-@ Ports model constructor signatures. Parameters become
-@ labelled arguments in the generated OCaml code.
-@ Structs with defaults encode optional parameters.
 
 struct SocketRequired {
   ipv4Cidr: Cidr,
@@ -58,142 +54,238 @@ struct IpOptional {
 
 port IpConnect(optional: IpOptional)
 
+@ ── Interfaces and components ───────────────────────────
+@
+@ Interfaces model OCaml module types. The FPP qualified name
+@ maps directly to the OCaml module type path. Components
+@ import interfaces to declare which sig they satisfy.
+@ Components that import an interface inherit its ports.
+
+module Vnetif {
+  interface BACKEND {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Mirage_net.S
+    output port backend: serial
+  }
+}
+
+module Mirage_block {
+  interface S {
+    sync input port connect: serial
+  }
+}
+
+module Mirage_kv {
+  interface RO {
+    sync input port connect: serial
+  }
+}
+
+module Mirage_net {
+  interface S {
+    sync input port connect: serial
+  }
+}
+
+module Tcpip {
+  module Udp {
+    interface S {
+      sync input port connect: serial
+    }
+  }
+  module Tcp {
+    interface S {
+      sync input port connect: serial
+    }
+  }
+  module Ip {
+    interface S {
+      sync input port connect: serial
+    }
+  }
+  module Stack {
+    interface V4V6 {
+      sync input port connect: serial
+    }
+  }
+}
+
+module Ethernet {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Ethernet.S
+    output port net: serial
+  }
+}
+
+module Arp {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Arp.S
+    output port eth: serial
+  }
+}
+
+module Icmpv4 {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Icmpv4.S
+    output port ip: serial
+  }
+}
+
+module Conduit_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component TLS {
+    import Conduit_mirage.S
+    output port conduit: serial
+  }
+}
+
+module Cohttp_mirage {
+  module Server {
+    interface S {
+      sync input port connect: serial
+    }
+
+    passive component Make {
+      import Cohttp_mirage.Server.S
+      output port conduit: serial
+    }
+  }
+}
+
+module Happy_eyeballs_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Happy_eyeballs_mirage.S
+    sync input port connect_device: serial
+    output port stack: serial
+  }
+}
+
+module Dns_client_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+}
+
 @ ── Leaf devices ────────────────────────────────────────
 
-@ ocaml.sig Vnetif.BACKEND
-passive component Backend { sync input port connect }
+passive component Backend {
+  import Vnetif.BACKEND
+}
 
-@ ocaml.sig Mirage_block.S
 passive component Block {
+  import Mirage_block.S
   sync input port connect: BlockConnect
 }
 
-@ ocaml.sig Mirage_kv.RO
-passive component Kv { sync input port connect }
+passive component Kv {
+  import Mirage_kv.RO
+}
 
-@ ocaml.sig Mirage_net.S
 passive component Netif {
+  import Mirage_net.S
   sync input port connect: NetifConnect
 }
 
 @ ── Socket devices ──────────────────────────────────────
 
-@ ocaml.sig Tcpip.Udp.S
 passive component Udpv4v6_socket {
+  import Tcpip.Udp.S
   sync input port connect: SocketConnect
 }
 
-@ ocaml.sig Tcpip.Tcp.S
 passive component Tcpv4v6_socket {
+  import Tcpip.Tcp.S
   sync input port connect: SocketConnect
 }
 
 module Stackv4v6 {
-  @ ocaml.sig Tcpip.Stack.V4V6
   passive component Make {
-    sync input port connect
-    output port udp
-    output port tcp
-  }
-}
-
-@ ── Network ─────────────────────────────────────────────
-
-module Vnetif {
-  @ ocaml.sig Mirage_net.S
-  passive component Make {
-    sync input port connect
-    output port backend
+    import Tcpip.Stack.V4V6
+    output port udp: serial
+    output port tcp: serial
   }
 }
 
 @ ── Block-backed KV store ───────────────────────────────
 
-@ ocaml.sig Mirage_kv.RO
 passive component Block_kv {
-  sync input port connect
-  output port block
+  import Mirage_kv.RO
+  output port block: serial
 }
 
 @ ── Protocol stack ──────────────────────────────────────
 
-module Ethernet {
-  @ ocaml.sig Ethernet.S
-  passive component Make {
-    sync input port connect
-    output port net
-  }
-}
-
-module Arp {
-  @ ocaml.sig Arp.S
-  passive component Make {
-    sync input port connect
-    output port eth
-  }
-}
-
 module Static_ipv4 {
-  @ ocaml.sig Tcpip.Ip.S
   passive component Make {
+    import Tcpip.Ip.S
     sync input port connect: Ipv4Connect
-    output port eth
-    output port arp
+    output port eth: serial
+    output port arp: serial
   }
 }
 
 module Ipv6 {
-  @ ocaml.sig Tcpip.Ip.S
   passive component Make {
-    sync input port connect
-    output port net
-    output port eth
+    import Tcpip.Ip.S
+    output port net: serial
+    output port eth: serial
   }
 }
 
 module Tcpip_stack_direct {
-  @ ocaml.sig Tcpip.Ip.S
   passive component IPV4V6 {
+    import Tcpip.Ip.S
     sync input port connect: IpConnect
-    output port ipv4
-    output port ipv6
+    output port ipv4: serial
+    output port ipv6: serial
   }
 
-  @ ocaml.sig Tcpip.Stack.V4V6
   passive component MakeV4V6 {
-    sync input port connect
-    output port netif
-    output port ethernet
-    output port arpv4
-    output port ipv4v6
-    output port icmpv4
-    output port udpv4v6
-    output port tcpv4v6
-  }
-}
-
-module Icmpv4 {
-  @ ocaml.sig Icmpv4.S
-  passive component Make {
-    sync input port connect
-    output port ip
+    import Tcpip.Stack.V4V6
+    output port netif: serial
+    output port ethernet: serial
+    output port arpv4: serial
+    output port ipv4v6: serial
+    output port icmpv4: serial
+    output port udpv4v6: serial
+    output port tcpv4v6: serial
   }
 }
 
 module Udp {
-  @ ocaml.sig Tcpip.Udp.S
   passive component Make {
-    sync input port connect
-    output port ip
+    import Tcpip.Udp.S
+    output port ip: serial
   }
 }
 
 module Tcp {
   module Flow {
-    @ ocaml.sig Tcpip.Tcp.S
     passive component Make {
-      sync input port connect
-      output port ip
+      import Tcpip.Tcp.S
+      output port ip: serial
     }
   }
 }
@@ -201,89 +293,63 @@ module Tcp {
 @ ── Conduit / TLS / CoHTTP ──────────────────────────────
 
 module Conduit_tcp {
-  @ ocaml.sig Conduit_mirage.S
   passive component Make {
-    sync input port start
-    output port stack
-  }
-}
-
-module Conduit_mirage {
-  @ ocaml.sig Conduit_mirage.S
-  passive component TLS {
-    sync input port connect
-    output port conduit
-  }
-}
-
-module Cohttp_mirage {
-  module Server {
-    @ ocaml.sig Cohttp_mirage.Server.S
-    passive component Make {
-      sync input port connect
-      output port conduit
-    }
+    import Conduit_mirage.S
+    sync input port start: serial
+    output port stack: serial
   }
 }
 
 @ ── DNS ─────────────────────────────────────────────────
 
-module Happy_eyeballs_mirage {
-  @ ocaml.sig Happy_eyeballs_mirage.S
-  passive component Make {
-    sync input port connect_device
-    output port stack
-  }
-}
-
 module Dns_resolver {
-  @ ocaml.sig Dns_client_mirage.S
   passive component Make {
-    sync input port start
-    output port stack
-    output port happy_eyeballs
+    import Dns_client_mirage.S
+    sync input port start: serial
+    output port stack: serial
+    output port happy_eyeballs: serial
   }
 }
 
 @ ── Application components ──────────────────────────────
 
-passive component StandaloneApp { sync input port start }
+passive component StandaloneApp { sync input port start: serial }
 
 passive component BlockApp {
-  sync input port start
-  output port block
+  sync input port start: serial
+  output port block: serial
 }
 
 passive component KvRoApp {
-  sync input port start
-  output port kv
+  sync input port start: serial
+  output port kv: serial
 }
 
 passive component StackApp {
-  sync input port start
-  output port stack
+  sync input port start: serial
+  output port stack: serial
 }
 
 passive component DnsClientApp {
-  sync input port start
-  output port dns
+  sync input port start: serial
+  output port dns: serial
 }
 
 passive component NetApp {
-  sync input port start
-  output port net
+  sync input port start: serial
+  output port net: serial
 }
 
 passive component Ping6App {
-  sync input port start
-  output port net
-  output port eth
-  output port ipv6
+  sync input port start: serial
+  output port net: serial
+  output port eth: serial
+  output port ipv6: serial
 }
 
 passive component ConduitApp {
-  sync input port start
-  output port conduit
+  sync input port start: serial
+  output port conduit: serial
 }
 
 @ ── Device instances ────────────────────────────────────

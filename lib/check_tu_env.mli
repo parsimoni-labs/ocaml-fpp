@@ -188,3 +188,7 @@ val check_format_string :
 val component : tu_env -> Ast.qual_ident Ast.node -> Ast.def_component option
 (** [component env qi] resolves a component reference, walking through module
     scopes if necessary. *)
+
+val interface : tu_env -> Ast.qual_ident -> Ast.def_interface option
+(** [interface env qi] resolves an interface reference, walking through module
+    scopes if necessary. *)

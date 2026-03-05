@@ -39,6 +39,7 @@ let () = List.iter (fun (kw, tok) -> Hashtbl.add keywords kw tok) [
   "private", PRIVATE; "product", PRODUCT; "public", PUBLIC;
   "record", RECORD; "recv", RECV; "ref", REF; "reg", REG;
   "request", REQUEST; "resp", RESP; "save", SAVE; "send", SEND;
+  "serial", SERIAL;
   "set", SET; "get", GET; "severity", SEVERITY; "signal", SIGNAL;
   "size", SIZE; "state", STATE; "struct", STRUCT;
   "telemetry", TELEMETRY; "text", TEXT; "throttle", THROTTLE;

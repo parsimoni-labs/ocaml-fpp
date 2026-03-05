@@ -802,24 +802,30 @@ let check_format_string ~scope loc (fmt : string) n_expected =
 
 (* ── Component lookup ──────────────────────────────────────────────── *)
 
-let component tu_env (qi : Ast.qual_ident Ast.node) =
+let resolve_in_env tu_env qi field =
   let name =
-    match qi.data with
+    match qi with
     | Ast.Unqualified id -> id.data
     | Ast.Qualified _ -> (
-        let ids = Ast.qual_ident_to_list qi.data in
+        let ids = Ast.qual_ident_to_list qi in
         match List.rev ids with last :: _ -> last.data | [] -> "")
   in
-  match SMap.find_opt name tu_env.components with
-  | Some c -> Some c
+  match SMap.find_opt name (field tu_env) with
+  | Some x -> Some x
   | None ->
-      let ids = Ast.qual_ident_to_list qi.data in
+      let ids = Ast.qual_ident_to_list qi in
       let rec walk env = function
         | [] -> None
-        | [ id ] -> SMap.find_opt id.Ast.data env.components
+        | [ id ] -> SMap.find_opt id.Ast.data (field env)
         | id :: rest -> (
             match SMap.find_opt id.Ast.data env.modules with
             | Some sub -> walk sub rest
             | None -> None)
       in
       walk tu_env ids
+
+let component tu_env (qi : Ast.qual_ident Ast.node) =
+  resolve_in_env tu_env qi.data (fun env -> env.components)
+
+let interface tu_env (qi : Ast.qual_ident) =
+  resolve_in_env tu_env qi (fun env -> env.interfaces)

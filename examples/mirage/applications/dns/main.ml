@@ -10,8 +10,8 @@ module Dns_client_app = Unikernel.Make(Dns_client)
 open Lwt.Syntax
 
 let connect = lazy (
-  let* udpv4v6_socket = Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
-  let* tcpv4v6_socket = Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
+  let* udpv4v6_socket = Udpv4v6_socket.connect () in
+  let* tcpv4v6_socket = Tcpv4v6_socket.connect () in
   Stackv4v6.connect udpv4v6_socket tcpv4v6_socket)
 
 let connect_device = lazy (

@@ -489,15 +489,39 @@ let check_connection_patterns ~scope tu_env members =
 
 (* ── Direct connection validation ─────────────────────────────────── *)
 
-let component_port (comp : Ast.def_component) port_name =
+let interface_port (intf : Ast.def_interface) port_name =
   List.find_map
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
-      | Ast.Comp_spec_port_instance (Port_general g)
+      | Ast.Intf_spec_port_instance (Port_general g)
         when g.gen_name.data = port_name ->
           Some g
       | _ -> None)
-    comp.comp_members
+    intf.intf_members
+
+let component_port tu_env (comp : Ast.def_component) port_name =
+  let direct =
+    List.find_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Comp_spec_port_instance (Port_general g)
+          when g.gen_name.data = port_name ->
+            Some g
+        | _ -> None)
+      comp.comp_members
+  in
+  match direct with
+  | Some _ -> direct
+  | None ->
+      List.find_map
+        (fun ann ->
+          match (Ast.unannotate ann).Ast.data with
+          | Ast.Comp_spec_import_interface qi -> (
+              match Check_tu_env.interface tu_env qi.data with
+              | Some intf -> interface_port intf port_name
+              | None -> None)
+          | _ -> None)
+        comp.comp_members
 
 let is_internal_port (comp : Ast.def_component) port_name =
   List.exists
@@ -614,10 +638,10 @@ let check_internal_ports ~scope conn from_comp to_comp from_inst to_inst
     ]
   else []
 
-let check_ports_exist ~scope conn from_comp to_comp from_inst to_inst
+let check_ports_exist ~scope tu_env conn from_comp to_comp from_inst to_inst
     from_port_name to_port_name =
-  let from_port_opt = component_port from_comp from_port_name in
-  let to_port_opt = component_port to_comp to_port_name in
+  let from_port_opt = component_port tu_env from_comp from_port_name in
+  let to_port_opt = component_port tu_env to_comp to_port_name in
   let diags =
     (match from_port_opt with
       | None ->
@@ -686,8 +710,8 @@ let check_direct_connection ~scope tu_env (conn : Ast.connection) =
       if internal_diags <> [] then internal_diags
       else
         let from_port_opt, to_port_opt, undefined_diags =
-          check_ports_exist ~scope conn from_comp to_comp from_inst to_inst
-            from_port_name to_port_name
+          check_ports_exist ~scope tu_env conn from_comp to_comp from_inst
+            to_inst from_port_name to_port_name
         in
         if undefined_diags <> [] then undefined_diags
         else
@@ -730,7 +754,7 @@ let check_port_index ~scope tu_env (idx : Ast.expr Ast.node) ~inst ~port_name
   diags @ neg @ bounds
 
 let port_size tu_env (comp : Ast.def_component) port_name =
-  match component_port comp port_name with
+  match component_port tu_env comp port_name with
   | Some g -> (
       match g.gen_size with
       | Some sz -> (
@@ -1583,7 +1607,7 @@ let build_sync_graph tu_env members =
               let to_port_name = to_pid.pid_port.data in
               match resolve_instance_comp tu_env to_inst with
               | Some comp -> (
-                  match component_port comp to_port_name with
+                  match component_port tu_env comp to_port_name with
                   | Some g when g.gen_kind = Sync_input ->
                       add_edge from_inst to_inst
                   | _ -> ())

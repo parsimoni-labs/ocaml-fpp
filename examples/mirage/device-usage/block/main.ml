@@ -7,7 +7,7 @@ module Block_app = Unikernel.Main(Ramdisk)
 open Lwt.Syntax
 
 let start = lazy (
-  let* ramdisk = Ramdisk.connect ~name:"block-test" in
+  let* ramdisk = Ramdisk.connect () in
   Block_app.start ramdisk)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
