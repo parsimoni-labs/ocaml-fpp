@@ -2,12 +2,9 @@
  (mode promote)
  (targets main.ml main.mli)
  (deps
-  (:t ../../types.fpp)
-  (:d ../../devices.fpp)
-  (:s ../../stacks.fpp)
-  (:a ../../applications.fpp))
+  (:fpp ../../mirage.fpp))
  (action
-  (run %{bin:ofpp} to-ml --topologies UnixConduit %{t} %{d} %{s} %{a})))
+  (run %{bin:ofpp} to-ml --topologies UnixConduit %{fpp})))
 
 (executable
  (name main)

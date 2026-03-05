@@ -1,7 +1,0 @@
-; Concatenate all FPP files into mirage.fpp (used by tests)
-
-(rule
- (target mirage.fpp)
- (deps types.fpp devices.fpp stacks.fpp applications.fpp)
- (action
-  (bash "cat %{deps} > %{target}")))

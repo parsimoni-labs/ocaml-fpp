@@ -55,18 +55,9 @@ FPP definitions are split across themed files:
 
 | File | Role |
 |---|---|
-| `types.fpp` | External type mappings |
-| `devices.fpp` | Component definitions and instance declarations |
-| `stacks.fpp` | Infrastructure sub-topologies (`TcpipStack`, `SocketStack`, `DnsStack`) |
-| `websites.fpp` | Composed web-server topologies (Unix, Xen/Solo5 variants) |
+| `mirage.fpp` | Types, components, instances, sub-topologies, and deployment topologies |
 | `server.ml` | User code: HTTPS dispatch, `Unix_socket_stack` wrapper |
 | `htdocs/`, `tls/` | Static assets (crunched into `Htdocs_data`, `Tls_data`) |
-
-Generated files (via `dune build`):
-
-| File | Rule |
-|---|---|
-| `mirage.fpp` | Full namespace (concatenation of all themed `.fpp` files) |
 | `main.ml` | Topology + entry point (`ofpp to-ml --topologies UnixWebsite`) |
 
 ## Component correspondence
