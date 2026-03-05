@@ -1,5 +1,4 @@
 (rule
- (mode promote)
  (targets static_t.ml static_t.mli)
  (deps
   (source_tree t))
