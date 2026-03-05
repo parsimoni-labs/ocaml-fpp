@@ -1,6 +1,6 @@
 @ MirageOS device catalogue and deployment topologies.
 
-@ External types
+@ ── External types ──────────────────────────────────────
 
 @ ocaml.type Ipaddr.V4.Prefix.t
 type Cidr
@@ -8,15 +8,64 @@ type Cidr
 @ ocaml.type Ipaddr.V4.t
 type Ipv4Addr
 
-@ Leaf devices
+@ ocaml.type Macaddr.t
+type Macaddr
+
+@ ── Port types ──────────────────────────────────────────
+@
+@ Ports model constructor signatures. Parameters become
+@ labelled arguments in the generated OCaml code.
+@ Structs with defaults encode optional parameters.
+
+struct SocketRequired {
+  ipv4Cidr: Cidr,
+  ipv6Cidr: string
+}
+
+struct SocketOptional {
+  ipv4Only: bool,
+  ipv6Only: bool
+} default { ipv4Only = false, ipv6Only = false }
+
+port SocketConnect(required: SocketRequired, optional: SocketOptional)
+
+struct BlockConfig {
+  name: string
+} default { name = "disk" }
+
+port BlockConnect(config: BlockConfig)
+
+struct NetifConfig {
+  device: string
+} default { device = "tap0" }
+
+port NetifConnect(config: NetifConfig)
+
+struct Ipv4Required {
+  cidr: Cidr
+}
+
+struct Ipv4Optional {
+  gateway: Ipv4Addr
+}
+
+port Ipv4Connect(required: Ipv4Required, optional: Ipv4Optional)
+
+struct IpOptional {
+  ipv4Only: bool,
+  ipv6Only: bool
+} default { ipv4Only = false, ipv6Only = false }
+
+port IpConnect(optional: IpOptional)
+
+@ ── Leaf devices ────────────────────────────────────────
 
 @ ocaml.sig Vnetif.BACKEND
 passive component Backend { sync input port connect }
 
 @ ocaml.sig Mirage_block.S
 passive component Block {
-  param name: string default "disk"
-  sync input port connect
+  sync input port connect: BlockConnect
 }
 
 @ ocaml.sig Mirage_kv.RO
@@ -24,33 +73,19 @@ passive component Kv { sync input port connect }
 
 @ ocaml.sig Mirage_net.S
 passive component Netif {
-  @ ocaml.positional
-  param device: string default "tap0"
-  sync input port connect
+  sync input port connect: NetifConnect
 }
 
-@ Socket devices
+@ ── Socket devices ──────────────────────────────────────
 
 @ ocaml.sig Tcpip.Udp.S
 passive component Udpv4v6_socket {
-  param ipv4Only: bool default false
-  param ipv6Only: bool default false
-  @ ocaml.positional
-  param ipv4Cidr: string
-  @ ocaml.positional
-  param ipv6Cidr: string
-  sync input port connect
+  sync input port connect: SocketConnect
 }
 
 @ ocaml.sig Tcpip.Tcp.S
 passive component Tcpv4v6_socket {
-  param ipv4Only: bool default false
-  param ipv6Only: bool default false
-  @ ocaml.positional
-  param ipv4Cidr: string
-  @ ocaml.positional
-  param ipv6Cidr: string
-  sync input port connect
+  sync input port connect: SocketConnect
 }
 
 module Stackv4v6 {
@@ -62,7 +97,7 @@ module Stackv4v6 {
   }
 }
 
-@ Network
+@ ── Network ─────────────────────────────────────────────
 
 module Vnetif {
   @ ocaml.sig Mirage_net.S
@@ -72,7 +107,7 @@ module Vnetif {
   }
 }
 
-@ Block-backed KV store
+@ ── Block-backed KV store ───────────────────────────────
 
 @ ocaml.sig Mirage_kv.RO
 passive component Block_kv {
@@ -80,7 +115,7 @@ passive component Block_kv {
   output port block
 }
 
-@ Protocol stack
+@ ── Protocol stack ──────────────────────────────────────
 
 module Ethernet {
   @ ocaml.sig Ethernet.S
@@ -101,10 +136,7 @@ module Arp {
 module Static_ipv4 {
   @ ocaml.sig Tcpip.Ip.S
   passive component Make {
-    param cidr: Cidr
-    @ ocaml.optional
-    param gateway: Ipv4Addr
-    sync input port connect
+    sync input port connect: Ipv4Connect
     output port eth
     output port arp
   }
@@ -122,9 +154,7 @@ module Ipv6 {
 module Tcpip_stack_direct {
   @ ocaml.sig Tcpip.Ip.S
   passive component IPV4V6 {
-    param ipv4Only: bool default false
-    param ipv6Only: bool default false
-    sync input port connect
+    sync input port connect: IpConnect
     output port ipv4
     output port ipv6
   }
@@ -168,7 +198,7 @@ module Tcp {
   }
 }
 
-@ Conduit / TLS / CoHTTP
+@ ── Conduit / TLS / CoHTTP ──────────────────────────────
 
 module Conduit_tcp {
   @ ocaml.sig Conduit_mirage.S
@@ -196,7 +226,7 @@ module Cohttp_mirage {
   }
 }
 
-@ DNS
+@ ── DNS ─────────────────────────────────────────────────
 
 module Happy_eyeballs_mirage {
   @ ocaml.sig Happy_eyeballs_mirage.S
@@ -215,7 +245,7 @@ module Dns_resolver {
   }
 }
 
-@ Application components
+@ ── Application components ──────────────────────────────
 
 passive component StandaloneApp { sync input port start }
 
@@ -256,7 +286,7 @@ passive component ConduitApp {
   output port conduit
 }
 
-@ Device instances
+@ ── Device instances ────────────────────────────────────
 
 instance backend: Backend base id 0x050
 instance net: Vnetif.Make base id 0x100
@@ -289,7 +319,7 @@ instance fat_certs: Block_kv base id 0x860
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0xE00
 instance dns_client: Dns_resolver.Make base id 0xE10
 
-@ Application instances
+@ ── Application instances ───────────────────────────────
 
 instance unikernel: StandaloneApp base id 0x5000
 instance block_app: BlockApp base id 0x5100
@@ -304,7 +334,7 @@ instance kv_store: Kv base id 0x6100
 instance conduit_tcp: Conduit_tcp.Make base id 0x6200
 instance netif: Netif base id 0x6300
 
-@ Sub-topologies
+@ ── Sub-topologies ──────────────────────────────────────
 
 topology TcpipStack {
   instance backend
@@ -373,7 +403,7 @@ topology DnsStack {
   }
 }
 
-@ Deployment topologies
+@ ── Deployment topologies ───────────────────────────────
 
 topology UnixHello {
   instance unikernel
