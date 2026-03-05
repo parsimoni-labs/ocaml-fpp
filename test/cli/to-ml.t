@@ -513,7 +513,7 @@ External types in port declarations
   open Lwt.Syntax
   
   let c = lazy (
-    let* net = Net.write ~mac in
+    let* net = Net.write () in
     Eth.connect net)
 
 

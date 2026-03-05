@@ -29,14 +29,12 @@ passive component StackApp {
 }
 
 @ DNS client application.
-@ ocaml.sig Dns_client_mirage.S
 passive component DnsClientApp {
   sync input port start
   output port dns
 }
 
 @ Raw network application (e.g. DHCP server).
-@ ocaml.sig Mirage_net.S
 passive component NetApp {
   sync input port start
   output port net
@@ -51,7 +49,6 @@ passive component Ping6App {
 }
 
 @ Conduit server application.
-@ ocaml.sig Conduit_mirage.S
 passive component ConduitApp {
   sync input port start
   output port conduit

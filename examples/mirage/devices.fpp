@@ -8,6 +8,7 @@
 
 @ ocaml.sig Vnetif.BACKEND
 passive component Backend { sync input port connect }
+@ ocaml.sig Tcpip.Udp.S
 passive component Udpv4v6_socket {
   param ipv4Only: bool default false
   param ipv6Only: bool default false
@@ -17,6 +18,7 @@ passive component Udpv4v6_socket {
   param ipv6Cidr: string
   sync input port connect
 }
+@ ocaml.sig Tcpip.Tcp.S
 passive component Tcpv4v6_socket {
   param ipv4Only: bool default false
   param ipv6Only: bool default false
@@ -46,6 +48,7 @@ passive component Kv { sync input port connect }
 
 @ ── Netif (Unix network interface) ──────────────────────
 
+@ ocaml.sig Mirage_net.S
 passive component Netif {
   @ ocaml.positional
   param device: string default "tap0"
@@ -54,6 +57,7 @@ passive component Netif {
 
 @ ── Socket stack ────────────────────────────────────────
 
+@ ocaml.sig Tcpip.Stack.V4V6
 passive component Stackv4v6 {
   sync input port connect
   output port udp
@@ -62,6 +66,7 @@ passive component Stackv4v6 {
 
 @ ── Network module ───────────────────────────────────────
 
+@ ocaml.sig Mirage_net.S
 passive component Vnetif {
   sync input port connect
   output port backend
@@ -69,12 +74,14 @@ passive component Vnetif {
 
 @ ── Block-backed KV stores ──────────────────────────────
 
+@ ocaml.sig Mirage_kv.RO
 @ ocaml.module Tar_mirage.Make_KV_RO
 passive component Tar_kv_ro {
   sync input port connect
   output port block
 }
 
+@ ocaml.sig Mirage_kv.RO
 @ ocaml.module Fat.KV_RO
 passive component Fat_kv_ro {
   sync input port connect
@@ -83,16 +90,23 @@ passive component Fat_kv_ro {
 
 @ ── Protocol stack ──────────────────────────────────────
 
+@ ocaml.sig Ethernet.S
 passive component Ethernet {
   sync input port connect
   output port net
+
+  @ Layer 2 operations.
+  sync input port mac: GetMac
+  sync input port mtu: GetMtu
 }
 
+@ ocaml.sig Arp.S
 passive component Arp {
   sync input port connect
   output port eth
 }
 
+@ ocaml.sig Tcpip.Ip.S
 passive component Static_ipv4 {
   param cidr: Cidr
   @ ocaml.optional
@@ -102,12 +116,14 @@ passive component Static_ipv4 {
   output port arp
 }
 
+@ ocaml.sig Tcpip.Ip.S
 passive component Ipv6 {
   sync input port connect
   output port net
   output port eth
 }
 
+@ ocaml.sig Tcpip.Ip.S
 @ ocaml.module Tcpip_stack_direct.IPV4V6
 passive component Ip {
   param ipv4Only: bool default false
@@ -117,23 +133,27 @@ passive component Ip {
   output port ipv6
 }
 
+@ ocaml.sig Icmpv4.S
 passive component Icmpv4 {
   sync input port connect
   output port ip
 }
 
+@ ocaml.sig Tcpip.Udp.S
 passive component Udp {
   sync input port connect
   output port ip
 }
 
 module Tcp {
+  @ ocaml.sig Tcpip.Tcp.S
   passive component Flow {
     sync input port connect
     output port ip
   }
 }
 
+@ ocaml.sig Tcpip.Stack.V4V6
 @ ocaml.module Tcpip_stack_direct.MakeV4V6
 passive component DirectStackv4v6 {
   sync input port connect

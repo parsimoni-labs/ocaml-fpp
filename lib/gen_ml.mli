@@ -47,12 +47,20 @@ val pp_entry_point :
     initialises RNG and logging, forces the last lazy group binding, and runs
     via [Unix_os.Main.run]. *)
 
+val pp_topology_module_types : Ast.translation_unit -> Ast.def_topology Fmt.t
+(** [pp_topology_module_types tu ppf topo] emits [module type X = sig ... end]
+    declarations for components that have typed interface ports. Used alongside
+    [pp_topology] when a [.mli] is also generated, so OCaml checks the derived
+    signature against the named [@ ocaml.sig] constraint. *)
+
 (** {2 .mli Generation} *)
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits
-    [module X : Sig] constraints for instances whose component has an
-    [@ ocaml.sig] annotation. *)
+(** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits module
+    declarations for all non-runtime instances and [val] declarations for each
+    connection group lazy binding. Instances with [@ ocaml.sig] get the named
+    module type; non-leaf instances without it get [sig type t end]; leaf
+    instances with [@ ocaml.module] get module aliases. *)
 
 (** {2 Topology Helpers} *)
 

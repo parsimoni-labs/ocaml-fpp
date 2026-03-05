@@ -1612,15 +1612,86 @@ let is_dep_port (p : Ast.port_instance_general) =
       match qi.data with Ast.Unqualified id -> id.data = "Dep" | _ -> false)
   | None -> true (* typeless ports are dependency-only *)
 
+(** Resolve an FPP port type reference to its definition. *)
+let resolve_port_def tu port_qi =
+  let port_name =
+    match port_qi with
+    | Ast.Unqualified id -> id.data
+    | Ast.Qualified _ -> Ast.qual_ident_to_string port_qi
+  in
+  List.find_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_port p when p.port_name.data = port_name -> Some p
+      | _ -> None)
+    tu.Ast.tu_members
+
+(** Build an association list mapping FPP type names to OCaml type strings, from
+    [@ ocaml.type X] annotations on abstract type definitions. *)
+let build_type_env tu =
+  let from_members members =
+    List.filter_map
+      (fun ((pre, node, _) : Ast.module_member Ast.node Ast.annotated) ->
+        match node.Ast.data with
+        | Ast.Mod_def_abs_type t ->
+            let name = t.abs_name.data in
+            List.find_map
+              (fun s ->
+                let s = String.trim s in
+                if starts_with ~prefix:"ocaml.type " s then
+                  Some
+                    (name, String.trim (String.sub s 11 (String.length s - 11)))
+                else None)
+              pre
+        | _ -> None)
+      members
+  in
+  from_members tu.Ast.tu_members
+
+(** Collect typed sync input ports from a component, excluding [connect] and
+    [start] (which are structural, not interface ports). Returns
+    [(port_name, port_type_qi option, gen_name)] triples. *)
+let interface_ports (comp : Ast.def_component) =
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  List.filter_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_port_instance (Ast.Port_general p)
+        when p.gen_kind = Sync_input ->
+          let name = camel_to_snake p.gen_name.data in
+          if name = method_name || name = "connect" then None
+          else Some (name, p.gen_port, p.gen_name)
+      | _ -> None)
+    comp.comp_members
+
+(** Whether a port is an interface declaration (layer 2). Interface ports have a
+    port type that defines a return type or parameters — they model module API
+    operations, not connection-graph dependencies. *)
+let is_interface_port tu (p : Ast.port_instance_general) =
+  match p.gen_port with
+  | None -> false
+  | Some qi -> (
+      match resolve_port_def tu qi.Ast.data with
+      | Some pd -> pd.port_return <> None || pd.port_params <> []
+      | None -> false)
+
 (** Input ports on [comp] that have no incoming connection for [inst_name].
     These surface as labeled parameters of the generated [connect] function.
-    Dependency-only ports ([Dep]) are excluded — they model functor arguments,
-    not connect parameters. *)
-let unconnected_input_ports inst_name (comp : Ast.def_component) connections =
+    Dependency-only ports ([Dep]) and interface ports (layer 2 API declarations)
+    are excluded. *)
+let unconnected_input_ports tu inst_name (comp : Ast.def_component) connections
+    =
   let input_ports =
     List.filter_map
       (fun (_pre, (p : Ast.port_instance_general)) ->
-        if p.gen_kind <> Output && not (is_dep_port p) then Some p else None)
+        if
+          p.gen_kind <> Output
+          && (not (is_dep_port p))
+          && not (is_interface_port tu p)
+        then Some p
+        else None)
       (collect_general_ports_annotated comp)
   in
   List.filter
@@ -1683,7 +1754,7 @@ let pp_runtime_labelled_args ppf _inst_annots inst_name args connections =
 (** Emit the connect expression for a single instance: [Mod.method args]. Does
     not emit the [let*] prefix or [in] suffix — those are added by the caller.
 *)
-let pp_instance_expr ppf inst_name (ci : Ast.def_component_instance)
+let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
     (comp : Ast.def_component) connections sorted inst_annots =
   let inst_var = sanitize_ident inst_name in
   let mod_name = constructor_name inst_name in
@@ -1693,7 +1764,7 @@ let pp_instance_expr ppf inst_name (ci : Ast.def_component_instance)
   let targets = target_instances inst_name comp connections sorted in
   let rt_args = runtime_labelled_args inst_name sorted connections in
   let params = component_params comp in
-  let config_ports = unconnected_input_ports inst_name comp connections in
+  let config_ports = unconnected_input_ports tu inst_name comp connections in
   (* Exclude the sync input port from config_ports — it determines the method
      name, not a labeled argument. *)
   let config_ports =
@@ -1738,7 +1809,7 @@ let pp_instance_expr ppf inst_name (ci : Ast.def_component_instance)
     previous group (if any). [exports] lists instance names this group must
     return for later groups. Each group is a [lazy] value that memoises its
     result, so forcing it multiple times is safe. *)
-let pp_group_function ppf ~prev_group group_name insts all_conns sorted
+let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
     inst_annots exports =
   let n = List.length insts in
   let has_cross_deps = prev_group <> None in
@@ -1758,7 +1829,7 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
     match insts with
     | [ (inst_name, ci, comp) ] ->
         pf ppf "@,@,let %s = lazy (" group_name;
-        pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots;
+        pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
         pf ppf ")"
     | _ -> ()
   else (
@@ -1781,10 +1852,10 @@ let pp_group_function ppf ~prev_group group_name insts all_conns sorted
         let is_last = i = n - 1 in
         if is_last && not need_tuple_return then (
           pf ppf "@,  ";
-          pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots)
+          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots)
         else (
           pf ppf "@,  let* %s = " (sanitize_ident inst_name);
-          pp_instance_expr ppf inst_name ci comp all_conns sorted inst_annots;
+          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
           pf ppf " in"))
       insts;
     (* Tuple return for multi-export *)
@@ -1874,6 +1945,53 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
             targets))
     sorted
 
+(** Emit [module type X = sig ... end] for components with interface ports. The
+    derived sig uses [type t] (abstract). In the [.mli], the same module type
+    name is bound to the [@ ocaml.sig] path, so OCaml checks compatibility. *)
+let pp_derived_module_types ppf tu module_break non_rt =
+  let type_env = build_type_env tu in
+  List.iter
+    (fun ( _inst_name,
+           (_ci : Ast.def_component_instance),
+           (comp : Ast.def_component) ) ->
+      if is_runtime_component comp then ()
+      else
+        let ports = interface_ports comp in
+        if ports = [] then ()
+        else begin
+          let comp_name = constructor_name comp.comp_name.data in
+          module_break ();
+          pf ppf "module type %s = sig" comp_name;
+          pf ppf "@,  type t";
+          List.iter
+            (fun (name, port_qi, _gen_name) ->
+              match port_qi with
+              | Some qi -> (
+                  match resolve_port_def tu qi.Ast.data with
+                  | Some port_def ->
+                      let param_types =
+                        List.map
+                          (fun ann ->
+                            let (fp : Ast.formal_param) =
+                              (Ast.unannotate ann).Ast.data
+                            in
+                            ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
+                          port_def.port_params
+                      in
+                      let ret =
+                        match port_def.port_return with
+                        | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
+                        | None -> "unit"
+                      in
+                      let all = ("t" :: param_types) @ [ ret ] in
+                      pf ppf "@,  val %s : %s" name (String.concat " -> " all)
+                  | None -> pf ppf "@,  val %s : t -> unit" name)
+              | None -> pf ppf "@,  val %s : t -> unit" name)
+            ports;
+          pf ppf "@,end"
+        end)
+    non_rt
+
 (** Pretty-print topology body. Module aliases and functor applications are at
     top level, followed by one function per connection group. *)
 let pp_topology_body ppf tu topo sorted groups =
@@ -1910,7 +2028,7 @@ let pp_topology_body ppf tu topo sorted groups =
   let _prev =
     List.fold_left2
       (fun prev_group (gname, insts) group_exports ->
-        pp_group_function ppf ~prev_group gname insts all_conns sorted
+        pp_group_function ppf tu ~prev_group gname insts all_conns sorted
           inst_annots group_exports;
         if group_exports = [] then None else Some (gname, group_exports))
       None partitioned exports
@@ -1938,6 +2056,21 @@ let topology_connect_names tu (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
   let groups = collect_direct_connections topo in
   List.map fst groups
+
+(** Emit [module type] declarations for components with interface ports. *)
+let pp_topology_module_types tu ppf (topo : Ast.def_topology) =
+  let topo = flatten_topology tu topo in
+  let resolved = resolve_topology_instances tu topo in
+  let groups = collect_direct_connections topo in
+  let connections = all_connections groups in
+  let sorted = topo_sort_instances resolved connections in
+  let non_rt = filter_non_runtime sorted in
+  if non_rt <> [] then begin
+    let module_break () = pf ppf "@," in
+    pf ppf "@[<v>";
+    pp_derived_module_types ppf tu module_break non_rt;
+    pf ppf "@]@."
+  end
 
 (** Pretty-print a topology as OCaml code. Empty topologies produce no output.
 *)
@@ -1980,8 +2113,60 @@ let pp_main_entry_multi ppf topos =
 
 (* ── .mli generation ─────────────────────────────────────────────── *)
 
-(** Pretty-print the .mli for a topology. Emits module aliases and function
-    signatures for each connection group. Runtime instances are excluded. *)
+(** Emit the module type for a component based on its typed ports. When the
+    component has typed input ports beyond [connect]/[start], emit
+    [sig type t val x : t -> T ... end]; otherwise emit [sig type t end]. *)
+let pp_mli_derived_sig tu ppf (comp : Ast.def_component) =
+  let type_env = build_type_env tu in
+  let ports = interface_ports comp in
+  match ports with
+  | [] -> pf ppf "sig type t end"
+  | _ ->
+      pf ppf "sig";
+      pf ppf "@,  type t";
+      List.iter
+        (fun (name, port_qi, _gen_name) ->
+          match port_qi with
+          | Some qi -> (
+              match resolve_port_def tu qi.Ast.data with
+              | Some port_def ->
+                  (* Port with params: val name : t -> p1 -> p2 -> ret *)
+                  let param_types =
+                    List.map
+                      (fun ann ->
+                        let (fp : Ast.formal_param) =
+                          (Ast.unannotate ann).Ast.data
+                        in
+                        ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
+                      port_def.port_params
+                  in
+                  let ret =
+                    match port_def.port_return with
+                    | Some tn -> ocaml_type_of_fpp_type ~type_env tn.data
+                    | None -> "unit"
+                  in
+                  let all = ("t" :: param_types) @ [ ret ] in
+                  pf ppf "@,  val %s : %s" name (String.concat " -> " all)
+              | None ->
+                  (* Unresolved port type — treat as getter *)
+                  pf ppf "@,  val %s : t -> unit" name)
+          | None ->
+              (* Untyped port — simple val *)
+              pf ppf "@,  val %s : t -> unit" name)
+        ports;
+      pf ppf "@,end"
+
+(** The return type of a connect/start call. [start] returns [unit]; [connect]
+    returns the module's [t]. *)
+let mli_return_type inst_name (comp : Ast.def_component) =
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  if method_name = "start" then "unit" else constructor_name inst_name ^ ".t"
+
+(** Pretty-print the .mli for a topology. Emits module declarations for all
+    non-runtime instances, module aliases for leaves, and [val] declarations for
+    each connection group lazy binding. *)
 let pp_topology_mli tu ppf (topo : Ast.def_topology) =
   let topo = flatten_topology tu topo in
   let resolved = resolve_topology_instances tu topo in
@@ -1996,6 +2181,36 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
     pf ppf "@[<v>(** Generated by ofpp to-ml from topology %s. *)"
       topo.topo_name.data;
     let first_module = ref true in
+    let module_break () =
+      if !first_module then (
+        pf ppf "@,";
+        first_module := false);
+      pf ppf "@,"
+    in
+    (* Module type declarations: [module type X = Sig.S] for components with
+       [@ ocaml.sig] and interface ports. Emitted before module declarations
+       so that modules can use the short name [module X : X]. *)
+    List.iter
+      (fun ( _inst_name,
+             (ci : Ast.def_component_instance),
+             (comp : Ast.def_component) ) ->
+        if is_runtime_component comp then ()
+        else
+          let ca =
+            parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+          in
+          match ca.sig_path with
+          | None -> ()
+          | Some sig_path ->
+              let ports = interface_ports comp in
+              if ports = [] then ()
+              else begin
+                let comp_name = constructor_name comp.comp_name.data in
+                module_break ();
+                pf ppf "module type %s = %s" comp_name sig_path
+              end)
+      non_rt;
+    (* Module declarations *)
     List.iter
       (fun ( inst_name,
              (ci : Ast.def_component_instance),
@@ -2004,24 +2219,63 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
         let ca =
           parse_ocaml_annotations (component_annots tu ci.inst_component.data)
         in
+        let has_sig_module_type =
+          ca.sig_path <> None && interface_ports comp <> []
+        in
         let targets = target_instances inst_name comp all_conns sorted in
         match (ca.sig_path, targets) with
+        | Some _, _ when has_sig_module_type ->
+            (* Use the module type name defined above *)
+            let comp_name = constructor_name comp.comp_name.data in
+            module_break ();
+            pf ppf "module %s : %s" mod_name comp_name
         | Some sig_path, _ ->
-            if !first_module then (
-              pf ppf "@,";
-              first_module := false);
-            pf ppf "@,module %s : %s" mod_name sig_path
+            module_break ();
+            pf ppf "module %s : %s" mod_name sig_path
         | None, [] -> (
             match instance_bound_module inst_annots inst_name with
             | None -> ()
             | Some concrete_mod ->
-                if mod_name <> concrete_mod then (
-                  if !first_module then (
-                    pf ppf "@,";
-                    first_module := false);
-                  pf ppf "@,module %s = %s" mod_name concrete_mod))
-        | None, _ -> ())
+                module_break ();
+                if mod_name = concrete_mod then
+                  pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp
+                else pf ppf "module %s = %s" mod_name concrete_mod)
+        | None, _ ->
+            module_break ();
+            pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)
       non_rt;
+    (* Val declarations for lazy group bindings *)
+    let partitioned = partition_instances_by_group non_rt groups all_conns in
+    let exports = cross_group_exports partitioned all_conns in
+    List.iter2
+      (fun (gname, insts) group_exports ->
+        let last_inst_name =
+          match List.rev insts with (name, _, _) :: _ -> name | [] -> ""
+        in
+        let need_tuple_return =
+          match group_exports with
+          | [] -> false
+          | [ single ] -> single <> last_inst_name
+          | _ -> true
+        in
+        let ret_type =
+          if need_tuple_return then
+            let types =
+              List.map
+                (fun name ->
+                  match List.find_opt (fun (n, _, _) -> n = name) non_rt with
+                  | Some (_, _, comp) -> mli_return_type name comp
+                  | None -> constructor_name name ^ ".t")
+                group_exports
+            in
+            "(" ^ String.concat " * " types ^ ")"
+          else
+            match List.rev insts with
+            | (name, _, comp) :: _ -> mli_return_type name comp
+            | [] -> "unit"
+        in
+        pf ppf "@,@,val %s : %s Lwt.t Lazy.t" gname ret_type)
+      partitioned exports;
     pf ppf "@]@."
   end
 
