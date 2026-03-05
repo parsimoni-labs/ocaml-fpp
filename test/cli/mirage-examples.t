@@ -71,7 +71,7 @@ DNS topology uses adapter with start method for tuple unpacking
   $ ofpp to-ml --topologies UnixDns $F/mirage.fpp 2>/dev/null
   $ grep -E '(Dns_client|Happy_eyeballs|Dns_client_app)' main.ml
   module Happy_eyeballs_mirage = Happy_eyeballs_mirage.Make(Stackv4v6)
-  module Dns_client = Dns_client.Make(Stackv4v6)(Happy_eyeballs_mirage)
+  module Dns_client = Dns_resolver.Make(Stackv4v6)(Happy_eyeballs_mirage)
   module Dns_client_app = Unikernel.Make(Dns_client)
     let* happy_eyeballs_mirage = Happy_eyeballs_mirage.connect_device stackv4v6 in
     let* dns_client = Dns_client.start stackv4v6 happy_eyeballs_mirage in

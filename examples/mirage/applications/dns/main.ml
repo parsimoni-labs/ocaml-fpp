@@ -4,7 +4,7 @@
 
 module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
 module Happy_eyeballs_mirage = Happy_eyeballs_mirage.Make(Stackv4v6)
-module Dns_client = Dns_client.Make(Stackv4v6)(Happy_eyeballs_mirage)
+module Dns_client = Dns_resolver.Make(Stackv4v6)(Happy_eyeballs_mirage)
 module Dns_client_app = Unikernel.Make(Dns_client)
 
 open Lwt.Syntax

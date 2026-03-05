@@ -2,30 +2,35 @@
 
 @ External types
 
-@ ocaml.type Cstruct.t
-type Buffer
-
-@ ocaml.type Macaddr.t
-type Macaddr
-
 @ ocaml.type Ipaddr.V4.Prefix.t
 type Cidr
 
 @ ocaml.type Ipaddr.V4.t
 type Ipv4Addr
 
-@ Port types
-
-@ [val mac : t -> Macaddr.t]
-port GetMac -> Macaddr
-
-@ [val mtu : t -> int]
-port GetMtu -> I16
-
 @ Leaf devices
 
 @ ocaml.sig Vnetif.BACKEND
 passive component Backend { sync input port connect }
+
+@ ocaml.sig Mirage_block.S
+passive component Block {
+  param name: string default "disk"
+  sync input port connect
+}
+
+@ ocaml.sig Mirage_kv.RO
+passive component Kv { sync input port connect }
+
+@ ocaml.sig Mirage_net.S
+passive component Netif {
+  @ ocaml.positional
+  param device: string default "tap0"
+  sync input port connect
+}
+
+@ Socket devices
+
 @ ocaml.sig Tcpip.Udp.S
 passive component Udpv4v6_socket {
   param ipv4Only: bool default false
@@ -36,6 +41,7 @@ passive component Udpv4v6_socket {
   param ipv6Cidr: string
   sync input port connect
 }
+
 @ ocaml.sig Tcpip.Tcp.S
 passive component Tcpv4v6_socket {
   param ipv4Only: bool default false
@@ -46,160 +52,143 @@ passive component Tcpv4v6_socket {
   param ipv6Cidr: string
   sync input port connect
 }
-@ ocaml.sig Mirage_block.S
-passive component Block {
-  param name: string default "disk"
-  sync input port connect
-}
-@ ocaml.sig Mirage_kv.RO
-passive component Kv { sync input port connect }
 
-@ Netif (Unix network interface)
-
-@ ocaml.sig Mirage_net.S
-passive component Netif {
-  @ ocaml.positional
-  param device: string default "tap0"
-  sync input port connect
+module Stackv4v6 {
+  @ ocaml.sig Tcpip.Stack.V4V6
+  passive component Make {
+    sync input port connect
+    output port udp
+    output port tcp
+  }
 }
 
-@ Socket stack
+@ Network
 
-@ ocaml.sig Tcpip.Stack.V4V6
-passive component Stackv4v6 {
-  sync input port connect
-  output port udp
-  output port tcp
+module Vnetif {
+  @ ocaml.sig Mirage_net.S
+  passive component Make {
+    sync input port connect
+    output port backend
+  }
 }
 
-@ Network module
-
-@ ocaml.sig Mirage_net.S
-passive component Vnetif {
-  sync input port connect
-  output port backend
-}
-
-@ Block-backed KV stores
+@ Block-backed KV store
 
 @ ocaml.sig Mirage_kv.RO
-passive component Tar_kv_ro {
-  sync input port connect
-  output port block
-}
-
-@ ocaml.sig Mirage_kv.RO
-passive component Fat_kv_ro {
+passive component Block_kv {
   sync input port connect
   output port block
 }
 
 @ Protocol stack
 
-@ ocaml.sig Ethernet.S
-@ ocaml.type type nonrec error = private [> `Exceeds_mtu ]
-passive component Ethernet {
-  sync input port connect
-  output port net
-
-  @ ocaml.type error Fmt.t
-  sync input port ppError
-  @ ocaml.type t -> unit Lwt.t
-  sync input port disconnect
-  @ ocaml.type t -> ?src:Macaddr.t -> Macaddr.t -> Ethernet.Packet.proto -> ?size:int -> (Cstruct.t -> int) -> (unit, error) result Lwt.t
-  sync input port write
-  sync input port mac: GetMac
-  sync input port mtu: GetMtu
-  @ ocaml.type arpv4:(Cstruct.t -> unit Lwt.t) -> ipv4:(Cstruct.t -> unit Lwt.t) -> ipv6:(Cstruct.t -> unit Lwt.t) -> t -> Cstruct.t -> unit Lwt.t
-  @ ocaml.name input
-  sync input port ethInput
+module Ethernet {
+  @ ocaml.sig Ethernet.S
+  passive component Make {
+    sync input port connect
+    output port net
+  }
 }
 
-@ ocaml.sig Arp.S
-passive component Arp {
-  sync input port connect
-  output port eth
+module Arp {
+  @ ocaml.sig Arp.S
+  passive component Make {
+    sync input port connect
+    output port eth
+  }
 }
 
-@ ocaml.sig Tcpip.Ip.S
-passive component Static_ipv4 {
-  param cidr: Cidr
-  @ ocaml.optional
-  param gateway: Ipv4Addr
-  sync input port connect
-  output port eth
-  output port arp
+module Static_ipv4 {
+  @ ocaml.sig Tcpip.Ip.S
+  passive component Make {
+    param cidr: Cidr
+    @ ocaml.optional
+    param gateway: Ipv4Addr
+    sync input port connect
+    output port eth
+    output port arp
+  }
 }
 
-@ ocaml.sig Tcpip.Ip.S
-passive component Ipv6 {
-  sync input port connect
-  output port net
-  output port eth
+module Ipv6 {
+  @ ocaml.sig Tcpip.Ip.S
+  passive component Make {
+    sync input port connect
+    output port net
+    output port eth
+  }
 }
 
-@ ocaml.sig Tcpip.Ip.S
-@ ocaml.module Tcpip_stack_direct.IPV4V6
-passive component Ip {
-  param ipv4Only: bool default false
-  param ipv6Only: bool default false
-  sync input port connect
-  output port ipv4
-  output port ipv6
+module Tcpip_stack_direct {
+  @ ocaml.sig Tcpip.Ip.S
+  passive component IPV4V6 {
+    param ipv4Only: bool default false
+    param ipv6Only: bool default false
+    sync input port connect
+    output port ipv4
+    output port ipv6
+  }
+
+  @ ocaml.sig Tcpip.Stack.V4V6
+  passive component MakeV4V6 {
+    sync input port connect
+    output port netif
+    output port ethernet
+    output port arpv4
+    output port ipv4v6
+    output port icmpv4
+    output port udpv4v6
+    output port tcpv4v6
+  }
 }
 
-@ ocaml.sig Icmpv4.S
-passive component Icmpv4 {
-  sync input port connect
-  output port ip
-}
-
-@ ocaml.sig Tcpip.Udp.S
-passive component Udp {
-  sync input port connect
-  output port ip
-}
-
-module Tcp {
-  @ ocaml.sig Tcpip.Tcp.S
-  passive component Flow {
+module Icmpv4 {
+  @ ocaml.sig Icmpv4.S
+  passive component Make {
     sync input port connect
     output port ip
   }
 }
 
-@ ocaml.sig Tcpip.Stack.V4V6
-@ ocaml.module Tcpip_stack_direct.MakeV4V6
-passive component DirectStackv4v6 {
-  sync input port connect
-  output port netif
-  output port ethernet
-  output port arpv4
-  output port ipv4v6
-  output port icmpv4
-  output port udpv4v6
-  output port tcpv4v6
+module Udp {
+  @ ocaml.sig Tcpip.Udp.S
+  passive component Make {
+    sync input port connect
+    output port ip
+  }
+}
+
+module Tcp {
+  module Flow {
+    @ ocaml.sig Tcpip.Tcp.S
+    passive component Make {
+      sync input port connect
+      output port ip
+    }
+  }
 }
 
 @ Conduit / TLS / CoHTTP
 
-@ ocaml.sig Conduit_mirage.S
-passive component ConduitTcp {
-  sync input port start
-  output port stack
+module Conduit_tcp {
+  @ ocaml.sig Conduit_mirage.S
+  passive component Make {
+    sync input port start
+    output port stack
+  }
 }
 
-@ ocaml.sig Conduit_mirage.S
-@ ocaml.module Conduit_mirage.TLS
-passive component ConduitTls {
-  sync input port connect
-  output port conduit
+module Conduit_mirage {
+  @ ocaml.sig Conduit_mirage.S
+  passive component TLS {
+    sync input port connect
+    output port conduit
+  }
 }
 
 module Cohttp_mirage {
   module Server {
     @ ocaml.sig Cohttp_mirage.Server.S
-    @ ocaml.module Cohttp_mirage.Server.Make
     passive component Make {
       sync input port connect
       output port conduit
@@ -209,17 +198,21 @@ module Cohttp_mirage {
 
 @ DNS
 
-@ ocaml.sig Happy_eyeballs_mirage.S
-passive component Happy_eyeballs_mirage {
-  sync input port connect_device
-  output port stack
+module Happy_eyeballs_mirage {
+  @ ocaml.sig Happy_eyeballs_mirage.S
+  passive component Make {
+    sync input port connect_device
+    output port stack
+  }
 }
 
-@ ocaml.sig Dns_client_mirage.S
-passive component Dns_client {
-  sync input port start
-  output port stack
-  output port happy_eyeballs
+module Dns_resolver {
+  @ ocaml.sig Dns_client_mirage.S
+  passive component Make {
+    sync input port start
+    output port stack
+    output port happy_eyeballs
+  }
 }
 
 @ Application components
@@ -266,19 +259,19 @@ passive component ConduitApp {
 @ Device instances
 
 instance backend: Backend base id 0x050
-instance net: Vnetif base id 0x100
+instance net: Vnetif.Make base id 0x100
 instance udpv4v6_socket: Udpv4v6_socket base id 0xD00
 instance tcpv4v6_socket: Tcpv4v6_socket base id 0xD10
-instance stackv4v6: Stackv4v6 base id 0xD20
-instance ethernet: Ethernet base id 0x200
-instance arp: Arp base id 0x300
-instance ipv4: Static_ipv4 base id 0x400
-instance ipv6: Ipv6 base id 0x450
-instance ip: Ip base id 0x460
-instance icmp: Icmpv4 base id 0x500
-instance udp: Udp base id 0x600
-instance tcp: Tcp.Flow base id 0x700
-instance stack: DirectStackv4v6 base id 0xC00
+instance stackv4v6: Stackv4v6.Make base id 0xD20
+instance ethernet: Ethernet.Make base id 0x200
+instance arp: Arp.Make base id 0x300
+instance ipv4: Static_ipv4.Make base id 0x400
+instance ipv6: Ipv6.Make base id 0x450
+instance ip: Tcpip_stack_direct.IPV4V6 base id 0x460
+instance icmp: Icmpv4.Make base id 0x500
+instance udp: Udp.Make base id 0x600
+instance tcp: Tcp.Flow.Make base id 0x700
+instance stack: Tcpip_stack_direct.MakeV4V6 base id 0xC00
 instance data: Kv base id 0x800
 instance certs: Kv base id 0x900
 instance htdocs_data: Kv base id 0x870
@@ -286,15 +279,15 @@ instance tls_data: Kv base id 0x880
 instance data_block: Block base id 0x810
 instance certs_block: Block base id 0x820
 @ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_data: Tar_kv_ro base id 0x830
+instance tar_data: Block_kv base id 0x830
 @ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_certs: Tar_kv_ro base id 0x840
+instance tar_certs: Block_kv base id 0x840
 @ ocaml.module Fat.KV_RO
-instance fat_data: Fat_kv_ro base id 0x850
+instance fat_data: Block_kv base id 0x850
 @ ocaml.module Fat.KV_RO
-instance fat_certs: Fat_kv_ro base id 0x860
-instance happy_eyeballs_mirage: Happy_eyeballs_mirage base id 0xE00
-instance dns_client: Dns_client base id 0xE10
+instance fat_certs: Block_kv base id 0x860
+instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0xE00
+instance dns_client: Dns_resolver.Make base id 0xE10
 
 @ Application instances
 
@@ -308,28 +301,24 @@ instance ping6_app: Ping6App base id 0x5600
 instance conduit_app: ConduitApp base id 0x5700
 instance ramdisk: Block base id 0x6000
 instance kv_store: Kv base id 0x6100
-instance conduit_tcp: ConduitTcp base id 0x6200
+instance conduit_tcp: Conduit_tcp.Make base id 0x6200
 instance netif: Netif base id 0x6300
 
 @ Sub-topologies
 
 topology TcpipStack {
   instance backend
-  @ ocaml.module Vnetif.Make
   instance net
   instance ethernet
   instance arp
   @ ocaml.param cidr (Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24")
-  @ ocaml.module Static_ipv4.Make
   instance ipv4
   instance ipv6
   @ ocaml.param ipv4_only false
   @ ocaml.param ipv6_only false
   instance ip
-  @ ocaml.module Icmpv4.Make
   instance icmp
   instance udp
-  @ ocaml.module Tcp.Flow.Make
   instance tcp
   instance stack
 

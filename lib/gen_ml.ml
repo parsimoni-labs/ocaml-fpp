@@ -1943,29 +1943,41 @@ let pp_param_cmdliner_terms ppf inst_annots sorted =
 
 let pp_module_aliases ppf inst_annots all_conns module_break sorted =
   List.iter
-    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
       else
         let targets = target_instances inst_name comp all_conns sorted in
         if targets = [] then
-          match instance_bound_module inst_annots inst_name with
-          | Some concrete_mod ->
-              let mod_name = constructor_name inst_name in
-              if mod_name <> concrete_mod then (
-                module_break ();
-                pf ppf "module %s = %s" mod_name concrete_mod)
-          | None -> ())
+          let mod_name = constructor_name inst_name in
+          let concrete_mod =
+            match instance_bound_module inst_annots inst_name with
+            | Some s -> Some s
+            | None ->
+                let comp_path =
+                  Ast.qual_ident_to_string ci.Ast.inst_component.data
+                in
+                if String.contains comp_path '.' then Some comp_path else None
+          in
+          match concrete_mod with
+          | Some m when m <> mod_name ->
+              module_break ();
+              pf ppf "module %s = %s" mod_name m
+          | _ -> ())
     sorted
 
 (** Resolve the functor path for a non-leaf instance. Priority: instance
-    annotation, component annotation, default [Instance_name.Make]. *)
-let resolve_functor_path inst_annots inst_name ca =
+    annotation, component annotation, component FPP path (for qualified names),
+    default [Instance_name.Make]. *)
+let resolve_functor_path inst_annots inst_name ci ca =
   match instance_bound_module inst_annots inst_name with
   | Some s -> s
   | None -> (
       match ca.module_path with
       | Some s -> s
-      | None -> constructor_name inst_name ^ ".Make")
+      | None ->
+          let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
+          if String.contains comp_path '.' then comp_path
+          else constructor_name inst_name ^ ".Make")
 
 let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
   List.iter
@@ -1979,7 +1991,7 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
             parse_ocaml_annotations
               (component_annots tu ci.Ast.inst_component.data)
           in
-          let path = resolve_functor_path inst_annots inst_name ca in
+          let path = resolve_functor_path inst_annots inst_name ci ca in
           module_break ();
           pf ppf "module %s = %s" mod_name path;
           List.iter
