@@ -802,7 +802,7 @@ spec_comp_instance:
   { { ci_instance = inst; ci_visibility = vis } }
 
 tlm_packet:
-  PACKET n = ident id = option(id_clause) grp = option(preceded(GROUP, expr_node))
+  PACKET n = ident id = option(id_clause) GROUP grp = expr_node
   LBRACE cs = list(qual_ident_node) RBRACE
   { { packet_name = n;
       packet_id = id;

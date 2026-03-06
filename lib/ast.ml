@@ -478,7 +478,7 @@ type spec_comp_instance = {
 type tlm_packet = {
   packet_name : ident node;
   packet_id : expr node option;
-  packet_group : expr node option;
+  packet_group : expr node;
   packet_channels : qual_ident node list;
 }
 (** Telemetry packet for packet sets. *)

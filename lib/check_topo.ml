@@ -1102,24 +1102,20 @@ let check_packet_groups ~scope tu_env members =
   List.concat_map
     (fun ann ->
       match (Ast.unannotate ann).Ast.data with
-      | Ast.Tlm_packet pkt -> (
-          match pkt.packet_group with
-          | Some g ->
-              let nonneg =
-                check_nonneg_id ~scope tu_env g "packet group level"
-              in
-              let v, _ = eval_expr ~scope tu_env g in
-              let range =
-                match v with
-                | Val_int n when n > 0xFFFF_FFFF ->
-                    [
-                      errorf ~sm_name:scope g.loc
-                        "packet group level %d out of range" n;
-                    ]
-                | _ -> []
-              in
-              nonneg @ range
-          | None -> [])
+      | Ast.Tlm_packet pkt ->
+          let g = pkt.packet_group in
+          let nonneg = check_nonneg_id ~scope tu_env g "packet group level" in
+          let v, _ = eval_expr ~scope tu_env g in
+          let range =
+            match v with
+            | Val_int n when n > 0xFFFF_FFFF ->
+                [
+                  errorf ~sm_name:scope g.loc
+                    "packet group level %d out of range" n;
+                ]
+            | _ -> []
+          in
+          nonneg @ range
       | _ -> [])
     members
 

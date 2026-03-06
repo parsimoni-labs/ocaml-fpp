@@ -335,7 +335,7 @@ let check_format_against_type ~scope tu_env fmt_opt type_node desc =
           else []
       | Fmt_float prec -> (
           (if
-             (not (is_float_type type_node.data))
+             (not (is_float_type type_node.Ast.data))
              && not (is_float_type_resolved tu_env type_node)
            then
              [
@@ -354,7 +354,7 @@ let check_format_against_type ~scope tu_env fmt_opt type_node desc =
           | _ -> [])
       | Fmt_default ->
           if
-            (not (is_numeric_type type_node.data))
+            (not (is_numeric_type type_node.Ast.data))
             && not (is_numeric_resolved_tu tu_env type_node)
           then
             [
