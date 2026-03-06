@@ -5,3 +5,5 @@ _opam/
 .merlin
 _homebrew_build/
 test-results/
+node_modules/
+lib/parser.conflicts
