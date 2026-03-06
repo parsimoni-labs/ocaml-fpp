@@ -141,7 +141,7 @@ parameter in priority order:
    command-line flag at runtime.
 
 Runtime component output ports follow a different path: they are
-passed as labeled arguments (`~kwarg:Runtime_module.kwarg`) referring
+passed as labelled arguments (`~label:Runtime_module.value`) referring
 directly to module values exposed by the Runtime component.  They are
 not Cmdliner terms.
 

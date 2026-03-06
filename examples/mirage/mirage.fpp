@@ -354,51 +354,51 @@ passive component ConduitApp {
 
 @ ── Device instances ────────────────────────────────────
 
-instance backend: Backend base id 0x050
-instance net: Vnetif.Make base id 0x100
-instance udpv4v6_socket: Udpv4v6_socket base id 0xD00
-instance tcpv4v6_socket: Tcpv4v6_socket base id 0xD10
-instance stackv4v6: Stackv4v6.Make base id 0xD20
-instance ethernet: Ethernet.Make base id 0x200
-instance arp: Arp.Make base id 0x300
-instance ipv4: Static_ipv4.Make base id 0x400
-instance ipv6: Ipv6.Make base id 0x450
-instance ip: Tcpip_stack_direct.IPV4V6 base id 0x460
-instance icmp: Icmpv4.Make base id 0x500
-instance udp: Udp.Make base id 0x600
-instance tcp: Tcp.Flow.Make base id 0x700
-instance stack: Tcpip_stack_direct.MakeV4V6 base id 0xC00
-instance data: Kv base id 0x800
-instance certs: Kv base id 0x900
-instance htdocs_data: Kv base id 0x870
-instance tls_data: Kv base id 0x880
-instance data_block: Block base id 0x810
-instance certs_block: Block base id 0x820
+instance backend: Backend base id 0
+instance net: Vnetif.Make base id 0
+instance udpv4v6_socket: Udpv4v6_socket base id 0
+instance tcpv4v6_socket: Tcpv4v6_socket base id 0
+instance stackv4v6: Stackv4v6.Make base id 0
+instance ethernet: Ethernet.Make base id 0
+instance arp: Arp.Make base id 0
+instance ipv4: Static_ipv4.Make base id 0
+instance ipv6: Ipv6.Make base id 0
+instance ip: Tcpip_stack_direct.IPV4V6 base id 0
+instance icmp: Icmpv4.Make base id 0
+instance udp: Udp.Make base id 0
+instance tcp: Tcp.Flow.Make base id 0
+instance stack: Tcpip_stack_direct.MakeV4V6 base id 0
+instance data: Kv base id 0
+instance certs: Kv base id 0
+instance htdocs_data: Kv base id 0
+instance tls_data: Kv base id 0
+instance data_block: Block base id 0
+instance certs_block: Block base id 0
 @ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_data: Block_kv base id 0x830
+instance tar_data: Block_kv base id 0
 @ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_certs: Block_kv base id 0x840
+instance tar_certs: Block_kv base id 0
 @ ocaml.module Fat.KV_RO
-instance fat_data: Block_kv base id 0x850
+instance fat_data: Block_kv base id 0
 @ ocaml.module Fat.KV_RO
-instance fat_certs: Block_kv base id 0x860
-instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0xE00
-instance dns_client: Dns_resolver.Make base id 0xE10
+instance fat_certs: Block_kv base id 0
+instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
+instance dns_client: Dns_resolver.Make base id 0
 
 @ ── Application instances ───────────────────────────────
 
-instance unikernel: StandaloneApp base id 0x5000
-instance block_app: BlockApp base id 0x5100
-instance kv_app: KvRoApp base id 0x5200
-instance stack_app: StackApp base id 0x5300
-instance dns_client_app: DnsClientApp base id 0x5400
-instance net_app: NetApp base id 0x5500
-instance ping6_app: Ping6App base id 0x5600
-instance conduit_app: ConduitApp base id 0x5700
-instance ramdisk: Block base id 0x6000
-instance kv_store: Kv base id 0x6100
-instance conduit_tcp: Conduit_tcp.Make base id 0x6200
-instance netif: Netif base id 0x6300
+instance unikernel: StandaloneApp base id 0
+instance block_app: BlockApp base id 0
+instance kv_app: KvRoApp base id 0
+instance stack_app: StackApp base id 0
+instance dns_client_app: DnsClientApp base id 0
+instance net_app: NetApp base id 0
+instance ping6_app: Ping6App base id 0
+instance conduit_app: ConduitApp base id 0
+instance ramdisk: Block base id 0
+instance kv_store: Kv base id 0
+instance conduit_tcp: Conduit_tcp.Make base id 0
+instance netif: Netif base id 0
 
 @ ── Sub-topologies ──────────────────────────────────────
 

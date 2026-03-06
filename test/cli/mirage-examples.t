@@ -92,7 +92,7 @@ DirectNetwork imports TcpipStack and generates 11 functor applications
   module Stack = Tcpip_stack_direct.MakeV4V6(Net)(Ethernet)(Arp)(Ip)(Icmp)(Udp)(Tcp)
   module Stack_app = Unikernel.Main(Stack)
 
-DirectNetwork uses params (not Runtime kwargs) for ipv4 and ip config
+DirectNetwork uses params (not Runtime labelled args) for ipv4 and ip config
   $ ofpp to-ml --topologies DirectNetwork $F/mirage.fpp 2>/dev/null
   $ grep -E '(cidr|ipv4_only|ipv6_only)' main.ml | head -2
     let* ipv4 = Ipv4.connect ~cidr:(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24") ethernet arp in
