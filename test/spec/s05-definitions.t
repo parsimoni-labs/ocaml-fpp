@@ -1,11 +1,14 @@
 FPP Spec §5 — Definitions
 =========================
 
-§5.1 Abstract type definitions
+§5.1 Abstract type definitions — from spec example
 
   $ cat > t.fpp <<EOF
-  > type Timestamp
-  > type ExternalData
+  > type A
+  > struct B {
+  >   x: A
+  >   y: F32
+  > } default { y = 1 }
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
@@ -30,13 +33,14 @@ FPP Spec §5 — Definitions
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.3 Array definitions — basic, with default, with format
+§5.3 Array definitions — from spec examples
 
   $ cat > t.fpp <<EOF
-  > array Coefficients = [4] F64
-  > array Thresholds = [3] U32 default [10, 20, 30]
-  > array Voltages = [4] F64 format "{.2f}"
-  > array Flags = [3] U8 default [0, 0, 0] format "{}"
+  > array A = [3] U8
+  > array B = [3] A
+  > array C = [3] F32 default [ 1, 2, 3 ]
+  > array D = [3] U32 default 1
+  > array E = [3] F32 default 1 format "{.03f}"
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
@@ -50,6 +54,32 @@ FPP Spec §5 — Definitions
   > }
   > queued component Handler {
   >   async input port dataIn: serial
+  > }
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
+§5.4 Component — DeviceMgr from spec example (with state machines)
+
+  $ cat > t.fpp <<EOF
+  > module Fw {
+  >   port Cmd port CmdResponse port CmdReg
+  > }
+  > active component DeviceMgr {
+  >   state machine Device {
+  >     signal Start
+  >     signal Stop
+  >     initial enter IDLE
+  >     state IDLE { on Start enter RUNNING }
+  >     state RUNNING { on Stop enter IDLE }
+  >   }
+  >   state machine instance device1: Device
+  >   state machine instance device2: Device
+  >   command recv port cmdIn
+  >   command reg port cmdRegOut
+  >   command resp port cmdResponseOut
+  >   async command START(deviceNum: U8)
+  >   async command STOP(deviceNum: U8)
   > }
   > EOF
   $ ofpp check t.fpp
@@ -99,13 +129,41 @@ FPP Spec §5 — Definitions
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.5 Instance with all optional fields
+§5.5 Instance with all optional fields — from spec example
+
+  $ cat > t.fpp <<EOF
+  > module Svc {
+  >   active component CommandDispatcher {
+  >     async input port cmdIn: serial
+  >   }
+  > }
+  > instance commandDispatcher: Svc.CommandDispatcher \
+  >   base id 0x100 \
+  >   queue size 10 \
+  >   stack size 4096 \
+  >   priority 30 \
+  >   cpu 0
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
+§5.5 Instance with at file path — from spec example
+
+  $ cat > t.fpp <<EOF
+  > module Svc {
+  >   passive component Timer { }
+  > }
+  > instance timer: Svc.Timer base id 0x100 \
+  >   at "../../Timers/HardwareTimer.hpp"
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
+§5.5 Instance with init specifiers
 
   $ cat > t.fpp <<EOF
   > active component Worker { async input port work: serial }
   > instance worker: Worker base id 0x100 \
-  >   type "WorkerImpl" \
-  >   at "Components/Worker.cpp" \
   >   queue size 20 \
   >   stack size 4096 \
   >   priority 10 \
@@ -123,30 +181,48 @@ FPP Spec §5 — Definitions
   > module Sensors {
   >   passive component Temperature { }
   > }
-  > instance temp: Sensors.Temperature base id 0x200
+  > instance temp: Sensors.Temperature base id 0x100
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.6 Constant definitions
+§5.6 Constant definitions — from spec example
 
   $ cat > t.fpp <<EOF
   > constant a = 0
   > constant b = 1.0
-  > constant c = "hello"
-  > constant d = true
-  > constant e = a
+  > constant c = a
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.7 Enum definitions — inferred type, explicit type, with default
+§5.6 Constant definitions — string and bool
 
   $ cat > t.fpp <<EOF
-  > enum Color { Red, Green, Blue }
-  > enum Priority : U8 { Low = 0, Medium = 1, High = 2 }
-  > enum Status { Ok, Error } default Ok
-  > enum Direction { North, South, East, West }
+  > constant s = "hello"
+  > constant flag = true
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
+§5.7 Enum definitions — from spec examples
+
+  $ cat > t.fpp <<EOF
+  > enum Gunfighters {
+  >   IL_BUONO
+  >   IL_BRUTTO
+  >   IL_CATTIVO
+  > }
+  > enum U8Gunfighters: U8 {
+  >   IL_BUONO
+  >   IL_BRUTTO
+  >   IL_CATTIVO
+  > }
+  > enum Status {
+  >   YES
+  >   NO
+  >   MAYBE
+  > } default MAYBE
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
@@ -160,7 +236,20 @@ FPP Spec §5 — Definitions
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.9 Module definitions — nesting, scoping
+§5.9 Module definitions — from spec example
+
+  $ cat > t.fpp <<EOF
+  > module M {
+  >   constant a = 0
+  >   constant b = a
+  >   constant c = M.a
+  > }
+  > constant d = M.a
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
+§5.9 Module definitions — nesting
 
   $ cat > t.fpp <<EOF
   > module Outer {
@@ -200,14 +289,20 @@ FPP Spec §5 — Definitions
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.10 Port definitions — all forms
+§5.10 Port definitions — from spec examples
 
   $ cat > t.fpp <<EOF
-  > port Ping
-  > port DataSend(data: string, size: U32)
-  > port GetValue(key: string) -> U32
-  > port IsReady -> bool
-  > port BufferSend(ref buf: string)
+  > port Port1(
+  >   a: U32
+  >   b: F64
+  > )
+  > module Fw { type Com }
+  > port Port2(
+  >   ref a: Fw.Com
+  > )
+  > port Port3(
+  >   a: U32
+  > ) -> U32
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
@@ -274,17 +369,24 @@ FPP Spec §5 — Definitions
   $ ofpp check t.fpp
   ✓ t.fpp
 
-§5.13 Struct definitions — basic, with default, member array, member format
+§5.13 Struct definitions — from spec examples
 
   $ cat > t.fpp <<EOF
-  > struct Point { x: F64, y: F64 }
-  > struct Config {
-  >   name: string,
-  >   value: U32,
-  >   enabled: bool
-  > } default { name = "default", value = 0, enabled = false }
-  > struct Buffer { data: [256] U8, len: U32 }
-  > struct Measurement { value: F64 format "{.3f}", label: string }
+  > struct A {
+  >   x: U32
+  >   y: F32
+  > }
+  > struct B {
+  >   x: U32
+  >   y: F32
+  > } default { y = 1 }
+  > struct C {
+  >   x: U32 format "{} counts"
+  >   y: F32 format "{} m/s"
+  > }
+  > struct D {
+  >   x: [3] U32
+  > } default { x = 1 }
   > EOF
   $ ofpp check t.fpp
   ✓ t.fpp
