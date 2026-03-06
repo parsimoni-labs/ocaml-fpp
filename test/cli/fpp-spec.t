@@ -555,7 +555,7 @@ Data products (container, record, request/recv/send/get ports)
   >   product request port productReq
   >   async product recv port productRecv priority 10 assert
   >   product send port productSend
-  >   sync product get port productGet
+  >   product get port productGet
   >   product container Samples id 0x100 default priority 10
   >   product record Measurement: F64 id 0x200
   >   product record Batch: U32 array id 0x300

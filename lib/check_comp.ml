@@ -683,9 +683,10 @@ let resolve_fw_port tu_env fw_name =
   | _ -> false
 
 let special_port_allows_input_kind = function
-  | Ast.Product_recv | Product_get -> true
+  | Ast.Product_recv -> true
   | Command_recv | Command_reg | Command_resp | Event | Param_get | Param_set
-  | Product_request | Product_send | Telemetry | Text_event | Time_get ->
+  | Product_get | Product_request | Product_send | Telemetry | Text_event
+  | Time_get ->
       false
 
 let check_non_async_special ~scope (s : Ast.port_instance_special) =
