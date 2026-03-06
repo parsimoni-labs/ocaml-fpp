@@ -918,6 +918,25 @@ let parse_ocaml_annotations annots =
     { module_path = None; sig_path = None }
     annots
 
+(** Extract the sig path from a component's [import] declaration. The qualified
+    identifier of the imported interface (e.g. [Ethernet.S]) is used directly as
+    the OCaml module type path. Falls back to [None] if no import exists. *)
+let import_sig_path (comp : Ast.def_component) =
+  List.find_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Comp_spec_import_interface qi ->
+          Some (Ast.qual_ident_to_string qi.data)
+      | _ -> None)
+    comp.comp_members
+
+(** Parse OCaml annotations, falling back to [import] for [sig_path]. *)
+let parse_ocaml_annotations_with_import annots comp =
+  let ca = parse_ocaml_annotations annots in
+  match ca.sig_path with
+  | Some _ -> ca
+  | None -> { ca with sig_path = import_sig_path comp }
+
 (** Extract pre-annotations for a component definition from tu_members. For
     qualified identifiers (e.g. [Cohttp_mirage.Server]), searches within the
     named module. For unqualified names, searches top-level first. *)
@@ -2013,7 +2032,9 @@ let pp_derived_module_types ppf tu module_break non_rt =
       else
         let ports = interface_ports comp in
         let ca =
-          parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+          parse_ocaml_annotations_with_import
+            (component_annots tu ci.inst_component.data)
+            comp
         in
         if ports = [] || ca.sig_path = None then ()
         else begin
@@ -2261,8 +2282,8 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
       pf ppf "@,"
     in
     (* Module type declarations: [module type X = Sig.S] for components with
-       [@ ocaml.sig] and interface ports. Emitted before module declarations
-       so that modules can use the short name [module X : X]. *)
+       [import] or [@ ocaml.sig] and interface ports. Emitted before module
+       declarations so that modules can use the short name [module X : X]. *)
     List.iter
       (fun ( _inst_name,
              (ci : Ast.def_component_instance),
@@ -2270,7 +2291,9 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
         if is_runtime_component comp then ()
         else
           let ca =
-            parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+            parse_ocaml_annotations_with_import
+              (component_annots tu ci.inst_component.data)
+              comp
           in
           match ca.sig_path with
           | None -> ()
@@ -2290,7 +2313,9 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
              (comp : Ast.def_component) ) ->
         let mod_name = constructor_name inst_name in
         let ca =
-          parse_ocaml_annotations (component_annots tu ci.inst_component.data)
+          parse_ocaml_annotations_with_import
+            (component_annots tu ci.inst_component.data)
+            comp
         in
         let has_sig_module_type =
           ca.sig_path <> None && interface_ports comp <> []

@@ -462,12 +462,21 @@ transition_expr:
 
 ident_list:
   | i = ident { [i] }
-  | LBRACE is = separated_nonempty_list(COMMA, ident) RBRACE { is }
+  | LBRACE is = separated_list(COMMA, ident) RBRACE { is }
 
-(* Transition or do-action *)
+(* Transition or do-action.
+   Both alternatives start with DO ident_list; we factor the prefix
+   to avoid an LR(1) conflict:
+     on S do { a } enter T   →  Transition (with actions)
+     on S do { a }           →  Do (internal transition)
+     on S enter T            →  Transition (no actions)   *)
 transition_or_do:
-  | t = transition_expr { Transition t }
-  | DO acts = ident_list { Do acts }
+  | ENTER tgt = qual_ident_node
+    { Transition (node $startpos { trans_actions = []; trans_target = tgt }) }
+  | DO acts = ident_list ENTER tgt = qual_ident_node
+    { Transition (node $startpos { trans_actions = acts; trans_target = tgt }) }
+  | DO acts = ident_list
+    { Do acts }
 
 (* State transition specification *)
 spec_state_transition:
