@@ -30,6 +30,13 @@ type Ipv6Addr
 @ ocaml.type Macaddr.t
 type Macaddr
 
+@ ── F Prime built-in port types ────────────────────────
+
+module Fw {
+  port PrmGet
+  port PrmSet
+}
+
 @ ── Port types (connect signatures) ───────────────────
 @
 @ Named params → labeled (~name:value).
@@ -105,6 +112,8 @@ passive component Ramdisk {
 passive component Ccm_block {
   import Mirage_block.S
   external param key: string
+  param get port prmGetOut
+  param set port prmSetOut
   output port block: serial
 }
 
@@ -513,6 +522,8 @@ module Git_mirage {
     external param authenticator: string default ""
     external param key: string default ""
     external param password: string default ""
+    param get port prmGetOut
+    param set port prmSetOut
     output port tcp: serial
     output port mimic: serial
   }
@@ -521,6 +532,8 @@ module Git_mirage {
   passive component Http {
     import Git_mirage.S
     external param authenticator: string default ""
+    param get port prmGetOut
+    param set port prmSetOut
     output port tcp: serial
     output port mimic: serial
   }

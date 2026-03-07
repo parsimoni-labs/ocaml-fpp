@@ -203,12 +203,41 @@ FPP provides three mechanisms for configuration, resolved in priority order:
    native FPP syntax for build-time values, target-independent.
 2. **Init spec** (`phase N "code"`) on the instance — target-specific
    code string, keyed by parameter index.
-3. **Cmdliner term** — when no override is present, the codegen
-   emits a `Mirage_runtime.register_arg` call so the value becomes a
-   command-line flag at runtime.
+3. **`external param`** on the component — declares a runtime-configurable
+   value.  The codegen generates a `Mirage_runtime.register_arg` call
+   (Cmdliner term) so the value becomes a command-line flag at runtime.
 
-For `external param` declarations on components, unresolved params always
-generate Cmdliner terms with proper type defaults.
+Port params (from typed connect ports) must be resolved via instance
+overrides.  Unresolved required params cause OCaml compile errors;
+unresolved optional params (struct fields with defaults) are silently
+omitted, letting the callee use its default.
+
+### F Prime param protocol
+
+Components with `external param` declare `param get port` and
+`param set port` as required by the F Prime spec.  These ports use the
+built-in `Fw.PrmGet` / `Fw.PrmSet` port types, which have fixed
+semantics in F Prime: they define the protocol for reading and writing
+runtime parameters.
+
+The OCaml backend implements this protocol via Cmdliner CLI arguments.
+A C++ backend would implement it via the F Prime parameter database.
+The FPP source is the same — `external param` declarations and param
+ports are target-independent; only the backend implementation differs.
+
+```fpp
+passive component Ccm_block {
+  import Mirage_block.S
+  external param key: string       @ the param declaration
+  param get port prmGetOut          @ F Prime param protocol
+  param set port prmSetOut
+  output port block: serial
+}
+```
+
+The param ports are built-in infrastructure handled internally by the
+codegen — they do not appear in the topology connection graph and do
+not generate functor dependencies.
 
 ## Entry points
 
