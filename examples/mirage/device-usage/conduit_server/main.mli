@@ -3,7 +3,7 @@
 
 module Stackv4v6 : Tcpip.Stack.V4V6
 module Conduit_tcp : Conduit_mirage.S
-module Conduit_app : sig end
+module App : sig end
 
 val connect : Stackv4v6.t Lwt.t Lazy.t
 

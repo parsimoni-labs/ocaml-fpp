@@ -540,65 +540,7 @@ module Git_mirage {
 }
 
 @ ══════════════════════════════════════════════════════
-@ Application components
-@ ══════════════════════════════════════════════════════
-
-passive component StandaloneApp { sync input port start: serial }
-
-passive component BlockApp {
-  sync input port start: serial
-  output port block: serial
-}
-
-passive component KvRoApp {
-  sync input port start: serial
-  output port kv: serial
-}
-
-passive component StackApp {
-  sync input port start: serial
-  output port stack: serial
-}
-
-passive component DnsClientApp {
-  sync input port start: serial
-  output port dns: serial
-}
-
-passive component NetApp {
-  sync input port start: serial
-  output port net: serial
-}
-
-passive component Ping6App {
-  sync input port start: serial
-  output port net: serial
-  output port eth: serial
-  output port ipv6: serial
-}
-
-passive component ConduitApp {
-  sync input port start: serial
-  output port conduit: serial
-}
-
-passive component HttpServerApp {
-  sync input port start: serial
-  output port http: serial
-}
-
-passive component HttpClientApp {
-  sync input port start: serial
-  output port http: serial
-}
-
-passive component GitApp {
-  sync input port start: serial
-  output port git: serial
-}
-
-@ ══════════════════════════════════════════════════════
-@ Device instances
+@ Device instances (shared by sub-topologies)
 @ ══════════════════════════════════════════════════════
 
 instance backend: Backend base id 0
@@ -631,19 +573,6 @@ instance fat_data: Block_kv base id 0
 instance fat_certs: Block_kv base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0
-
-@ ── Application instances ───────────────────────────
-
-instance unikernel: StandaloneApp base id 0
-instance block_app: BlockApp base id 0
-instance kv_app: KvRoApp base id 0
-instance stack_app: StackApp base id 0
-instance dns_client_app: DnsClientApp base id 0
-instance net_app: NetApp base id 0
-instance ping6_app: Ping6App base id 0
-instance conduit_app: ConduitApp base id 0
-instance ramdisk: Block base id 0
-instance kv_store: Kv base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
 instance netif: Netif base id 0
 
@@ -704,130 +633,6 @@ topology DnsStack {
 
   connections Start {
     dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
-  }
-}
-
-@ ══════════════════════════════════════════════════════
-@ Deployment topologies
-@ ══════════════════════════════════════════════════════
-
-topology UnixHello {
-  instance unikernel
-}
-
-topology UnixHelloKey {
-  instance unikernel
-}
-
-topology UnixClock {
-  instance unikernel
-}
-
-topology UnixCrypto {
-  instance unikernel
-}
-
-topology UnixBlock {
-  instance ramdisk(name = "block-test")
-  @ ocaml.module Unikernel.Main
-  instance block_app
-
-  connections Start {
-    block_app.block -> ramdisk.connect
-  }
-}
-
-topology UnixDiskLottery {
-  instance ramdisk(name = "lottery-disk")
-  @ ocaml.module Unikernel.Main
-  instance block_app
-
-  connections Start {
-    block_app.block -> ramdisk.connect
-  }
-}
-
-topology UnixKvRo {
-  @ ocaml.module Static_t
-  instance kv_store
-  @ ocaml.module Unikernel.Main
-  instance kv_app
-
-  connections Start {
-    kv_app.kv -> kv_store.connect
-  }
-}
-
-topology UnixNetwork {
-  import SocketStack
-  instance stackv4v6
-  @ ocaml.module Unikernel.Main
-  instance stack_app
-
-  connections Start {
-    stack_app.stack -> stackv4v6.connect
-  }
-}
-
-topology UnixConduit {
-  import SocketStack
-  instance stackv4v6
-  instance conduit_tcp
-  @ ocaml.module Unikernel.Main
-  instance conduit_app
-
-  connections Start {
-    conduit_tcp.stack -> stackv4v6.connect
-    conduit_app.conduit -> conduit_tcp.start
-  }
-}
-
-topology UnixDns {
-  import SocketStack
-  instance stackv4v6
-  instance happy_eyeballs_mirage
-  instance dns_client
-  @ ocaml.module Unikernel.Make
-  instance dns_client_app
-
-  connections Connect_device {
-    happy_eyeballs_mirage.stack -> stackv4v6.connect
-  }
-
-  connections Start {
-    dns_client.stack -> stackv4v6.connect
-    dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
-    dns_client_app.dns -> dns_client.start
-  }
-}
-
-topology UnixDhcp {
-  instance netif(_0 = "tap0")
-  @ ocaml.module Unikernel.Main
-  instance net_app
-
-  connections Start {
-    net_app.net -> netif.connect
-  }
-}
-
-topology UnixPing6 {
-  instance netif(_0 = "tap0")
-  instance ethernet
-  instance ipv6
-  @ ocaml.module Unikernel.Main
-  instance ping6_app
-
-  connections Connect {
-    ethernet.net -> netif.connect
-    ipv6.net -> netif.connect
-    ipv6.eth -> ethernet.connect
-  }
-
-  connections Start {
-    ping6_app.net -> netif.connect
-    ping6_app.eth -> ethernet.connect
-    ping6_app.ipv6 -> ipv6.connect
   }
 }
 

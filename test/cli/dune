@@ -2,4 +2,4 @@
  (deps
   %{bin:ofpp}
   (source_tree data)
-  ../../examples/mirage/mirage.fpp))
+  (source_tree ../../examples/mirage)))

@@ -4,7 +4,7 @@
 module Stackv4v6 : Tcpip.Stack.V4V6
 module Happy_eyeballs_mirage : Happy_eyeballs_mirage.S
 module Dns_client : Dns_client_mirage.S
-module Dns_client_app : sig end
+module App : sig end
 
 val connect : Stackv4v6.t Lwt.t Lazy.t
 

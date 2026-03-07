@@ -3,7 +3,7 @@
 
 module Ethernet : Ethernet.S
 module Ipv6 : Tcpip.Ip.S
-module Ping6_app : sig end
+module App : sig end
 
 val connect : (Netif.t * Ethernet.t * Ipv6.t) Lwt.t Lazy.t
 

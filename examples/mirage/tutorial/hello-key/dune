@@ -2,9 +2,10 @@
  (mode promote)
  (targets main.ml main.mli)
  (deps
-  (:fpp ../../mirage.fpp))
+  (:fpp ../../mirage.fpp)
+  (:cfg config.fpp))
  (action
-  (run %{bin:ofpp} to-ml --topologies UnixHelloKey %{fpp})))
+  (run %{bin:ofpp} to-ml --topologies UnixHelloKey %{fpp} %{cfg})))
 
 (executable
  (name main)

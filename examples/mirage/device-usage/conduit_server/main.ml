@@ -4,7 +4,7 @@
 
 module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
 module Conduit_tcp = Conduit_tcp.Make(Stackv4v6)
-module Conduit_app = Unikernel.Main(Conduit_tcp)
+module App = Unikernel.Main(Conduit_tcp)
 
 open Lwt.Syntax
 
@@ -16,7 +16,7 @@ let connect = lazy (
 let start = lazy (
   let* stackv4v6 = Lazy.force connect in
   let* conduit_tcp = Conduit_tcp.start stackv4v6 in
-  Conduit_app.start conduit_tcp)
+  App.start conduit_tcp)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
 let cmdliner_stdlib__key = Mirage_runtime.register_arg @@

@@ -3,76 +3,71 @@ MirageOS examples: generate main.ml from FPP topologies.
   $ F="../../examples/mirage"
 
 Standalone app generates start entry point (no module alias needed)
-  $ ofpp to-ml --topologies UnixHello $F/mirage.fpp 2>/dev/null
+  $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null
   $ grep -E 'Unikernel.start' main.ml
   let start = lazy (Unikernel.start ())
 
 All standalone topologies generate start call
-  $ for t in UnixHello UnixHelloKey UnixClock UnixCrypto; do
-  >   ofpp to-ml --topologies "$t" $F/mirage.fpp 2>/dev/null
+  $ for t in hello hello-key; do
+  >   ofpp to-ml --topologies "$(grep -o 'Unix[A-Za-z]*' $F/tutorial/$t/config.fpp)" $F/mirage.fpp $F/tutorial/$t/config.fpp 2>/dev/null
   >   grep -q 'Unikernel.start' main.ml && echo "$t: OK" || echo "$t: FAIL"
   > done
-  UnixHello: OK
-  UnixHelloKey: OK
-  UnixClock: OK
-  UnixCrypto: OK
+  hello: OK
+  hello-key: OK
 
-Block topologies generate connect calls with port params
-  $ for t in UnixBlock UnixDiskLottery; do
-  >   ofpp to-ml --topologies "$t" $F/mirage.fpp 2>/dev/null
-  >   grep -q 'Ramdisk.connect ~name' main.ml && echo "$t: OK" || echo "$t: FAIL"
-  > done
-  UnixBlock: OK
-  UnixDiskLottery: OK
+Block topology generates connect call with port params
+  $ ofpp to-ml --topologies UnixBlock $F/mirage.fpp $F/device-usage/block/config.fpp 2>/dev/null
+  $ grep 'Ramdisk.connect' main.ml
+    let* ramdisk = Ramdisk.connect ~name:"block-test" in
 
 KV topology wires static store via functor
-  $ ofpp to-ml --topologies UnixKvRo $F/mirage.fpp 2>/dev/null
+  $ ofpp to-ml --topologies UnixKvRo $F/mirage.fpp $F/device-usage/kv_ro/config.fpp 2>/dev/null
   $ grep -E '(Static_t|Unikernel)' main.ml
   module Kv_store = Static_t
-  module Kv_app = Unikernel.Main(Kv_store)
+  module App = Unikernel.Main(Kv_store)
 
 Socket stack topologies use port params for connect args
-  $ ofpp to-ml --topologies UnixNetwork $F/mirage.fpp 2>/dev/null
-  $ grep -E '(Stackv4v6|Udpv4v6|Tcpv4v6)' main.ml | head -5
+  $ ofpp to-ml --topologies UnixNetwork $F/mirage.fpp $F/device-usage/network/config.fpp 2>/dev/null
+  $ grep -E '(Stackv4v6|Udpv4v6|Tcpv4v6|Unikernel)' main.ml | head -5
   module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
-  module Stack_app = Unikernel.Main(Stackv4v6)
+  module App = Unikernel.Main(Stackv4v6)
     let* udpv4v6_socket = Udpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
     let* tcpv4v6_socket = Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
     Stackv4v6.connect udpv4v6_socket tcpv4v6_socket)
 
-Dhcp topology uses Netif with labeled device port param
-  $ ofpp to-ml --topologies UnixDhcp $F/mirage.fpp 2>/dev/null
-  $ grep -E '(Netif|Net_app)' main.ml
-  module Net_app = Unikernel.Main(Netif)
+Dhcp topology uses Netif with positional device port param
+  $ ofpp to-ml --topologies UnixDhcp $F/mirage.fpp $F/applications/dhcp/config.fpp 2>/dev/null
+  $ grep -E '(Netif|App)' main.ml
+  module App = Unikernel.Main(Netif)
     let* netif = Netif.connect "tap0" in
-    Net_app.start netif)
+    App.start netif)
 
 Ping6 topology wires Ethernet and IPv6 functors
-  $ ofpp to-ml --topologies UnixPing6 $F/mirage.fpp 2>/dev/null
-  $ grep -E 'module (Eth|Ipv6|Ping6)' main.ml
+  $ ofpp to-ml --topologies UnixPing6 $F/mirage.fpp $F/device-usage/ping6/config.fpp 2>/dev/null
+  $ grep -E 'module (Eth|Ipv6|App)' main.ml
   module Ethernet = Ethernet.Make(Netif)
   module Ipv6 = Ipv6.Make(Netif)(Ethernet)
-  module Ping6_app = Unikernel.Main(Netif)(Ethernet)(Ipv6)
+  module App = Unikernel.Main(Netif)(Ethernet)(Ipv6)
 
 Conduit topology uses adapter with start method
-  $ ofpp to-ml --topologies UnixConduit $F/mirage.fpp 2>/dev/null
-  $ grep -E '(Conduit_tcp|Conduit_app)' main.ml
+  $ ofpp to-ml --topologies UnixConduit $F/mirage.fpp $F/device-usage/conduit_server/config.fpp 2>/dev/null
+  $ grep -E '(Conduit_tcp|App)' main.ml
   module Conduit_tcp = Conduit_tcp.Make(Stackv4v6)
-  module Conduit_app = Unikernel.Main(Conduit_tcp)
+  module App = Unikernel.Main(Conduit_tcp)
     let* conduit_tcp = Conduit_tcp.start stackv4v6 in
-    Conduit_app.start conduit_tcp)
+    App.start conduit_tcp)
 
-DNS topology uses adapter with start method for tuple unpacking
-  $ ofpp to-ml --topologies UnixDns $F/mirage.fpp 2>/dev/null
-  $ grep -E '(Dns_client|Happy_eyeballs|Dns_client_app)' main.ml
+DNS topology uses adapter with start method
+  $ ofpp to-ml --topologies UnixDns $F/mirage.fpp $F/applications/dns/config.fpp 2>/dev/null
+  $ grep -E '(Dns_client|Happy_eyeballs|App)' main.ml
   module Happy_eyeballs_mirage = Happy_eyeballs_mirage.Make(Stackv4v6)
   module Dns_client = Dns_resolver.Make(Stackv4v6)(Happy_eyeballs_mirage)
-  module Dns_client_app = Unikernel.Make(Dns_client)
+  module App = Unikernel.Make(Dns_client)
     let* happy_eyeballs_mirage = Happy_eyeballs_mirage.connect_device stackv4v6 in
     let* dns_client = Dns_client.start stackv4v6 happy_eyeballs_mirage in
-    Dns_client_app.start dns_client)
+    App.start dns_client)
 
 Entry points include Mirage_runtime boilerplate
-  $ ofpp to-ml --topologies UnixHello $F/mirage.fpp 2>/dev/null
+  $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null
   $ grep -c 'Mirage_runtime' main.ml
   6
