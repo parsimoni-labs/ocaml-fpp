@@ -1,4 +1,4 @@
-(** Adapter: [Dns_client_mirage.Make] with a standard device-init function.
+(** Adapter: [Dns_client_mirage.Make] with unpacked connect arguments.
 
     [Dns_client_mirage.Make(S)(H).connect] takes a [(S.t * H.t)] tuple. We
     expose [start] that takes the stack and happy-eyeballs as separate arguments
@@ -11,5 +11,6 @@ module Make
 struct
   include Dns_client_mirage.Make (S) (H)
 
-  let start s h = connect (s, h)
+  let start ?cache_size ?edns ?nameservers ?timeout s h =
+    connect ?cache_size ?edns ?nameservers ?timeout (s, h)
 end

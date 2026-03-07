@@ -62,6 +62,34 @@ port HttpServerConnect($port: U16)
 
 port ChamelonConnect(programBlockSize: U32)
 
+@ All fields optional (library provides defaults).
+struct HappyEyeballsConf {
+  aaaa_timeout: U64,
+  connect_delay: U64,
+  connect_timeout: U64,
+  resolve_timeout: U64,
+  resolve_retries: U32,
+  timer_interval: U64
+} default {
+  aaaa_timeout = 0,
+  connect_delay = 0,
+  connect_timeout = 0,
+  resolve_timeout = 0,
+  resolve_retries = 0,
+  timer_interval = 0
+}
+port HappyEyeballsConnect(conf: HappyEyeballsConf)
+
+@ All fields optional (library provides defaults).
+struct DnsClientConf {
+  cache_size: U32,
+  timeout: U64
+} default {
+  cache_size = 0,
+  timeout = 0
+}
+port DnsClientConnect(conf: DnsClientConf)
+
 @ ══════════════════════════════════════════════════════
 @ Infrastructure devices
 @ ══════════════════════════════════════════════════════
@@ -141,15 +169,31 @@ passive component Direct_kv_ro {
   sync input port connect: BlockConnect
 }
 
-@ Opaque leaf KV (e.g. Static_t, for use with @ ocaml.module).
+@ Opaque leaf KV (e.g. crunch-generated Static_t).
 passive component Kv {
   import Mirage_kv.RO
 }
 
-@ Block-backed read-only KV (tar, fat).
+@ Block-backed read-only KV (generic).
 passive component Block_kv {
   import Mirage_kv.RO
   output port block: serial
+}
+
+@ Tar archive read-only KV on a block device.
+module Tar_mirage {
+  passive component Make_KV_RO {
+    import Mirage_kv.RO
+    output port block: serial
+  }
+}
+
+@ FAT filesystem read-only KV on a block device.
+module Fat {
+  passive component KV_RO {
+    import Mirage_kv.RO
+    output port block: serial
+  }
 }
 
 @ Direct filesystem access (Unix only, read-write).
@@ -389,7 +433,7 @@ module Happy_eyeballs_mirage {
 
   passive component Make {
     import Happy_eyeballs_mirage.S
-    sync input port connect_device: serial
+    sync input port connect_device: HappyEyeballsConnect
     output port stack: serial
   }
 }
@@ -401,9 +445,10 @@ module Dns_client_mirage {
 }
 
 module Dns_resolver {
+  @ connect takes (stack * happy_eyeballs) tuple; adapter unpacks via start.
   passive component Make {
     import Dns_client_mirage.S
-    sync input port start: serial
+    sync input port start: DnsClientConnect
     output port stack: serial
     output port happy_eyeballs: serial
   }
@@ -540,6 +585,76 @@ module Git_mirage {
 }
 
 @ ══════════════════════════════════════════════════════
+@ Resolver (legacy conduit-based)
+@ ══════════════════════════════════════════════════════
+
+module Resolver_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ resolver_dns : ?nameservers -> stackv4v6 -> resolver
+  passive component Make {
+    import Resolver_mirage.S
+    output port stack: serial
+  }
+}
+
+@ Unix system resolver (no deps).
+passive component Resolver_unix_system {
+  import Resolver_mirage.S
+}
+
+@ ══════════════════════════════════════════════════════
+@ Cohttp client (legacy, needs resolver + conduit)
+@ ══════════════════════════════════════════════════════
+
+module Cohttp_mirage {
+  module Client {
+    interface S {
+      sync input port connect: serial
+    }
+
+    @ cohttp_client : resolver -> conduit -> http_client
+    passive component Make {
+      import Cohttp_mirage.Client.S
+      output port resolver: serial
+      output port conduit: serial
+    }
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ DHCP-based IPv4
+@ ══════════════════════════════════════════════════════
+
+@ ipv4_of_dhcp : network -> ethernet -> arpv4 -> ipv4
+module Dhcp_ipv4 {
+  passive component Make {
+    import Tcpip.Ip.S
+    output port net: serial
+    output port eth: serial
+    output port arp: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ Monitoring
+@ ══════════════════════════════════════════════════════
+
+module Monitoring {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ monitoring : stackv4v6 -> job
+  passive component Make {
+    import Monitoring.S
+    output port stack: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
 @ Device instances
 @ ══════════════════════════════════════════════════════
 
@@ -565,14 +680,10 @@ instance htdocs_data: Kv base id 0
 instance tls_data: Kv base id 0
 instance data_block: Block base id 0
 instance certs_block: Block base id 0
-@ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_data: Block_kv base id 0
-@ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_certs: Block_kv base id 0
-@ ocaml.module Fat.KV_RO
-instance fat_data: Block_kv base id 0
-@ ocaml.module Fat.KV_RO
-instance fat_certs: Block_kv base id 0
+instance tar_data: Tar_mirage.Make_KV_RO base id 0
+instance tar_certs: Tar_mirage.Make_KV_RO base id 0
+instance fat_data: Fat.KV_RO base id 0
+instance fat_certs: Fat.KV_RO base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0

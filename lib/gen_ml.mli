@@ -60,7 +60,7 @@ val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
     declarations for all non-runtime instances and [val] declarations for each
     connection group lazy binding. Instances with [@ ocaml.sig] get the named
     module type; non-leaf instances without it get [sig type t end]; leaf
-    instances with [@ ocaml.module] get module aliases. *)
+    instances with qualified component paths get module aliases. *)
 
 (** {2 Topology Helpers} *)
 

@@ -4,7 +4,7 @@
 
 module Ethernet = Ethernet.Make(Netif)
 module Ipv6 = Ipv6.Make(Netif)(Ethernet)
-module App = Unikernel.Main(Netif)(Ethernet)(Ipv6)
+module Unikernel = Unikernel.Main(Netif)(Ethernet)(Ipv6)
 
 open Lwt.Syntax
 
@@ -16,7 +16,7 @@ let connect = lazy (
 
 let start = lazy (
   let* (netif, ethernet, ipv6) = Lazy.force connect in
-  App.start netif ethernet ipv6)
+  Unikernel.start netif ethernet ipv6)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
 let cmdliner_stdlib__key = Mirage_runtime.register_arg @@

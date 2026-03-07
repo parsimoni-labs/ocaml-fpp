@@ -27,11 +27,17 @@ convention (Tar -> Tar.Make, Fat -> Fat.Make), so no annotations are needed.
   >   output port block: Dep
   >   sync input port provide: Dep
   > }
+  > module Mem {
+  >   active component Store {
+  >     sync input port provide: Dep
+  >   }
+  > }
   > instance service: Service base id 0x100
   > instance data: Kv base id 0x200
   > instance block: Block base id 0x300
   > instance tar_data: Tar base id 0x400
   > instance fat_data: Fat base id 0x500
+  > instance mem_data: Mem.Store base id 0x600
   > topology LeafKv {
   >   instance service
   >   instance data
@@ -39,9 +45,8 @@ convention (Tar -> Tar.Make, Fat -> Fat.Make), so no annotations are needed.
   > }
   > topology BoundKv {
   >   instance service
-  >   @ ocaml.module Mem_store
-  >   instance data
-  >   connections C { service.data -> data.provide }
+  >   instance mem_data
+  >   connections C { service.data -> mem_data.provide }
   > }
   > topology TarKv {
   >   instance service
@@ -92,10 +97,12 @@ functor implementations, and a concrete module for the bound case.
   >     let connect b = { fat_block = b }
   >   end
   > end
-  > module Mem_store = struct
-  >   type t = { mem_id : int }
-  >   let provide _ = ()
-  >   let connect () = { mem_id = 1 }
+  > module Mem = struct
+  >   module Store = struct
+  >     type t = { mem_id : int }
+  >     let provide _ = ()
+  >     let connect () = { mem_id = 1 }
+  >   end
   > end
   > STUBS
   $ ofpp to-ml kv.fpp >> sm.ml
@@ -108,8 +115,8 @@ functor implementations, and a concrete module for the bound case.
   >   let v = M.c 42 in
   >   assert (v.data = 42);
   >   print_endline "leaf_kv: OK";
-  >   let data = Lazy.force BoundKv.data in
-  >   assert (data.mem_id = 1);
+  >   let mem_data = Lazy.force BoundKv.mem_data in
+  >   assert (mem_data.mem_id = 1);
   >   print_endline "bound_kv: OK";
   >   let module T = TarKv.Make(struct
   >     type t = string
@@ -129,8 +136,8 @@ functor implementations, and a concrete module for the bound case.
   >   print_endline "fat_kv: OK"
   > TEST
   $ compile && run
-  File "sm.ml", line 36, characters 30-34:
-  36 | module Service = Service.Make(Data)
+  File "sm.ml", line 38, characters 30-34:
+  38 | module Service = Service.Make(Data)
                                      ^^^^
   Error: Unbound module Data
   [2]

@@ -898,7 +898,7 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = { module_path : string option; sig_path : string option }
+type ocaml_annots = { sig_path : string option }
 
 let starts_with ~prefix s =
   let plen = String.length prefix in
@@ -908,15 +908,11 @@ let parse_ocaml_annotations annots =
   List.fold_left
     (fun acc s ->
       let s = String.trim s in
-      if starts_with ~prefix:"ocaml.module " s then
-        let v = String.trim (String.sub s 13 (String.length s - 13)) in
-        { acc with module_path = Some v }
-      else if starts_with ~prefix:"ocaml.sig " s then
+      if starts_with ~prefix:"ocaml.sig " s then
         let v = String.trim (String.sub s 10 (String.length s - 10)) in
-        { acc with sig_path = Some v }
+        { sig_path = Some v }
       else acc)
-    { module_path = None; sig_path = None }
-    annots
+    { sig_path = None } annots
 
 (** Extract the sig path from a component's [import] declaration. The qualified
     identifier of the imported interface (e.g. [Ethernet.S]) is used directly as
@@ -935,7 +931,7 @@ let parse_ocaml_annotations_with_import annots comp =
   let ca = parse_ocaml_annotations annots in
   match ca.sig_path with
   | Some _ -> ca
-  | None -> { ca with sig_path = import_sig_path comp }
+  | None -> { sig_path = import_sig_path comp }
 
 (** Extract pre-annotations for a component definition from tu_members. For
     qualified identifiers (e.g. [Cohttp_mirage.Server]), searches within the
@@ -1013,26 +1009,6 @@ let instance_annotations (topo : Ast.def_topology) =
           Some (inst_name, pre, ci.ci_params)
       | _ -> None)
     topo.topo_members
-
-(** Find [@ ocaml.module X] on an instance. When the same instance appears more
-    than once (e.g. from import then redeclared in parent), the LAST entry wins,
-    letting a parent topology override the imported binding. *)
-let instance_bound_module inst_annots inst_name =
-  let extract annots =
-    List.find_map
-      (fun s ->
-        let s = String.trim s in
-        if starts_with ~prefix:"ocaml.module " s then
-          Some (String.trim (String.sub s 13 (String.length s - 13)))
-        else None)
-      annots
-  in
-  List.fold_left
-    (fun acc (n, annots, _params) ->
-      if n = inst_name then
-        match extract annots with Some _ as v -> v | None -> acc
-      else acc)
-    None inst_annots
 
 (** Find param overrides on an instance. Returns a mapping from param name to
     the OCaml literal string, from native FPP [instance name(param = expr)]
@@ -2118,7 +2094,7 @@ let pp_param_cmdliner_terms ppf _tu inst_annots sorted =
       end)
     sorted
 
-let pp_module_aliases ppf inst_annots all_conns module_break sorted =
+let pp_module_aliases ppf all_conns module_break sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
@@ -2126,37 +2102,20 @@ let pp_module_aliases ppf inst_annots all_conns module_break sorted =
         let targets = target_instances inst_name comp all_conns sorted in
         if targets = [] then
           let mod_name = constructor_name inst_name in
-          let concrete_mod =
-            match instance_bound_module inst_annots inst_name with
-            | Some s -> Some s
-            | None ->
-                let comp_path =
-                  Ast.qual_ident_to_string ci.Ast.inst_component.data
-                in
-                if String.contains comp_path '.' then Some comp_path else None
-          in
-          match concrete_mod with
-          | Some m when m <> mod_name ->
-              module_break ();
-              pf ppf "module %s = %s" mod_name m
-          | _ -> ())
+          let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
+          if String.contains comp_path '.' && comp_path <> mod_name then (
+            module_break ();
+            pf ppf "module %s = %s" mod_name comp_path))
     sorted
 
-(** Resolve the functor path for a non-leaf instance. Priority: instance
-    annotation, component annotation, component FPP path (for qualified names),
-    default [Instance_name.Make]. *)
-let resolve_functor_path inst_annots inst_name ci ca =
-  match instance_bound_module inst_annots inst_name with
-  | Some s -> s
-  | None -> (
-      match ca.module_path with
-      | Some s -> s
-      | None ->
-          let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
-          if String.contains comp_path '.' then comp_path
-          else constructor_name inst_name ^ ".Make")
+(** Resolve the functor path for a non-leaf instance. Uses the component's
+    qualified FPP path for qualified names, default [Instance_name.Make]. *)
+let resolve_functor_path inst_name ci =
+  let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
+  if String.contains comp_path '.' then comp_path
+  else constructor_name inst_name ^ ".Make"
 
-let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
+let pp_functor_applications ppf all_conns module_break sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
@@ -2164,11 +2123,7 @@ let pp_functor_applications ppf tu inst_annots all_conns module_break sorted =
         let targets = target_instances inst_name comp all_conns sorted in
         if targets <> [] then (
           let mod_name = constructor_name inst_name in
-          let ca =
-            parse_ocaml_annotations
-              (component_annots tu ci.Ast.inst_component.data)
-          in
-          let path = resolve_functor_path inst_annots inst_name ci ca in
+          let path = resolve_functor_path inst_name ci in
           module_break ();
           pf ppf "module %s = %s" mod_name path;
           List.iter
@@ -2254,8 +2209,8 @@ let pp_topology_body ppf tu topo sorted groups =
     pf ppf "@,"
   in
   let non_rt = filter_non_runtime sorted in
-  pp_module_aliases ppf inst_annots all_conns module_break non_rt;
-  pp_functor_applications ppf tu inst_annots all_conns module_break non_rt;
+  pp_module_aliases ppf all_conns module_break non_rt;
+  pp_functor_applications ppf all_conns module_break non_rt;
   (* Cmdliner registrations for component params not overridden *)
   pp_param_cmdliner_terms ppf tu inst_annots non_rt;
   (* Group bindings *)
@@ -2429,7 +2384,6 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
   if non_rt = [] then ()
   else begin
     let all_conns = connections in
-    let inst_annots = instance_annotations topo in
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s. *)"
       topo.topo_name.data;
     let first_module = ref true in
@@ -2479,14 +2433,12 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
           ca.sig_path <> None && interface_ports comp <> []
         in
         let targets = target_instances inst_name comp all_conns sorted in
-        let bound = instance_bound_module inst_annots inst_name in
-        (* Mirror the .ml: skip leaves that don't produce a module binding *)
-        let has_ml_binding =
-          match (targets, bound) with
-          | [], None -> false
-          | [], Some concrete_mod -> mod_name <> concrete_mod
-          | _ -> true
+        let comp_path = Ast.qual_ident_to_string ci.inst_component.data in
+        let has_qualified_leaf =
+          targets = [] && String.contains comp_path '.' && comp_path <> mod_name
         in
+        (* Mirror the .ml: skip leaves that don't produce a module binding *)
+        let has_ml_binding = targets <> [] || has_qualified_leaf in
         if not has_ml_binding then ()
         else
           match (ca.sig_path, targets) with
@@ -2497,12 +2449,10 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
           | Some sig_path, _ ->
               module_break ();
               pf ppf "module %s : %s" mod_name sig_path
-          | None, [] -> (
-              match bound with
-              | Some concrete_mod ->
-                  module_break ();
-                  pf ppf "module %s = %s" mod_name concrete_mod
-              | None -> ())
+          | None, [] when has_qualified_leaf ->
+              module_break ();
+              pf ppf "module %s = %s" mod_name comp_path
+          | None, [] -> ()
           | None, _ ->
               module_break ();
               pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)

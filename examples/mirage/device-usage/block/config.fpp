@@ -1,16 +1,17 @@
-passive component App {
-  sync input port start: serial
-  output port block: serial
+module Unikernel {
+  passive component Main {
+    sync input port start: serial
+    output port block: serial
+  }
 }
 
-instance app: App base id 0
+instance unikernel: Unikernel.Main base id 0
 
 topology UnixBlock {
   instance ramdisk(name = "block-test")
-  @ ocaml.module Unikernel.Main
-  instance app
+  instance unikernel
 
   connections Start {
-    app.block -> ramdisk.connect
+    unikernel.block -> ramdisk.connect
   }
 }

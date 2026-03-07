@@ -140,7 +140,7 @@ dependencies; the connection graph determines application order.
 | `Netif` | `Netif` | — | `mirage-net-unix` |
 | `Block` / `Ramdisk` | *(leaf)* | — | `mirage-block` |
 | `Kv` | *(leaf parameter)* | — | `mirage-kv` |
-| `Block_kv` | `Tar_mirage.Make_KV_RO` / `Fat.KV_RO` | via `@ ocaml.module` | `tar-mirage` / `fat-filesystem` |
+| `Tar_mirage.Make_KV_RO` / `Fat.KV_RO` | `Tar_mirage.Make_KV_RO` / `Fat.KV_RO` | `Make_KV_RO(Block)` / `KV_RO(Block)` | `tar-mirage` / `fat-filesystem` |
 | `Conduit_tcp.Make` | `Conduit_tcp.Make` | `Make(Stack)` | `conduit-mirage` |
 | `Happy_eyeballs_mirage.Make` | `Happy_eyeballs_mirage.Make` | `Make(Stack)` | `happy-eyeballs-mirage` |
 | `Dns_resolver.Make` | `Dns_resolver.Make` | `Make(Stack, HE)` | `dns-client-mirage` |
@@ -153,19 +153,15 @@ dependencies; the connection graph determines application order.
 
 | FPP annotation | Effect | Example |
 |---|---|---|
-| `@ ocaml.module X.Y` | Override default module path | `@ ocaml.module Tcpip_stack_direct.IPV4V6` on `Ip` |
 | `@ ocaml.type T` | Map abstract FPP type to OCaml type | `@ ocaml.type Ipaddr.V4.Prefix.t` on `type Cidr` |
 
-`@ ocaml.module` is purely a name override.  Every instance already has
-a module name — its instance name, capitalised (e.g. `instance eth` →
-module `Eth`).  The annotation replaces that default when the OCaml
-module path differs (e.g. `@ ocaml.module Tcpip_stack_direct.IPV4V6` on
-`Ip`).  The connection graph determines whether the path is used as a
-functor application (non-leaf instance with outgoing connections) or a
-module alias (leaf instance with no outgoing connections).
+Every instance has a module name: its instance name, capitalised
+(e.g. `instance ethernet` → module `Ethernet`).  For non-leaf instances,
+the component's qualified FPP path IS the OCaml functor path
+(e.g. `instance ipv4: Static_ipv4.Make` → `module Ipv4 = Static_ipv4.Make(...)`).
+For unqualified component names, the default is `Instance_name.Make`.
 
-Default functor path for non-leaf instances: `ComponentName.Make`
-(e.g. `Ethernet` → `Ethernet.Make`).
+The FPP module structure mirrors the OCaml module structure directly.
 
 ## Topology composition
 
@@ -185,9 +181,9 @@ topology SocketStack {
 topology UnixNetwork {
   import SocketStack
   instance stackv4v6
-  instance app
+  instance unikernel
   connections Start {
-    app.stack -> stackv4v6.connect
+    unikernel.stack -> stackv4v6.connect
   }
 }
 ```

@@ -3,7 +3,7 @@
 
 module Ethernet : Ethernet.S
 module Ipv6 : Tcpip.Ip.S
-module App : sig end
+module Unikernel : sig end
 
 val connect : (Netif.t * Ethernet.t * Ipv6.t) Lwt.t Lazy.t
 

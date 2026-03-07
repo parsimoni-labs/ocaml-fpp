@@ -81,8 +81,6 @@ FPP Spec §13 — Comments and Annotations
   $ cat > t.fpp <<EOF
   > @ ocaml.type Macaddr.t
   > type Mac
-  > @ ocaml.module Custom_module
-  > passive component Device { }
   > @ ocaml.sig Ethernet.S
   > passive component EthMake {
   >   sync input port connect: serial
