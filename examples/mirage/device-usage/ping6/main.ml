@@ -5,19 +5,13 @@
 module Ethernet = Ethernet.Make(Netif)
 module Ipv6 = Ipv6.Make(Netif)(Ethernet)
 module Ping6_app = Unikernel.Main(Netif)(Ethernet)(Ipv6)
-let netif__0 =
-  let doc = Cmdliner.Arg.info ~doc:"0" ["netif-0"] in
-  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt string "" doc)
-let ipv6__no_init =
-  let doc = Cmdliner.Arg.info ~doc:"no_init" ["ipv6-no-init"] in
-  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt bool false doc)
 
 open Lwt.Syntax
 
 let connect = lazy (
-  let* netif = Netif.connect (netif__0 ()) in
+  let* netif = Netif.connect "tap0" in
   let* ethernet = Ethernet.connect netif in
-  let* ipv6 = Ipv6.connect ~no_init:(ipv6__no_init ()) netif ethernet in
+  let* ipv6 = Ipv6.connect netif ethernet in
   Lwt.return (netif, ethernet, ipv6))
 
 let start = lazy (

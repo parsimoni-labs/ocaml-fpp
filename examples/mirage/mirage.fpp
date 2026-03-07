@@ -5,9 +5,10 @@
 @ components (OCaml functors), and port types encoding connect signatures.
 @
 @ Mapping to targets:
-@   port param (value)  → OCaml: ~label:v      C++: copy
-@   port param (ref)    → OCaml: ~label:v      C++: pointer
+@   port param (named)  → OCaml: ~label:v      C++: named arg
 @   port param (_N)     → OCaml: positional     C++: positional
+@   struct-typed param  → OCaml: expand fields  C++: expand fields
+@   struct field w/ def → OCaml: optional label C++: has default
 @   output port + conn  → OCaml: functor arg   C++: dep injection
 @   external param      → OCaml: Cmdliner term C++: runtime config
 @   instance(p = v)     → OCaml: inline value  C++: compile-time const
@@ -30,6 +31,11 @@ type Ipv6Addr
 type Macaddr
 
 @ ── Port types (connect signatures) ───────────────────
+@
+@ Named params → labeled (~name:value).
+@ _N prefix → positional args.
+@ Struct-typed params → expand as labeled fields; fields with defaults
+@   become optional labels.
 
 port SocketConnect(ipv4Only: bool, ipv6Only: bool, _0: Cidr, _1: Cidr6)
 
@@ -39,7 +45,9 @@ port NetifConnect(_0: string)
 
 port Ipv4Connect(cidr: Cidr)
 
-port Ipv6Connect(noInit: bool)
+@ Struct with defaults → optional labeled args.
+struct Ipv6Conf { noInit: bool } default { noInit = false }
+port Ipv6Connect(conf: Ipv6Conf)
 
 port IpConnect(ipv4Only: bool, ipv6Only: bool)
 
@@ -801,7 +809,7 @@ topology UnixDns {
 }
 
 topology UnixDhcp {
-  instance netif
+  instance netif(_0 = "tap0")
   @ ocaml.module Unikernel.Main
   instance net_app
 
@@ -811,7 +819,7 @@ topology UnixDhcp {
 }
 
 topology UnixPing6 {
-  instance netif
+  instance netif(_0 = "tap0")
   instance ethernet
   instance ipv6
   @ ocaml.module Unikernel.Main

@@ -1725,6 +1725,90 @@ let is_interface_port tu (pre : string list) (p : Ast.port_instance_general) =
       | Some pd -> pd.port_return <> None || pd.port_params <> []
       | None -> false)
 
+(** Look up a struct definition by qualified identifier in the translation unit.
+*)
+let resolve_struct_def tu struct_qi =
+  let struct_name =
+    match struct_qi with
+    | Ast.Unqualified id -> id.data
+    | Ast.Qualified _ -> Ast.qual_ident_to_string struct_qi
+  in
+  List.find_map
+    (fun ann ->
+      match (Ast.unannotate ann).Ast.data with
+      | Ast.Mod_def_struct s when s.struct_name.data = struct_name -> Some s
+      | _ -> None)
+    tu.Ast.tu_members
+
+type effective_param = {
+  ep_name : string;  (** FPP name (raw, before camel_to_snake) *)
+  ep_type : Ast.type_name Ast.node;  (** FPP type *)
+  ep_optional : bool;  (** Has a default value in the struct *)
+  ep_labeled : bool;  (** From struct expansion → labeled; flat → positional *)
+}
+(** An effective connect parameter — either a direct port param or an expanded
+    struct field. Struct-expanded params are labeled ([~name:value]); direct
+    params are positional. This replaces the [_] prefix convention. *)
+
+(** Extract the list of field names with defaults from a struct's default
+    expression. *)
+let struct_default_fields (s : Ast.def_struct) =
+  match s.struct_default with
+  | None -> []
+  | Some e -> (
+      match e.data with
+      | Ast.Expr_struct members ->
+          List.map
+            (fun (m : Ast.struct_member Ast.node) -> m.data.sm_name.data)
+            members
+      | _ -> [])
+
+(** Expand port params: struct-typed params expand as individual labeled fields
+    (with optional handling via defaults). Non-struct params use the [_N] prefix
+    convention: [_]-prefixed names are positional, others are labeled. *)
+let expand_port_params tu (params : Ast.formal_param_list) =
+  List.concat_map
+    (fun ann ->
+      let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
+      match fp.fp_type.data with
+      | Ast.Type_qual qi -> (
+          match resolve_struct_def tu qi.data with
+          | Some s ->
+              let defaults = struct_default_fields s in
+              List.map
+                (fun (m_ann : Ast.struct_type_member Ast.node Ast.annotated) ->
+                  let m = (Ast.unannotate m_ann).Ast.data in
+                  {
+                    ep_name = m.struct_mem_name.data;
+                    ep_type = m.struct_mem_type;
+                    ep_optional = List.mem m.struct_mem_name.data defaults;
+                    ep_labeled = true;
+                  })
+                s.struct_members
+          | None ->
+              let name = fp.fp_name.data in
+              let positional = String.length name > 0 && name.[0] = '_' in
+              [
+                {
+                  ep_name = name;
+                  ep_type = fp.fp_type;
+                  ep_optional = false;
+                  ep_labeled = not positional;
+                };
+              ])
+      | _ ->
+          let name = fp.fp_name.data in
+          let positional = String.length name > 0 && name.[0] = '_' in
+          [
+            {
+              ep_name = name;
+              ep_type = fp.fp_type;
+              ep_optional = false;
+              ep_labeled = not positional;
+            };
+          ])
+    params
+
 (** Extract formal params from the connect port's type definition. When a
     component declares [sync input port connect: SomePort] and [SomePort] has
     formal parameters, those params become labeled arguments on the connect
@@ -1823,17 +1907,16 @@ let resolve_runtime_arg_source inst_name arg connections =
     type. For example, if the param type is [Cidr] with
     [@ ocaml.type Ipaddr.V4.Prefix.t], wraps ["10.0.0.2/24"] as
     [(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24")]. Returns [code] unchanged
-    for primitive types or non-string values. *)
-let wrap_typed_value tu (fp : Ast.formal_param) code =
-  match fp.fp_type.data with
+    for primitive types or non-string values. Works for both direct port params
+    and struct-expanded effective params. *)
+let wrap_typed_value tu (ep : effective_param) code =
+  match ep.ep_type.data with
   | Ast.Type_qual qi ->
-      (* Only wrap string literals *)
       if String.length code > 0 && code.[0] = '"' then
         let type_env = build_type_env tu in
         let type_name = Ast.qual_ident_to_string qi.data in
         match List.assoc_opt type_name type_env with
         | Some ocaml_type when String.length ocaml_type > 2 ->
-            (* Derive Module_path.of_string_exn from Module_path.t *)
             let prefix =
               if
                 String.length ocaml_type > 2
@@ -1903,17 +1986,20 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
             if positional then pf ppf " (%s__%s ())" inst_var param_name
             else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
     params;
-  (* Port params from the typed connect port definition.
-     Params whose FPP name starts with [_] are positional.
-     All others are labeled (~name:value). The [_] prefix is stripped from
-     the generated name — it is only a convention marker. *)
+  (* Port params expanded through struct types.  Struct-expanded fields are
+     labeled; [_N]-prefixed params are positional (prefix stripped); other
+     params are labeled.  Optional params (struct fields with defaults) are
+     omitted when unresolved.  Use [external param] for runtime config. *)
+  let expanded_params = expand_port_params tu port_params in
   List.iter
-    (fun ann ->
-      let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
-      let raw_name = fp.fp_name.data in
-      let positional = String.length raw_name > 0 && raw_name.[0] = '_' in
+    (fun (ep : effective_param) ->
+      let raw_name = ep.ep_name in
       let base_name =
-        if positional then String.sub raw_name 1 (String.length raw_name - 1)
+        if
+          (not ep.ep_labeled)
+          && String.length raw_name > 0
+          && raw_name.[0] = '_'
+        then String.sub raw_name 1 (String.length raw_name - 1)
         else raw_name
       in
       let param_name = camel_to_snake base_name in
@@ -1921,14 +2007,11 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
       match resolve_port_param_value inst_annots inst_name annot_name with
       | Some code ->
           has_any_arg := true;
-          let code = wrap_typed_value tu fp code in
-          if positional then pf ppf " %s" code
-          else pf ppf " ~%s:%s" param_name code
-      | None ->
-          has_any_arg := true;
-          if positional then pf ppf " (%s__%s ())" inst_var param_name
-          else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
-    port_params;
+          let code = wrap_typed_value tu ep code in
+          if ep.ep_labeled then pf ppf " ~%s:%s" param_name code
+          else pf ppf " %s" code
+      | None -> ())
+    expanded_params;
   List.iter
     (fun (p : Ast.port_instance_general) ->
       has_any_arg := true;
@@ -2016,37 +2099,9 @@ let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
   pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
     conv default
 
-(** Default value literal for a Cmdliner opt, given an FPP type. *)
-let cmdliner_default_of_fpp_type (tn : Ast.type_name) =
-  match tn with
-  | Type_bool -> "false"
-  | Type_int _ -> "0"
-  | Type_float _ -> "0."
-  | Type_string _ -> "\"\""
-  | Type_qual _ -> "\"\""
-
-(** Emit a single Cmdliner term registration for one unresolved port param. The
-    [_] prefix (positional marker) is stripped from the generated name. *)
-let pp_one_port_param_cmdliner_term ppf ~inst_var (fp : Ast.formal_param) =
-  let raw_name = fp.fp_name.data in
-  let positional = String.length raw_name > 0 && raw_name.[0] = '_' in
-  let base_name =
-    if positional then String.sub raw_name 1 (String.length raw_name - 1)
-    else raw_name
-  in
-  let param_name = camel_to_snake base_name in
-  let conv = cmdliner_conv_of_fpp_type fp.fp_type.data in
-  let default = cmdliner_default_of_fpp_type fp.fp_type.data in
-  pf ppf "@,let %s__%s =" inst_var param_name;
-  pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name
-    (inst_var ^ "-"
-    ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
-  pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
-    conv default
-
 (** Emit Cmdliner term registrations for component params and port params that
     are not overridden by annotations or init specs. *)
-let pp_param_cmdliner_terms ppf tu inst_annots sorted =
+let pp_param_cmdliner_terms ppf _tu inst_annots sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
@@ -2059,16 +2114,7 @@ let pp_param_cmdliner_terms ppf tu inst_annots sorted =
               resolve_param_value inst_annots inst_name ci i p = None
               && not optional
             then pp_one_cmdliner_term ppf ~inst_var p)
-          params;
-        (* Port params from the typed connect port definition *)
-        let port_params = connect_port_params tu comp in
-        List.iter
-          (fun ann ->
-            let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
-            let annot_name = camel_to_snake fp.fp_name.data in
-            if resolve_port_param_value inst_annots inst_name annot_name = None
-            then pp_one_port_param_cmdliner_term ppf ~inst_var fp)
-          port_params
+          params
       end)
     sorted
 

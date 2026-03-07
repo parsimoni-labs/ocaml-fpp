@@ -74,12 +74,16 @@ port NetifConnect(_0: string)
 
 | FPP param | Generated OCaml | C++ (future) |
 |---|---|---|
-| `name: string` | `~name:"value"` (labeled) | `name = "value"` |
-| `_0: Cidr` | positional arg | positional arg |
-| `external param key: string` | Cmdliner runtime term | runtime config |
+| `name: Type` | `~name:value` (labeled) | `name = value` |
+| `_N: Type` | positional arg | positional arg |
+| struct-typed param | expand fields as labeled args | expand fields |
+| struct field with default | optional labeled (omitted if unset) | has default |
+| `external param key: T` | Cmdliner runtime term | runtime config |
 
-- **Labeled params** — named params become OCaml labeled arguments
+- **Named params** — become OCaml labeled arguments (`~name:value`)
 - **Positional params** — `_N` prefix marks positional arguments
+- **Struct-typed params** — struct fields expand as labeled args; fields with
+  defaults become optional and are omitted when not overridden
 - **External types** — string values auto-convert via `of_string_exn`
   (e.g. `"10.0.0.2/24"` → `Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24"`)
 
@@ -106,8 +110,10 @@ topology UnixBlock {
 ```
 
 Values are FPP expressions (bool, int, string, identifier), making them
-target-independent for FFI generation.  Unresolved params become Cmdliner
-runtime terms.
+target-independent for FFI generation.  Unresolved required params cause
+OCaml compile errors; unresolved optional params (struct fields with
+defaults) are silently omitted.  Use `external param` on the component
+for runtime-configurable values (Cmdliner terms).
 
 ## Component correspondence
 

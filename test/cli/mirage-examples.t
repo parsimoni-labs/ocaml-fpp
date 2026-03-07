@@ -36,7 +36,7 @@ KV topology wires static store via functor
   module Kv_store = Static_t
   module Kv_app = Unikernel.Main(Kv_store)
 
-Socket stack topologies use positional port params for connect args
+Socket stack topologies use labeled and positional port params
   $ ofpp to-ml --topologies UnixNetwork $F/mirage.fpp 2>/dev/null
   $ grep -E '(Stackv4v6|Udpv4v6|Tcpv4v6)' main.ml | head -5
   module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
@@ -49,7 +49,7 @@ Dhcp topology uses Netif with positional device port param
   $ ofpp to-ml --topologies UnixDhcp $F/mirage.fpp 2>/dev/null
   $ grep -E '(Netif|Net_app)' main.ml
   module Net_app = Unikernel.Main(Netif)
-    let* netif = Netif.connect (netif__0 ()) in
+    let* netif = Netif.connect "tap0" in
     Net_app.start netif)
 
 Ping6 topology wires Ethernet and IPv6 functors
