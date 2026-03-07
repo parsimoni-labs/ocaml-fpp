@@ -568,6 +568,50 @@ Empty topology
   ! t.fpp:10:11: warning in SM '<tu>.T': input port 's.cmdIn' has no incoming connection
   ✓ t.fpp
 
+§5.14 Instance param overrides — native FPP per-topology configuration
+
+  $ cat > t.fpp <<'EOF'
+  > port BlockConnect(name: string)
+  > passive component Block {
+  >   sync input port connect: BlockConnect
+  > }
+  > instance blk: Block base id 0
+  > topology T1 {
+  >   instance blk(name = "disk-a")
+  > }
+  > topology T2 {
+  >   instance blk(name = "disk-b")
+  > }
+  > EOF
+  $ ofpp check t.fpp
+  ╭───┬─────────────┬─────────┬──────────────────────────────────────────────────╮
+  │   │ Location    │ SM      │ Warning                                          │
+  ├───┼─────────────┼─────────┼──────────────────────────────────────────────────┤
+  │ ! │ t.fpp:7:11  │ <tu>.T1 │ input port 'blk.connect' has no incoming         │
+  │   │             │         │ connection                                       │
+  │ ! │ t.fpp:10:11 │ <tu>.T2 │ input port 'blk.connect' has no incoming         │
+  │   │             │         │ connection                                       │
+  ╰───┴─────────────┴─────────┴──────────────────────────────────────────────────╯
+  
+  ✓ t.fpp
+
+
+§5.14 Instance param overrides — multiple params with mixed types
+
+  $ cat > t.fpp <<'EOF'
+  > port NetConnect(ipv4Only: bool, ipv6Only: bool, _0: string)
+  > passive component Net {
+  >   sync input port connect: NetConnect
+  > }
+  > instance net: Net base id 0
+  > topology T {
+  >   instance net(ipv4Only = false, ipv6Only = true, _0 = "tap0")
+  > }
+  > EOF
+  $ ofpp check t.fpp
+  ! t.fpp:7:11: warning in SM '<tu>.T': input port 'net.connect' has no incoming connection
+  ✓ t.fpp
+
 §5.14 Telemetry packet — missing group is a syntax error
 
   $ cat > t.fpp <<EOF

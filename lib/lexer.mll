@@ -63,7 +63,11 @@ let () = List.iter (fun (kw, tok) -> Hashtbl.add keywords kw tok) [
 ]
 
 let lookup_ident s =
-  try Hashtbl.find keywords s with Not_found -> IDENT s
+  (* $identifier escapes keywords: $port is the identifier "port" *)
+  if String.length s > 0 && s.[0] = '$' then
+    IDENT (String.sub s 1 (String.length s - 1))
+  else
+    try Hashtbl.find keywords s with Not_found -> IDENT s
 }
 
 let digit = ['0'-'9']

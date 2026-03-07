@@ -22,10 +22,10 @@ All standalone topologies generate start call
   UnixTimeout2: OK
   UnixEchoServer: OK
 
-Block topologies generate connect calls with params
+Block topologies generate connect calls with port params
   $ for t in UnixBlock UnixDiskLottery; do
   >   ofpp to-ml --topologies "$t" $F/mirage.fpp 2>/dev/null
-  >   grep -q 'Ramdisk.connect' main.ml && echo "$t: OK" || echo "$t: FAIL"
+  >   grep -q 'Ramdisk.connect ~name' main.ml && echo "$t: OK" || echo "$t: FAIL"
   > done
   UnixBlock: OK
   UnixDiskLottery: OK
@@ -36,7 +36,7 @@ KV topology wires static store via functor
   module Kv_store = Static_t
   module Kv_app = Unikernel.Main(Kv_store)
 
-Socket stack topologies use params for connect args
+Socket stack topologies use positional port params for connect args
   $ ofpp to-ml --topologies UnixNetwork $F/mirage.fpp 2>/dev/null
   $ grep -E '(Stackv4v6|Udpv4v6|Tcpv4v6)' main.ml | head -5
   module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
@@ -45,11 +45,11 @@ Socket stack topologies use params for connect args
     let* tcpv4v6_socket = Tcpv4v6_socket.connect ~ipv4_only:false ~ipv6_only:false (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0") None in
     Stackv4v6.connect udpv4v6_socket tcpv4v6_socket)
 
-Dhcp topology uses Netif with positional device param
+Dhcp topology uses Netif with positional device port param
   $ ofpp to-ml --topologies UnixDhcp $F/mirage.fpp 2>/dev/null
   $ grep -E '(Netif|Net_app)' main.ml
   module Net_app = Unikernel.Main(Netif)
-    let* netif = Netif.connect (netif__device ()) in
+    let* netif = Netif.connect (netif__0 ()) in
     Net_app.start netif)
 
 Ping6 topology wires Ethernet and IPv6 functors

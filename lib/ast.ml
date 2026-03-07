@@ -472,6 +472,7 @@ type spec_connection_graph =
 type spec_comp_instance = {
   ci_instance : qual_ident node;
   ci_visibility : [ `Public | `Private ];
+  ci_params : (ident node * expr node) list;
 }
 (** Component instance reference in topology. *)
 

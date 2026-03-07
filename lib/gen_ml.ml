@@ -986,7 +986,20 @@ let component_annots tu comp_qi =
   in
   Option.value ~default:[] result
 
-(** Extract (instance_name, pre_annotations) pairs from a topology. *)
+(** Render an FPP default expression as an OCaml literal. *)
+let rec ocaml_literal_of_expr (e : Ast.expr) =
+  match e with
+  | Expr_literal (Lit_string s) -> Fmt.str "%S" s
+  | Expr_literal (Lit_int s) -> s
+  | Expr_literal (Lit_float s) -> s
+  | Expr_literal (Lit_bool b) -> string_of_bool b
+  | Expr_ident id -> id.data
+  | Expr_paren e -> ocaml_literal_of_expr e.data
+  | _ -> "()"
+
+(** Extract (instance_name, pre_annotations, ci_params) triples from a topology.
+    [ci_params] are the native FPP param overrides from the
+    [instance name(param = value)] syntax. *)
 let instance_annotations (topo : Ast.def_topology) =
   List.filter_map
     (fun ((pre, node, _) : Ast.topology_member Ast.node Ast.annotated) ->
@@ -997,7 +1010,7 @@ let instance_annotations (topo : Ast.def_topology) =
             | Ast.Unqualified id -> id.data
             | Ast.Qualified _ -> Ast.qual_ident_to_string ci.ci_instance.data
           in
-          Some (inst_name, pre)
+          Some (inst_name, pre, ci.ci_params)
       | _ -> None)
     topo.topo_members
 
@@ -1015,7 +1028,7 @@ let instance_bound_module inst_annots inst_name =
       annots
   in
   List.fold_left
-    (fun acc (n, annots) ->
+    (fun acc (n, annots, _params) ->
       if n = inst_name then
         match extract annots with Some _ as v -> v | None -> acc
       else acc)
@@ -1036,22 +1049,30 @@ let parse_param_annotation s =
     | None -> None
   else None
 
-(** Find [@ ocaml.param name "value"] annotations on an instance. Returns a
-    mapping from param name to the OCaml literal string. Multiple annotations
-    may override different params. *)
+(** Find param overrides on an instance. Returns a mapping from param name to
+    the OCaml literal string. Sources (in priority order): 1. Native FPP param
+    overrides: [instance name(param = expr)] 2. [@ ocaml.param name value]
+    annotations (legacy) *)
 let instance_param_annotations inst_annots inst_name =
   let tbl = Hashtbl.create 4 in
-  let annots =
-    List.concat_map
-      (fun (n, annots) -> if n = inst_name then annots else [])
-      inst_annots
-  in
   List.iter
-    (fun s ->
-      match parse_param_annotation s with
-      | Some (name, value) -> Hashtbl.replace tbl name value
-      | None -> ())
-    annots;
+    (fun (n, annots, ci_params) ->
+      if n = inst_name then begin
+        (* Legacy annotations *)
+        List.iter
+          (fun s ->
+            match parse_param_annotation s with
+            | Some (name, value) -> Hashtbl.replace tbl name value
+            | None -> ())
+          annots;
+        (* Native FPP param overrides (higher priority) *)
+        List.iter
+          (fun ((name : Ast.ident Ast.node), (value : Ast.expr Ast.node)) ->
+            let param_name = camel_to_snake name.data in
+            Hashtbl.replace tbl param_name (ocaml_literal_of_expr value.data))
+          ci_params
+      end)
+    inst_annots;
   tbl
 
 (** Extract instance name from a port instance identifier. *)
@@ -1139,16 +1160,6 @@ let cmdliner_conv_of_fpp_type (tn : Ast.type_name) =
   | Type_float (F32 | F64) -> "float"
   | Type_string _ -> "string"
   | Type_qual _ -> "string"
-
-(** Render an FPP default expression as an OCaml literal. *)
-let rec ocaml_literal_of_expr (e : Ast.expr) =
-  match e with
-  | Expr_literal (Lit_string s) -> Fmt.str "%S" s
-  | Expr_literal (Lit_int s) -> s
-  | Expr_literal (Lit_float s) -> s
-  | Expr_literal (Lit_bool b) -> string_of_bool b
-  | Expr_paren e -> ocaml_literal_of_expr e.data
-  | _ -> "()"
 
 (** Collect runtime labelled arguments for a target instance: for each
     connection FROM a runtime instance TO [inst_name], return
@@ -1739,6 +1750,40 @@ let is_interface_port tu (pre : string list) (p : Ast.port_instance_general) =
       | Some pd -> pd.port_return <> None || pd.port_params <> []
       | None -> false)
 
+(** Extract formal params from the connect port's type definition. When a
+    component declares [sync input port connect: SomePort] and [SomePort] has
+    formal parameters, those params become labeled arguments on the connect
+    call. Only applies to ports named [connect] or [start] — not interface ports
+    (which model method signatures). Returns the formal param list. *)
+let connect_port_params tu (comp : Ast.def_component) =
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  if method_name <> "connect" && method_name <> "start" then []
+  else
+    List.find_map
+      (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated)
+         ->
+        match node.Ast.data with
+        | Ast.Comp_spec_port_instance (Ast.Port_general p)
+          when p.gen_kind = Sync_input
+               && camel_to_snake p.gen_name.data = method_name -> (
+            match p.gen_port with
+            | Some qi -> (
+                match resolve_port_def tu qi.Ast.data with
+                | Some pd when pd.port_params <> [] -> Some pd.port_params
+                | _ -> None)
+            | None -> None)
+        | _ -> None)
+      comp.comp_members
+    |> Option.value ~default:[]
+
+(** Resolve the value for a port param on an instance. Uses the same
+    [@ ocaml.param name value] annotation mechanism as component params. *)
+let resolve_port_param_value inst_annots inst_name param_name =
+  let annot_overrides = instance_param_annotations inst_annots inst_name in
+  Hashtbl.find_opt annot_overrides param_name
+
 (** Input ports on [comp] that have no incoming connection for [inst_name].
     These surface as labeled parameters of the generated [connect] function.
     Dependency-only ports ([Dep]) and interface ports (layer 2 API declarations)
@@ -1799,6 +1844,33 @@ let resolve_runtime_arg_source inst_name arg connections =
       else None)
     connections
 
+(** Wrap a string literal value with the appropriate conversion for an external
+    type. For example, if the param type is [Cidr] with
+    [@ ocaml.type Ipaddr.V4.Prefix.t], wraps ["10.0.0.2/24"] as
+    [(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24")]. Returns [code] unchanged
+    for primitive types or non-string values. *)
+let wrap_typed_value tu (fp : Ast.formal_param) code =
+  match fp.fp_type.data with
+  | Ast.Type_qual qi ->
+      (* Only wrap string literals *)
+      if String.length code > 0 && code.[0] = '"' then
+        let type_env = build_type_env tu in
+        let type_name = Ast.qual_ident_to_string qi.data in
+        match List.assoc_opt type_name type_env with
+        | Some ocaml_type when String.length ocaml_type > 2 ->
+            (* Derive Module_path.of_string_exn from Module_path.t *)
+            let prefix =
+              if
+                String.length ocaml_type > 2
+                && String.sub ocaml_type (String.length ocaml_type - 2) 2 = ".t"
+              then String.sub ocaml_type 0 (String.length ocaml_type - 2)
+              else ocaml_type
+            in
+            Fmt.str "(%s.of_string_exn %s)" prefix code
+        | _ -> code
+      else code
+  | _ -> code
+
 (** Emit runtime labelled arguments on a connect call. Required arguments are
     emitted as [~arg:(inst__arg ())], referencing the Cmdliner-registered term.
     Optional arguments are omitted entirely, letting the callee use its default
@@ -1826,6 +1898,7 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
   let targets = target_instances inst_name comp connections sorted in
   let rt_args = runtime_labelled_args inst_name sorted connections in
   let params = component_params comp in
+  let port_params = connect_port_params tu comp in
   let config_ports = unconnected_input_ports tu inst_name comp connections in
   (* Exclude the sync input port from config_ports — it determines the method
      name, not a labeled argument. *)
@@ -1855,6 +1928,32 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
             if positional then pf ppf " (%s__%s ())" inst_var param_name
             else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
     params;
+  (* Port params from the typed connect port definition.
+     Params whose FPP name starts with [_] are positional (like Python).
+     All others are labeled (~name:value). The [_] prefix is stripped from
+     the generated name — it is only a convention marker. *)
+  List.iter
+    (fun ann ->
+      let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
+      let raw_name = fp.fp_name.data in
+      let positional = String.length raw_name > 0 && raw_name.[0] = '_' in
+      let base_name =
+        if positional then String.sub raw_name 1 (String.length raw_name - 1)
+        else raw_name
+      in
+      let param_name = camel_to_snake base_name in
+      let annot_name = camel_to_snake raw_name in
+      match resolve_port_param_value inst_annots inst_name annot_name with
+      | Some code ->
+          has_any_arg := true;
+          let code = wrap_typed_value tu fp code in
+          if positional then pf ppf " %s" code
+          else pf ppf " ~%s:%s" param_name code
+      | None ->
+          has_any_arg := true;
+          if positional then pf ppf " (%s__%s ())" inst_var param_name
+          else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name)
+    port_params;
   List.iter
     (fun (p : Ast.port_instance_general) ->
       has_any_arg := true;
@@ -1942,13 +2041,41 @@ let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
   pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
     conv default
 
-(** Emit Cmdliner term registrations for component params that are not
-    overridden by annotations or init specs. *)
-let pp_param_cmdliner_terms ppf inst_annots sorted =
+(** Default value literal for a Cmdliner opt, given an FPP type. *)
+let cmdliner_default_of_fpp_type (tn : Ast.type_name) =
+  match tn with
+  | Type_bool -> "false"
+  | Type_int _ -> "0"
+  | Type_float _ -> "0."
+  | Type_string _ -> "\"\""
+  | Type_qual _ -> "\"\""
+
+(** Emit a single Cmdliner term registration for one unresolved port param. The
+    [_] prefix (positional marker) is stripped from the generated name. *)
+let pp_one_port_param_cmdliner_term ppf ~inst_var (fp : Ast.formal_param) =
+  let raw_name = fp.fp_name.data in
+  let positional = String.length raw_name > 0 && raw_name.[0] = '_' in
+  let base_name =
+    if positional then String.sub raw_name 1 (String.length raw_name - 1)
+    else raw_name
+  in
+  let param_name = camel_to_snake base_name in
+  let conv = cmdliner_conv_of_fpp_type fp.fp_type.data in
+  let default = cmdliner_default_of_fpp_type fp.fp_type.data in
+  pf ppf "@,let %s__%s =" inst_var param_name;
+  pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name
+    (inst_var ^ "-"
+    ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
+  pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
+    conv default
+
+(** Emit Cmdliner term registrations for component params and port params that
+    are not overridden by annotations or init specs. *)
+let pp_param_cmdliner_terms ppf tu inst_annots sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
       if is_runtime_component comp then ()
-      else
+      else begin
         let params = component_params comp in
         let inst_var = sanitize_ident inst_name in
         List.iteri
@@ -1957,7 +2084,17 @@ let pp_param_cmdliner_terms ppf inst_annots sorted =
               resolve_param_value inst_annots inst_name ci i p = None
               && not optional
             then pp_one_cmdliner_term ppf ~inst_var p)
-          params)
+          params;
+        (* Port params from the typed connect port definition *)
+        let port_params = connect_port_params tu comp in
+        List.iter
+          (fun ann ->
+            let (fp : Ast.formal_param) = (Ast.unannotate ann).Ast.data in
+            let annot_name = camel_to_snake fp.fp_name.data in
+            if resolve_port_param_value inst_annots inst_name annot_name = None
+            then pp_one_port_param_cmdliner_term ppf ~inst_var fp)
+          port_params
+      end)
     sorted
 
 let pp_module_aliases ppf inst_annots all_conns module_break sorted =
@@ -2099,7 +2236,7 @@ let pp_topology_body ppf tu topo sorted groups =
   pp_module_aliases ppf inst_annots all_conns module_break non_rt;
   pp_functor_applications ppf tu inst_annots all_conns module_break non_rt;
   (* Cmdliner registrations for component params not overridden *)
-  pp_param_cmdliner_terms ppf inst_annots non_rt;
+  pp_param_cmdliner_terms ppf tu inst_annots non_rt;
   (* Group bindings *)
   let partitioned = partition_instances_by_group non_rt groups all_conns in
   let exports = cross_group_exports partitioned all_conns in

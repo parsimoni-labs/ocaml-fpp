@@ -797,9 +797,17 @@ visibility:
   | PRIVATE { `Private }
   | PUBLIC { `Public }
 
+param_override:
+  n = ident EQUALS e = expr_node { (n, e) }
+
+param_override_list:
+  LPAREN ps = separated_nonempty_list(COMMA, param_override) RPAREN { ps }
+
 spec_comp_instance:
   vis = visibility INSTANCE inst = qual_ident_node
-  { { ci_instance = inst; ci_visibility = vis } }
+  ps = option(param_override_list)
+  { { ci_instance = inst; ci_visibility = vis;
+      ci_params = match ps with Some l -> l | None -> [] } }
 
 tlm_packet:
   PACKET n = ident id = option(id_clause) GROUP grp = expr_node

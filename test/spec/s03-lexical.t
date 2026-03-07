@@ -57,6 +57,15 @@ FPP Spec §3 — Lexical Elements
   $ ofpp check t.fpp
   ✓ t.fpp
 
+§3.3 Escaped keywords in port params and struct fields
+
+  $ cat > t.fpp <<'EOF'
+  > port HttpConnect($port: U16, $type: string)
+  > struct Config { $port: U16, $type: string }
+  > EOF
+  $ ofpp check t.fpp
+  ✓ t.fpp
+
 §3.5 Comments — hash comments
 
   $ cat > t.fpp <<EOF

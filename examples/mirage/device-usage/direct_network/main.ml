@@ -13,6 +13,9 @@ module Udp = Udp.Make(Ip)
 module Tcp = Tcp.Flow.Make(Ip)
 module Stack = Tcpip_stack_direct.MakeV4V6(Net)(Ethernet)(Arp)(Ip)(Icmp)(Udp)(Tcp)
 module Stack_app = Unikernel.Main(Stack)
+let ipv6__no_init =
+  let doc = Cmdliner.Arg.info ~doc:"no_init" ["ipv6-no-init"] in
+  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt bool false doc)
 
 open Lwt.Syntax
 
@@ -21,9 +24,9 @@ let connect = lazy (
   let* net = Net.connect backend in
   let* ethernet = Ethernet.connect net in
   let* arp = Arp.connect ethernet in
-  let* ipv4 = Ipv4.connect ethernet arp in
-  let* ipv6 = Ipv6.connect net ethernet in
-  let* ip = Ip.connect ipv4 ipv6 in
+  let* ipv4 = Ipv4.connect ~cidr:(Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24") ethernet arp in
+  let* ipv6 = Ipv6.connect ~no_init:(ipv6__no_init ()) net ethernet in
+  let* ip = Ip.connect ~ipv4_only:false ~ipv6_only:false ipv4 ipv6 in
   let* icmp = Icmp.connect ipv4 in
   let* udp = Udp.connect ip in
   let* tcp = Tcp.connect ip in

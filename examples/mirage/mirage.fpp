@@ -1,4 +1,16 @@
 @ MirageOS device catalogue and deployment topologies.
+@
+@ This file models the MirageOS device graph using native FPP constructs.
+@ Each device category has an interface (OCaml module type), concrete
+@ components (OCaml functors), and port types encoding connect signatures.
+@
+@ Mapping to targets:
+@   port param (value)  → OCaml: ~label:v      C++: copy
+@   port param (ref)    → OCaml: ~label:v      C++: pointer
+@   port param (_N)     → OCaml: positional     C++: positional
+@   output port + conn  → OCaml: functor arg   C++: dep injection
+@   external param      → OCaml: Cmdliner term C++: runtime config
+@   instance(p = v)     → OCaml: inline value  C++: compile-time const
 
 @ ── External types ──────────────────────────────────────
 
@@ -8,59 +20,156 @@ type Cidr
 @ ocaml.type Ipaddr.V4.t
 type Ipv4Addr
 
+@ ocaml.type Ipaddr.V6.Prefix.t
+type Cidr6
+
+@ ocaml.type Ipaddr.V6.t
+type Ipv6Addr
+
 @ ocaml.type Macaddr.t
 type Macaddr
 
-@ ── Port types ──────────────────────────────────────────
+@ ── Port types (connect signatures) ───────────────────
 
-struct SocketRequired {
-  ipv4Cidr: Cidr,
-  ipv6Cidr: string
+port SocketConnect(ipv4Only: bool, ipv6Only: bool, _0: Cidr, _1: Cidr6)
+
+port BlockConnect(name: string)
+
+port NetifConnect(_0: string)
+
+port Ipv4Connect(cidr: Cidr)
+
+port Ipv6Connect(noInit: bool)
+
+port IpConnect(ipv4Only: bool, ipv6Only: bool)
+
+port HttpServerConnect($port: U16)
+
+port ChamelonConnect(programBlockSize: U32)
+
+@ ══════════════════════════════════════════════════════
+@ Infrastructure devices
+@ ══════════════════════════════════════════════════════
+
+module Mirage_sleep {
+  interface S { sync input port connect: serial }
 }
 
-struct SocketOptional {
-  ipv4Only: bool,
-  ipv6Only: bool
-} default { ipv4Only = false, ipv6Only = false }
-
-port SocketConnect(required: SocketRequired, optional: SocketOptional)
-
-struct BlockConfig {
-  name: string
-} default { name = "disk" }
-
-port BlockConnect(config: BlockConfig)
-
-struct NetifConfig {
-  device: string
-} default { device = "tap0" }
-
-port NetifConnect(config: NetifConfig)
-
-struct Ipv4Required {
-  cidr: Cidr
+module Mirage_ptime {
+  interface S { sync input port connect: serial }
 }
 
-struct Ipv4Optional {
-  gateway: Ipv4Addr
+module Mirage_mtime {
+  interface S { sync input port connect: serial }
 }
 
-port Ipv4Connect(required: Ipv4Required, optional: Ipv4Optional)
+module Mirage_crypto_rng {
+  interface S { sync input port connect: serial }
+}
 
-struct IpOptional {
-  ipv4Only: bool,
-  ipv6Only: bool
-} default { ipv4Only = false, ipv6Only = false }
+module Mirage_logs {
+  interface S { sync input port connect: serial }
+}
 
-port IpConnect(optional: IpOptional)
+@ ══════════════════════════════════════════════════════
+@ Block devices
+@ ══════════════════════════════════════════════════════
 
-@ ── Interfaces and components ───────────────────────────
-@
-@ Interfaces model OCaml module types. The FPP qualified name
-@ maps directly to the OCaml module type path. Components
-@ import interfaces to declare which sig they satisfy.
-@ Components that import an interface inherit its ports.
+module Mirage_block {
+  interface S {
+    sync input port connect: serial
+  }
+}
 
+@ Block device backed by a file.
+passive component Block {
+  import Mirage_block.S
+  sync input port connect: BlockConnect
+}
+
+@ In-memory block device (ramdisk).
+passive component Ramdisk {
+  import Mirage_block.S
+  sync input port connect: BlockConnect
+}
+
+@ AES-CCM encrypted block device layer.
+passive component Ccm_block {
+  import Mirage_block.S
+  external param key: string
+  output port block: serial
+}
+
+@ ══════════════════════════════════════════════════════
+@ Key/value stores
+@ ══════════════════════════════════════════════════════
+
+module Mirage_kv {
+  interface RO {
+    sync input port connect: serial
+  }
+  interface RW {
+    sync input port connect: serial
+  }
+}
+
+@ Static KV store (ocaml-crunch, embedded at build time).
+passive component Crunch {
+  import Mirage_kv.RO
+}
+
+@ Direct filesystem access (Unix only).
+passive component Direct_kv_ro {
+  import Mirage_kv.RO
+  sync input port connect: BlockConnect
+}
+
+@ Opaque leaf KV (e.g. Static_t, for use with @ ocaml.module).
+passive component Kv {
+  import Mirage_kv.RO
+}
+
+@ Block-backed read-only KV (tar, fat).
+passive component Block_kv {
+  import Mirage_kv.RO
+  output port block: serial
+}
+
+@ Direct filesystem access (Unix only, read-write).
+passive component Direct_kv_rw {
+  import Mirage_kv.RW
+  sync input port connect: BlockConnect
+}
+
+@ In-memory read-write KV store.
+passive component Kv_rw_mem {
+  import Mirage_kv.RW
+}
+
+@ Chamelon (littlefs) read-write filesystem on a block device.
+passive component Chamelon {
+  import Mirage_kv.RW
+  sync input port connect: ChamelonConnect
+  output port block: serial
+}
+
+@ Tar archive read-write KV on a block device.
+passive component Tar_kv_rw {
+  import Mirage_kv.RW
+  output port block: serial
+}
+
+@ ══════════════════════════════════════════════════════
+@ Network interfaces
+@ ══════════════════════════════════════════════════════
+
+module Mirage_net {
+  interface S {
+    sync input port connect: serial
+  }
+}
+
+@ Network backend (e.g. vnetif for testing).
 module Vnetif {
   interface BACKEND {
     sync input port connect: serial
@@ -72,23 +181,64 @@ module Vnetif {
   }
 }
 
-module Mirage_block {
+@ Host network interface.
+passive component Netif {
+  import Mirage_net.S
+  sync input port connect: NetifConnect
+}
+
+passive component Backend {
+  import Vnetif.BACKEND
+}
+
+@ ══════════════════════════════════════════════════════
+@ Ethernet
+@ ══════════════════════════════════════════════════════
+
+module Ethernet {
   interface S {
     sync input port connect: serial
   }
-}
 
-module Mirage_kv {
-  interface RO {
-    sync input port connect: serial
+  passive component Make {
+    import Ethernet.S
+    output port net: serial
   }
 }
 
-module Mirage_net {
+@ ══════════════════════════════════════════════════════
+@ ARP
+@ ══════════════════════════════════════════════════════
+
+module Arp {
   interface S {
     sync input port connect: serial
   }
+
+  passive component Make {
+    import Arp.S
+    output port eth: serial
+  }
 }
+
+@ ══════════════════════════════════════════════════════
+@ ICMP
+@ ══════════════════════════════════════════════════════
+
+module Icmpv4 {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Icmpv4.S
+    output port ip: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ IP / TCP / UDP
+@ ══════════════════════════════════════════════════════
 
 module Tcpip {
   module Udp {
@@ -113,130 +263,6 @@ module Tcpip {
   }
 }
 
-module Ethernet {
-  interface S {
-    sync input port connect: serial
-  }
-
-  passive component Make {
-    import Ethernet.S
-    output port net: serial
-  }
-}
-
-module Arp {
-  interface S {
-    sync input port connect: serial
-  }
-
-  passive component Make {
-    import Arp.S
-    output port eth: serial
-  }
-}
-
-module Icmpv4 {
-  interface S {
-    sync input port connect: serial
-  }
-
-  passive component Make {
-    import Icmpv4.S
-    output port ip: serial
-  }
-}
-
-module Conduit_mirage {
-  interface S {
-    sync input port connect: serial
-  }
-
-  passive component TLS {
-    import Conduit_mirage.S
-    output port conduit: serial
-  }
-}
-
-module Cohttp_mirage {
-  module Server {
-    interface S {
-      sync input port connect: serial
-    }
-
-    passive component Make {
-      import Cohttp_mirage.Server.S
-      output port conduit: serial
-    }
-  }
-}
-
-module Happy_eyeballs_mirage {
-  interface S {
-    sync input port connect: serial
-  }
-
-  passive component Make {
-    import Happy_eyeballs_mirage.S
-    sync input port connect_device: serial
-    output port stack: serial
-  }
-}
-
-module Dns_client_mirage {
-  interface S {
-    sync input port connect: serial
-  }
-}
-
-@ ── Leaf devices ────────────────────────────────────────
-
-passive component Backend {
-  import Vnetif.BACKEND
-}
-
-passive component Block {
-  import Mirage_block.S
-  sync input port connect: BlockConnect
-}
-
-passive component Kv {
-  import Mirage_kv.RO
-}
-
-passive component Netif {
-  import Mirage_net.S
-  sync input port connect: NetifConnect
-}
-
-@ ── Socket devices ──────────────────────────────────────
-
-passive component Udpv4v6_socket {
-  import Tcpip.Udp.S
-  sync input port connect: SocketConnect
-}
-
-passive component Tcpv4v6_socket {
-  import Tcpip.Tcp.S
-  sync input port connect: SocketConnect
-}
-
-module Stackv4v6 {
-  passive component Make {
-    import Tcpip.Stack.V4V6
-    output port udp: serial
-    output port tcp: serial
-  }
-}
-
-@ ── Block-backed KV store ───────────────────────────────
-
-passive component Block_kv {
-  import Mirage_kv.RO
-  output port block: serial
-}
-
-@ ── Protocol stack ──────────────────────────────────────
-
 module Static_ipv4 {
   passive component Make {
     import Tcpip.Ip.S
@@ -249,6 +275,7 @@ module Static_ipv4 {
 module Ipv6 {
   passive component Make {
     import Tcpip.Ip.S
+    sync input port connect: Ipv6Connect
     output port net: serial
     output port eth: serial
   }
@@ -290,7 +317,41 @@ module Tcp {
   }
 }
 
-@ ── Conduit / TLS / CoHTTP ──────────────────────────────
+@ ── Socket-backed transport ───────────────────────────
+
+passive component Udpv4v6_socket {
+  import Tcpip.Udp.S
+  sync input port connect: SocketConnect
+}
+
+passive component Tcpv4v6_socket {
+  import Tcpip.Tcp.S
+  sync input port connect: SocketConnect
+}
+
+module Stackv4v6 {
+  @ Socket-backed stack (udp + tcp deps).
+  passive component Make {
+    import Tcpip.Stack.V4V6
+    output port udp: serial
+    output port tcp: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ Conduit / TLS
+@ ══════════════════════════════════════════════════════
+
+module Conduit_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component TLS {
+    import Conduit_mirage.S
+    output port conduit: serial
+  }
+}
 
 module Conduit_tcp {
   passive component Make {
@@ -300,7 +361,27 @@ module Conduit_tcp {
   }
 }
 
-@ ── DNS ─────────────────────────────────────────────────
+@ ══════════════════════════════════════════════════════
+@ Happy Eyeballs + DNS
+@ ══════════════════════════════════════════════════════
+
+module Happy_eyeballs_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  passive component Make {
+    import Happy_eyeballs_mirage.S
+    sync input port connect_device: serial
+    output port stack: serial
+  }
+}
+
+module Dns_client_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+}
 
 module Dns_resolver {
   passive component Make {
@@ -311,7 +392,135 @@ module Dns_resolver {
   }
 }
 
-@ ── Application components ──────────────────────────────
+@ ══════════════════════════════════════════════════════
+@ Mimic (protocol-agnostic connection layer)
+@ ══════════════════════════════════════════════════════
+
+module Mimic {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ mimic_happy_eyeballs : stackv4v6 -> happy_eyeballs -> dns_client -> mimic
+  passive component Make {
+    import Mimic.S
+    output port stack: serial
+    output port happy_eyeballs: serial
+    output port dns: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ HTTP
+@ ══════════════════════════════════════════════════════
+
+module Cohttp_mirage {
+  module Server {
+    interface S {
+      sync input port connect: serial
+    }
+
+    passive component Make {
+      import Cohttp_mirage.Server.S
+      output port conduit: serial
+    }
+  }
+}
+
+module Paf_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ paf_server : ~port:int runtime_arg -> tcpv4v6 -> http_server
+  passive component Server {
+    import Paf_mirage.S
+    sync input port connect: HttpServerConnect
+    output port tcp: serial
+  }
+}
+
+module Http_mirage_client {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ paf_client : tcpv4v6 -> mimic -> alpn_client
+  passive component Make {
+    import Http_mirage_client.S
+    output port tcp: serial
+    output port mimic: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ Syslog
+@ ══════════════════════════════════════════════════════
+
+module Syslog {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ syslog_udp : stackv4v6 -> syslog
+  passive component Udp {
+    import Syslog.S
+    output port stack: serial
+  }
+
+  @ syslog_tcp : stackv4v6 -> syslog
+  passive component Tcp {
+    import Syslog.S
+    output port stack: serial
+  }
+
+  @ syslog_tls : stackv4v6 -> kv_ro -> syslog
+  passive component Tls {
+    import Syslog.S
+    output port stack: serial
+    output port certs: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ Git client
+@ ══════════════════════════════════════════════════════
+
+module Git_mirage {
+  interface S {
+    sync input port connect: serial
+  }
+
+  @ git_tcp : tcpv4v6 -> mimic -> git_client
+  passive component Tcp {
+    import Git_mirage.S
+    output port tcp: serial
+    output port mimic: serial
+  }
+
+  @ git_ssh : tcpv4v6 -> mimic -> git_client
+  @ (authenticator, key, password are runtime secrets)
+  passive component Ssh {
+    import Git_mirage.S
+    external param authenticator: string default ""
+    external param key: string default ""
+    external param password: string default ""
+    output port tcp: serial
+    output port mimic: serial
+  }
+
+  @ git_http : tcpv4v6 -> mimic -> git_client
+  passive component Http {
+    import Git_mirage.S
+    external param authenticator: string default ""
+    output port tcp: serial
+    output port mimic: serial
+  }
+}
+
+@ ══════════════════════════════════════════════════════
+@ Application components
+@ ══════════════════════════════════════════════════════
 
 passive component StandaloneApp { sync input port start: serial }
 
@@ -352,7 +561,24 @@ passive component ConduitApp {
   output port conduit: serial
 }
 
-@ ── Device instances ────────────────────────────────────
+passive component HttpServerApp {
+  sync input port start: serial
+  output port http: serial
+}
+
+passive component HttpClientApp {
+  sync input port start: serial
+  output port http: serial
+}
+
+passive component GitApp {
+  sync input port start: serial
+  output port git: serial
+}
+
+@ ══════════════════════════════════════════════════════
+@ Device instances
+@ ══════════════════════════════════════════════════════
 
 instance backend: Backend base id 0
 instance net: Vnetif.Make base id 0
@@ -385,7 +611,7 @@ instance fat_certs: Block_kv base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0
 
-@ ── Application instances ───────────────────────────────
+@ ── Application instances ───────────────────────────
 
 instance unikernel: StandaloneApp base id 0
 instance block_app: BlockApp base id 0
@@ -400,19 +626,18 @@ instance kv_store: Kv base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
 instance netif: Netif base id 0
 
-@ ── Sub-topologies ──────────────────────────────────────
+@ ══════════════════════════════════════════════════════
+@ Sub-topologies
+@ ══════════════════════════════════════════════════════
 
 topology TcpipStack {
   instance backend
   instance net
   instance ethernet
   instance arp
-  @ ocaml.param cidr (Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24")
-  instance ipv4
+  instance ipv4(cidr = "10.0.0.2/24")
   instance ipv6
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  instance ip
+  instance ip(ipv4Only = false, ipv6Only = false)
   instance icmp
   instance udp
   instance tcp
@@ -442,16 +667,8 @@ topology TcpipStack {
 }
 
 topology SocketStack {
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance udpv4v6_socket
-  @ ocaml.param ipv4_only false
-  @ ocaml.param ipv6_only false
-  @ ocaml.param ipv4_cidr (Ipaddr.V4.Prefix.of_string_exn "0.0.0.0/0")
-  @ ocaml.param ipv6_cidr None
-  instance tcpv4v6_socket
+  instance udpv4v6_socket(ipv4Only = false, ipv6Only = false, _0 = "0.0.0.0/0", _1 = None)
+  instance tcpv4v6_socket(ipv4Only = false, ipv6Only = false, _0 = "0.0.0.0/0", _1 = None)
   instance stackv4v6
 
   connections Connect {
@@ -469,7 +686,9 @@ topology DnsStack {
   }
 }
 
-@ ── Deployment topologies ───────────────────────────────
+@ ══════════════════════════════════════════════════════
+@ Deployment topologies
+@ ══════════════════════════════════════════════════════
 
 topology UnixHello {
   instance unikernel
@@ -508,8 +727,7 @@ topology UnixEchoServer {
 }
 
 topology UnixBlock {
-  @ ocaml.param name "block-test"
-  instance ramdisk
+  instance ramdisk(name = "block-test")
   @ ocaml.module Unikernel.Main
   instance block_app
 
@@ -519,8 +737,7 @@ topology UnixBlock {
 }
 
 topology UnixDiskLottery {
-  @ ocaml.param name "lottery-disk"
-  instance ramdisk
+  instance ramdisk(name = "lottery-disk")
   @ ocaml.module Unikernel.Main
   instance block_app
 
