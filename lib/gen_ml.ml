@@ -1904,7 +1904,7 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
             else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
     params;
   (* Port params from the typed connect port definition.
-     Params whose FPP name starts with [_] are positional (like Python).
+     Params whose FPP name starts with [_] are positional.
      All others are labeled (~name:value). The [_] prefix is stripped from
      the generated name — it is only a convention marker. *)
   List.iter

@@ -79,7 +79,7 @@ port NetifConnect(_0: string)
 | `external param key: string` | Cmdliner runtime term | runtime config |
 
 - **Labeled params** — named params become OCaml labeled arguments
-- **Positional params** — `_N` prefix marks positional arguments (like Python `_`)
+- **Positional params** — `_N` prefix marks positional arguments
 - **External types** — string values auto-convert via `of_string_exn`
   (e.g. `"10.0.0.2/24"` → `Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24"`)
 
