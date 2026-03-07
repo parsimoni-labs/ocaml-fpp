@@ -3,7 +3,6 @@ passive component App {
   output port net: serial
 }
 
-instance netif: Netif base id 0
 instance app: App base id 0
 
 topology UnixDhcp {

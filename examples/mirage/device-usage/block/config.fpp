@@ -3,7 +3,6 @@ passive component App {
   output port block: serial
 }
 
-instance ramdisk: Block base id 0
 instance app: App base id 0
 
 topology UnixBlock {

@@ -5,7 +5,6 @@ passive component App {
   output port ipv6: serial
 }
 
-instance netif: Netif base id 0
 instance app: App base id 0
 
 topology UnixPing6 {
