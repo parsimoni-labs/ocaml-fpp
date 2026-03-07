@@ -18,6 +18,8 @@ What FPP models today:
   connection graph
 - **Assembly order** — topological sort determines `connect` call
   sequence via lazy bindings
+- **Connect signatures** — port types encode function parameters
+  (labeled, positional, typed)
 
 What is **out of scope** at layer 1:
 
@@ -51,14 +53,61 @@ when interfaces are added.
 
 ## File layout
 
-FPP definitions are split across themed files:
-
 | File | Role |
 |---|---|
-| `mirage.fpp` | Types, components, instances, sub-topologies, and deployment topologies |
+| `mirage.fpp` | Types, ports, components, instances, sub-topologies, and deployment topologies |
 | `server.ml` | User code: HTTPS dispatch, `Unix_socket_stack` wrapper |
 | `htdocs/`, `tls/` | Static assets (crunched into `Htdocs_data`, `Tls_data`) |
 | `main.ml` | Topology + entry point (`ofpp to-ml --topologies UnixWebsite`) |
+
+## Port types as connect signatures
+
+Port definitions encode the `connect` function signature:
+
+```fpp
+port SocketConnect(ipv4Only: bool, ipv6Only: bool, _0: Cidr, _1: Cidr6)
+port BlockConnect(name: string)
+port NetifConnect(_0: string)
+```
+
+### Parameter conventions
+
+| FPP param | Generated OCaml | C++ (future) |
+|---|---|---|
+| `name: string` | `~name:"value"` (labeled) | `name = "value"` |
+| `_0: Cidr` | positional arg | positional arg |
+| `external param key: string` | Cmdliner runtime term | runtime config |
+
+- **Labeled params** — named params become OCaml labeled arguments
+- **Positional params** — `_N` prefix marks positional arguments (like Python `_`)
+- **External types** — string values auto-convert via `of_string_exn`
+  (e.g. `"10.0.0.2/24"` → `Ipaddr.V4.Prefix.of_string_exn "10.0.0.2/24"`)
+
+### Instance param overrides
+
+Per-topology build-time values use native FPP syntax:
+
+```fpp
+topology TcpipStack {
+  instance ipv4(cidr = "10.0.0.2/24")
+  instance ip(ipv4Only = false, ipv6Only = false)
+  ...
+}
+
+topology SocketStack {
+  instance udpv4v6_socket(ipv4Only = false, ipv6Only = false, _0 = "0.0.0.0/0", _1 = None)
+  ...
+}
+
+topology UnixBlock {
+  instance ramdisk(name = "block-test")
+  ...
+}
+```
+
+Values are FPP expressions (bool, int, string, identifier), making them
+target-independent for FFI generation.  Unresolved params become Cmdliner
+runtime terms.
 
 ## Component correspondence
 
@@ -69,31 +118,37 @@ dependencies; the connection graph determines application order.
 | FPP component | OCaml module | Functor | Package |
 |---|---|---|---|
 | `Backend` | *(leaf parameter)* | — | `mirage-vnetif` |
-| `SocketStack` | `Tcpip_stack_socket.V4V6` | — | `tcpip.stack-socket` |
-| `Vnetif` | `Vnetif.Make` | `Make(Backend)` | `mirage-vnetif` |
-| `Ethernet` | `Ethernet.Make` | `Make(Net)` | `ethernet` |
-| `Arp` | `Arp.Make` | `Make(Ethernet)` | `arp.mirage` |
-| `Static_ipv4` | `Static_ipv4.Make` | `Make(Ethernet, Arp)` | `tcpip.ipv4` |
-| `Ipv6` | `Ipv6.Make` | `Make(Net, Ethernet)` | `tcpip.ipv6` |
-| `Ip` | `Tcpip_stack_direct.IPV4V6` | `IPV4V6(Ipv4, Ipv6)` | `tcpip.stack-direct` |
-| `Icmpv4` | `Icmpv4.Make` | `Make(Ipv4)` | `tcpip.icmpv4` |
-| `Udp` | `Udp.Make` | `Make(IP)` | `tcpip.udp` |
-| `Tcp.Flow` | `Tcp.Flow.Make` | `Make(IP)` | `tcpip.tcp` |
-| `TcpipStack` | `Tcpip_stack_direct.MakeV4V6` | `MakeV4V6(Net,Eth,Arp,IP,Icmp,Udp,Tcp)` | `tcpip.stack-direct` |
-| `Dispatch` | `Server.Make_dispatch` | `Make_dispatch(Data)(Certs)(Stack)` | *(user code)* |
-| `Happy_eyeballs_mirage` | `Happy_eyeballs_mirage.Make` | `Make(Stack)` | `happy-eyeballs-mirage` |
-| `Dns_client_mirage` | `Dns_client_mirage.Make` | `Make(Stack)(HE)` | `dns-client-mirage` |
+| `Udpv4v6_socket` | `Udpv4v6_socket` | — | `tcpip.stack-socket` |
+| `Tcpv4v6_socket` | `Tcpv4v6_socket` | — | `tcpip.stack-socket` |
+| `Stackv4v6.Make` | `Stackv4v6.Make` | `Make(Udp, Tcp)` | `tcpip.stack-socket` |
+| `Vnetif.Make` | `Vnetif.Make` | `Make(Backend)` | `mirage-vnetif` |
+| `Ethernet.Make` | `Ethernet.Make` | `Make(Net)` | `ethernet` |
+| `Arp.Make` | `Arp.Make` | `Make(Ethernet)` | `arp.mirage` |
+| `Static_ipv4.Make` | `Static_ipv4.Make` | `Make(Ethernet, Arp)` | `tcpip.ipv4` |
+| `Ipv6.Make` | `Ipv6.Make` | `Make(Net, Ethernet)` | `tcpip.ipv6` |
+| `Tcpip_stack_direct.IPV4V6` | `Tcpip_stack_direct.IPV4V6` | `IPV4V6(Ipv4, Ipv6)` | `tcpip.stack-direct` |
+| `Icmpv4.Make` | `Icmpv4.Make` | `Make(Ipv4)` | `tcpip.icmpv4` |
+| `Udp.Make` | `Udp.Make` | `Make(IP)` | `tcpip.udp` |
+| `Tcp.Flow.Make` | `Tcp.Flow.Make` | `Make(IP)` | `tcpip.tcp` |
+| `Tcpip_stack_direct.MakeV4V6` | `Tcpip_stack_direct.MakeV4V6` | `MakeV4V6(Net,Eth,Arp,IP,Icmp,Udp,Tcp)` | `tcpip.stack-direct` |
+| `Netif` | `Netif` | — | `mirage-net-unix` |
+| `Block` / `Ramdisk` | *(leaf)* | — | `mirage-block` |
 | `Kv` | *(leaf parameter)* | — | `mirage-kv` |
-| `Block` | *(leaf parameter)* | — | `mirage-block` |
-| `Tar_kv_ro` | `Tar_mirage.Make_KV_RO` | `Make_KV_RO(Block)` | `tar-mirage` |
-| `Fat_kv_ro` | `Fat.KV_RO` | `KV_RO(Block)` | `fat-filesystem` |
+| `Block_kv` | `Tar_mirage.Make_KV_RO` / `Fat.KV_RO` | via `@ ocaml.module` | `tar-mirage` / `fat-filesystem` |
+| `Conduit_tcp.Make` | `Conduit_tcp.Make` | `Make(Stack)` | `conduit-mirage` |
+| `Happy_eyeballs_mirage.Make` | `Happy_eyeballs_mirage.Make` | `Make(Stack)` | `happy-eyeballs-mirage` |
+| `Dns_resolver.Make` | `Dns_resolver.Make` | `Make(Stack, HE)` | `dns-client-mirage` |
+| `Paf_mirage.Server` | `Paf_mirage.Server` | `Server(Tcp)` | `paf` |
+| `Http_mirage_client.Make` | `Http_mirage_client.Make` | `Make(Tcp, Mimic)` | `http-mirage-client` |
+| `Syslog.Udp` / `.Tcp` / `.Tls` | syslog variants | `Make(Stack)` | `logs-syslog` |
+| `Git_mirage.Tcp` / `.Ssh` / `.Http` | git transport | `Make(Tcp, Mimic)` | `git-mirage` |
 
 ## Annotation correspondence
 
 | FPP annotation | Effect | Example |
 |---|---|---|
 | `@ ocaml.module X.Y` | Override default module path | `@ ocaml.module Tcpip_stack_direct.IPV4V6` on `Ip` |
-| `@ ocaml.type T` | Map abstract FPP type to OCaml type | `@ ocaml.type Cstruct.t` on `type Buffer` |
+| `@ ocaml.type T` | Map abstract FPP type to OCaml type | `@ ocaml.type Ipaddr.V4.Prefix.t` on `type Cidr` |
 
 `@ ocaml.module` is purely a name override.  Every instance already has
 a module name — its instance name, capitalised (e.g. `instance eth` →
@@ -111,39 +166,43 @@ Default functor path for non-leaf instances: `ComponentName.Make`
 Sub-topologies are shared via `import`:
 
 ```
-topology StaticWebsite {
-  import TcpipStack        -- protocol stack
-  instance data             -- leaf: KV for htdocs
-  instance certs            -- leaf: KV for TLS certs
-  instance server
+topology SocketStack {
+  instance udpv4v6_socket(ipv4Only = false, ipv6Only = false, _0 = "0.0.0.0/0", _1 = None)
+  instance tcpv4v6_socket(ipv4Only = false, ipv6Only = false, _0 = "0.0.0.0/0", _1 = None)
+  instance stackv4v6
   connections Connect {
-    server.data -> data.connect
-    server.certs -> certs.connect
-    server.stack -> stack.connect
+    stackv4v6.udp -> udpv4v6_socket.connect
+    stackv4v6.tcp -> tcpv4v6_socket.connect
+  }
+}
+
+topology UnixNetwork {
+  import SocketStack
+  instance stackv4v6
+  instance stack_app
+  connections Start {
+    stack_app.stack -> stackv4v6.connect
   }
 }
 ```
 
 The parent topology wires cross-boundary connections (here: plugging
-the TCP/IP stack and KV stores into the server).
+the socket stack into the application).
 
 ## Configuration and runtime parameters
 
-FPP components can declare `param` values. The codegen resolves each
-parameter in priority order:
+FPP provides three mechanisms for configuration, resolved in priority order:
 
-1. **`@ ocaml.param name "code"`** annotation on the instance —
-   build-time override, emitted literally as `~name:code`.
-2. **Init spec** (`phase N "code"`) on the instance — same effect,
-   keyed by parameter index.
-3. **Cmdliner term** — when neither override is present, the codegen
+1. **Instance param overrides** `instance name(param = value)` —
+   native FPP syntax for build-time values, target-independent.
+2. **Init spec** (`phase N "code"`) on the instance — target-specific
+   code string, keyed by parameter index.
+3. **Cmdliner term** — when no override is present, the codegen
    emits a `Mirage_runtime.register_arg` call so the value becomes a
    command-line flag at runtime.
 
-Runtime component output ports follow a different path: they are
-passed as labelled arguments (`~label:Runtime_module.value`) referring
-directly to module values exposed by the Runtime component.  They are
-not Cmdliner terms.
+For `external param` declarations on components, unresolved params always
+generate Cmdliner terms with proper type defaults.
 
 ## Entry points
 
@@ -167,10 +226,10 @@ applicative type sharing at the module level.
 
 ```sh
 # Single topology with entry point
-ofpp to-ml --topologies UnixWebsite types.fpp devices.fpp stacks.fpp websites.fpp
+ofpp to-ml --topologies UnixNetwork mirage.fpp
 
 # Multiple topologies
-ofpp to-ml --topologies UnixWebsite,UnixTestWebsite types.fpp devices.fpp stacks.fpp websites.fpp
+ofpp to-ml --topologies UnixNetwork,DirectNetwork mirage.fpp
 ```
 
 ## Key design differences from Mirage/Functoria
@@ -180,15 +239,17 @@ ofpp to-ml --topologies UnixWebsite,UnixTestWebsite types.fpp devices.fpp stacks
 | Input format | OCaml combinator DSL (`config.ml`) | FPP connection graph |
 | Module naming | Mangled (`Tcpip_stack_socket_v4v6__13`) | Clean (`Socket_stack`) |
 | Async style | `Lwt.Infix` (`>>=`) | `Lwt.Syntax` (`let*`) |
-| Runtime args | `Mirage_runtime.register_arg` | `Mirage_runtime.register_arg` from `param` declarations |
+| Runtime args | `Mirage_runtime.register_arg` | `Mirage_runtime.register_arg` from `external param` |
+| Connect params | Hardcoded in combinator | Port types + instance overrides |
 | Application module | Included in `main.ml` | Left to user |
-| Socket stack | Models UDP/TCP sub-layers | Opaque module alias |
 | Boilerplate | ~90 lines per example | ~10-20 lines per example |
 
 ## Known limitations
 
+- **Option types.** FPP lacks option types, so optional positional args
+  must use identifier values like `None` in instance overrides.
 - **`connect` signature assumption.** The generated code assumes each
   active component has `connect : deps -> t Lwt.t`.  Libraries with
   non-standard lifecycle functions (e.g. `Happy_eyeballs_mirage`
-  uses `connect_device`, `Dns_client_mirage.connect` takes a tuple)
-  require a user-provided wrapper component.
+  uses `connect_device`, `Dns_resolver` uses `start`) declare
+  the appropriate `sync input port` name.

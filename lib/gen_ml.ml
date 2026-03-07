@@ -1034,44 +1034,19 @@ let instance_bound_module inst_annots inst_name =
       else acc)
     None inst_annots
 
-(** Parse a single [ocaml.param name "value"] annotation string. *)
-let parse_param_annotation s =
-  let s = String.trim s in
-  if starts_with ~prefix:"ocaml.param " s then
-    let rest = String.trim (String.sub s 12 (String.length s - 12)) in
-    match String.index_opt rest ' ' with
-    | Some i ->
-        let name = String.sub rest 0 i in
-        let value =
-          String.trim (String.sub rest (i + 1) (String.length rest - i - 1))
-        in
-        Some (name, value)
-    | None -> None
-  else None
-
 (** Find param overrides on an instance. Returns a mapping from param name to
-    the OCaml literal string. Sources (in priority order): 1. Native FPP param
-    overrides: [instance name(param = expr)] 2. [@ ocaml.param name value]
-    annotations (legacy) *)
+    the OCaml literal string, from native FPP [instance name(param = expr)]
+    syntax. *)
 let instance_param_annotations inst_annots inst_name =
   let tbl = Hashtbl.create 4 in
   List.iter
-    (fun (n, annots, ci_params) ->
-      if n = inst_name then begin
-        (* Legacy annotations *)
-        List.iter
-          (fun s ->
-            match parse_param_annotation s with
-            | Some (name, value) -> Hashtbl.replace tbl name value
-            | None -> ())
-          annots;
-        (* Native FPP param overrides (higher priority) *)
+    (fun (n, _annots, ci_params) ->
+      if n = inst_name then
         List.iter
           (fun ((name : Ast.ident Ast.node), (value : Ast.expr Ast.node)) ->
             let param_name = camel_to_snake name.data in
             Hashtbl.replace tbl param_name (ocaml_literal_of_expr value.data))
-          ci_params
-      end)
+          ci_params)
     inst_annots;
   tbl
 
@@ -1778,8 +1753,8 @@ let connect_port_params tu (comp : Ast.def_component) =
       comp.comp_members
     |> Option.value ~default:[]
 
-(** Resolve the value for a port param on an instance. Uses the same
-    [@ ocaml.param name value] annotation mechanism as component params. *)
+(** Resolve the value for a port param on an instance from the native FPP
+    [instance name(param = expr)] overrides. *)
 let resolve_port_param_value inst_annots inst_name param_name =
   let annot_overrides = instance_param_annotations inst_annots inst_name in
   Hashtbl.find_opt annot_overrides param_name
@@ -1817,7 +1792,7 @@ let unconnected_input_ports tu inst_name (comp : Ast.def_component) connections
 (* ── Topology code generation ─────────────────────────────────────── *)
 
 (* Resolve the value for a component param on an instance.  Priority:
-   1. [@ ocaml.param name "value"] annotation (per-topology build-time)
+   1. Native FPP [instance name(param = expr)] override (per-topology)
    2. Init spec [phase N "code"] where N = param index (per-instance)
    3. [None] — runtime Cmdliner term using the param default *)
 let resolve_param_value inst_annots inst_name (ci : Ast.def_component_instance)
