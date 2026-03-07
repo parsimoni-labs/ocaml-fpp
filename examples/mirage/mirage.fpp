@@ -714,26 +714,6 @@ topology UnixCrypto {
   instance unikernel
 }
 
-topology UnixHeads1 {
-  instance unikernel
-}
-
-topology UnixHeads2 {
-  instance unikernel
-}
-
-topology UnixTimeout1 {
-  instance unikernel
-}
-
-topology UnixTimeout2 {
-  instance unikernel
-}
-
-topology UnixEchoServer {
-  instance unikernel
-}
-
 topology UnixBlock {
   instance ramdisk(name = "block-test")
   @ ocaml.module Unikernel.Main
@@ -838,14 +818,3 @@ topology UnixPing6 {
   }
 }
 
-topology DirectNetwork {
-  import TcpipStack
-  @ ocaml.module Backend
-  instance backend
-  @ ocaml.module Unikernel.Main
-  instance stack_app
-
-  connections Start {
-    stack_app.stack -> stack.connect
-  }
-}
