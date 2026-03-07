@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "kv_app",
+                   "instanceName": "app",
                    "inputPorts": [],
                    "outputPorts": [{"name": "kv", "portNumbers": [0]}]
                  }],

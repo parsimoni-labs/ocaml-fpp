@@ -1,17 +1,16 @@
-module Unikernel {
-  passive component Make {
-    sync input port start: serial
-    output port dns: serial
-  }
+passive component App {
+  sync input port start: serial
+  output port dns: serial
 }
 
-instance app: Unikernel.Make base id 0
+instance app: App base id 0
 
 topology UnixDns {
   import SocketStack
   instance stackv4v6
   instance happy_eyeballs_mirage
   instance dns_client
+  @ ocaml.module Unikernel.Make
   instance app
 
   connections Connect_device {

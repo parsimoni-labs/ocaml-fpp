@@ -1,4 +1,4 @@
-@ MirageOS device catalogue and deployment topologies.
+@ MirageOS device catalogue.
 @
 @ This file models the MirageOS device graph using native FPP constructs.
 @ Each device category has an interface (OCaml module type), concrete
@@ -557,24 +557,8 @@ instance icmp: Icmpv4.Make base id 0
 instance udp: Udp.Make base id 0
 instance tcp: Tcp.Flow.Make base id 0
 instance stack: Tcpip_stack_direct.MakeV4V6 base id 0
-instance data: Kv base id 0
-instance certs: Kv base id 0
-instance htdocs_data: Kv base id 0
-instance tls_data: Kv base id 0
-instance data_block: Block base id 0
-instance certs_block: Block base id 0
-@ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_data: Block_kv base id 0
-@ ocaml.module Tar_mirage.Make_KV_RO
-instance tar_certs: Block_kv base id 0
-@ ocaml.module Fat.KV_RO
-instance fat_data: Block_kv base id 0
-@ ocaml.module Fat.KV_RO
-instance fat_certs: Block_kv base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0
-instance conduit_tcp: Conduit_tcp.Make base id 0
-instance netif: Netif base id 0
 
 @ ══════════════════════════════════════════════════════
 @ Sub-topologies

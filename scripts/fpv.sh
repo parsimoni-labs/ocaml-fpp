@@ -12,7 +12,7 @@
 set -eu
 
 MIRAGE="examples/mirage"
-FILES="$MIRAGE/types.fpp $MIRAGE/devices.fpp $MIRAGE/stacks.fpp $MIRAGE/websites.fpp $MIRAGE/skeleton.fpp"
+FILES=$(find "$MIRAGE" -name '*.fpp' | sort)
 OUTDIR="examples/mirage/fpv"
 
 mkdir -p "$OUTDIR"
@@ -20,7 +20,7 @@ mkdir -p "$OUTDIR"
 if [ $# -ge 1 ]; then
   topos="$*"
 else
-  topos="TcpipStack SocketStack DnsStack StaticWebsite StaticWebsiteWithDns TarWebsite FatWebsite"
+  topos=$(grep -h '^topology ' $FILES | sed 's/topology \([^ ]*\).*/\1/')
 fi
 
 for topo in $topos; do

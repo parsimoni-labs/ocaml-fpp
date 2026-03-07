@@ -230,7 +230,7 @@ ofpp dot -o diagram.svg model.fpp             # render to SVG
 ofpp dot -o diagram.png model.fpp             # render to PNG
 ofpp dot model.fpp | dot -Tsvg -o diagram.svg # manual pipe to dot
 ofpp dot --sm Controller model.fpp            # select one SM
-ofpp dot --topology StaticWebsite types.fpp devices.fpp stacks.fpp websites.fpp
+ofpp dot --topology UnixDns examples/mirage/mirage.fpp examples/mirage/applications/dns/config.fpp
 ```
 
 Rendering to image formats requires
@@ -257,8 +257,8 @@ file. The `--topology` flag selects a single topology by name.
 ### Examples
 
 ```
-ofpp fpv types.fpp devices.fpp stacks.fpp websites.fpp
-ofpp fpv --topology TcpipStack -o TcpipStack.json types.fpp devices.fpp stacks.fpp websites.fpp
+ofpp fpv examples/mirage/mirage.fpp examples/mirage/applications/dns/config.fpp
+ofpp fpv --topology TcpipStack -o TcpipStack.json examples/mirage/mirage.fpp
 ```
 
 ### Regenerating images
@@ -274,18 +274,25 @@ and FPV JSON for all MirageOS example topologies into the `images/` directory:
 ## `ofpp to-ml` -- OCaml code generation
 
 ```
-ofpp to-ml [-o FILE] [--sm NAME] FILE...
+ofpp to-ml [-o FILE] [--sm NAME] [--topologies T1,T2,...] FILE...
 ```
 
-Generate idiomatic OCaml modules from FPP state machines using phantom-typed
-GADTs, module types for actions and guards, and functors for dependency
-injection. The generated code leverages the OCaml type system to enforce state
-machine contracts at compile time.
+Generate idiomatic OCaml modules from FPP definitions. Two modes:
 
-Topologies map to OCaml's module system: each FPP **component** defines a
-**module type** (signature), each **instance** becomes a **module**
-(implementation — either a functor application or a leaf alias), and a
-**topology** orchestrates the wiring.
+**Topology code generation** maps FPP topologies to OCaml's module system:
+each component instance becomes a module (functor application or leaf alias),
+and connection graphs determine application order and `connect` call wiring.
+See the [MirageOS example](examples/mirage/) for a full worked example that
+models `mirage-skeleton` in FPP.
+
+```
+ofpp to-ml --topologies UnixDns mirage.fpp config.fpp    # generate main.ml
+```
+
+**State machine code generation** produces phantom-typed GADTs, module types
+for actions and guards, and functors for dependency injection. The generated
+code leverages the OCaml type system to enforce state machine contracts at
+compile time.
 
 For a state machine with actions and guards, the generated output includes:
 
@@ -309,9 +316,10 @@ to a file. The `--sm` flag selects a single state machine by name.
 ### Examples
 
 ```
-ofpp to-ml model.fpp                     # OCaml to stdout
-ofpp to-ml -o sm.ml model.fpp            # write to file
-ofpp to-ml --sm Thermostat model.fpp     # select one SM
+ofpp to-ml --topologies UnixDns mirage.fpp config.fpp  # topology codegen
+ofpp to-ml model.fpp                                   # all SMs to stdout
+ofpp to-ml -o sm.ml model.fpp                          # write to file
+ofpp to-ml --sm Thermostat model.fpp                   # select one SM
 ```
 
 This feature is not available in the upstream FPP toolchain.

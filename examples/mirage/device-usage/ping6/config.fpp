@@ -1,18 +1,18 @@
-module Unikernel {
-  passive component Main {
-    sync input port start: serial
-    output port net: serial
-    output port eth: serial
-    output port ipv6: serial
-  }
+passive component App {
+  sync input port start: serial
+  output port net: serial
+  output port eth: serial
+  output port ipv6: serial
 }
 
-instance app: Unikernel.Main base id 0
+instance netif: Netif base id 0
+instance app: App base id 0
 
 topology UnixPing6 {
   instance netif(_0 = "tap0")
   instance ethernet
   instance ipv6
+  @ ocaml.module Unikernel.Main
   instance app
 
   connections Connect {

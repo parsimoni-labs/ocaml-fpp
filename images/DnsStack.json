@@ -13,7 +13,11 @@
                [
                  {
                    "instanceName": "happy_eyeballs_mirage",
-                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "inputPorts": [
+                                   {
+                                     "name": "connect_device",
+                                     "portNumbers": [0]
+                                   }],
                    "outputPorts": []
                  }]],
   "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]]]

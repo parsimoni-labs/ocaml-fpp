@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "conduit_app",
+                   "instanceName": "app",
                    "inputPorts": [],
                    "outputPorts": [{"name": "conduit", "portNumbers": [0]}]
                  }],

@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "dns_client_app",
+                   "instanceName": "app",
                    "inputPorts": [],
                    "outputPorts": [{"name": "dns", "portNumbers": [0]}]
                  }],
@@ -19,7 +19,11 @@
                [
                  {
                    "instanceName": "happy_eyeballs_mirage",
-                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "inputPorts": [
+                                   {
+                                     "name": "connect_device",
+                                     "portNumbers": [0]
+                                   }],
                    "outputPorts": [{"name": "stack", "portNumbers": [0]}]
                  }],
                [

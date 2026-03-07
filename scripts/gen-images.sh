@@ -63,7 +63,19 @@ while ! curl -s -o /dev/null "http://localhost:$PORT/" 2>/dev/null; do
   sleep 1
 done
 
+# Filter out topologies with no connections (empty graphs can't render).
+screenshot_topos=""
+for topo in $topos; do
+  if python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('connections') else 1)" "$OUTDIR/$topo.json" 2>/dev/null; then
+    screenshot_topos="$screenshot_topos $topo"
+  else
+    echo "  $topo: no connections, skipping screenshot"
+  fi
+done
+
 echo "Taking screenshots..."
-node "$SCRIPT_DIR/screenshot-topologies.js" "$PORT" "$FOLDER" "$OUTDIR" $topos
+if [ -n "$screenshot_topos" ]; then
+  node "$SCRIPT_DIR/screenshot-topologies.js" "$PORT" "$FOLDER" "$OUTDIR" $screenshot_topos
+fi
 
 echo "Done. Output in $OUTDIR/"

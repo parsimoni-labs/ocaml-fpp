@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "block_app",
+                   "instanceName": "app",
                    "inputPorts": [],
                    "outputPorts": [{"name": "block", "portNumbers": [0]}]
                  }],

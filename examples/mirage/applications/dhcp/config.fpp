@@ -1,14 +1,14 @@
-module Unikernel {
-  passive component Main {
-    sync input port start: serial
-    output port net: serial
-  }
+passive component App {
+  sync input port start: serial
+  output port net: serial
 }
 
-instance app: Unikernel.Main base id 0
+instance netif: Netif base id 0
+instance app: App base id 0
 
 topology UnixDhcp {
   instance netif(_0 = "tap0")
+  @ ocaml.module Unikernel.Main
   instance app
 
   connections Start {

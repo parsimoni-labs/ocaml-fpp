@@ -55,10 +55,10 @@ when interfaces are added.
 
 | File | Role |
 |---|---|
-| `mirage.fpp` | Types, ports, components, instances, sub-topologies, and deployment topologies |
-| `server.ml` | User code: HTTPS dispatch, `Unix_socket_stack` wrapper |
-| `htdocs/`, `tls/` | Static assets (crunched into `Htdocs_data`, `Tls_data`) |
-| `main.ml` | Topology + entry point (`ofpp to-ml --topologies UnixWebsite`) |
+| `mirage.fpp` | Shared device catalogue: types, ports, components, device instances, sub-topologies |
+| `*/config.fpp` | Per-app config: unikernel component, app instances, deployment topology |
+| `*/unikernel.ml` | User code: the unikernel implementation |
+| `*/main.ml` | Generated entry point (`ofpp to-ml --topologies T mirage.fpp config.fpp`) |
 
 ## Port types as connect signatures
 
@@ -185,9 +185,9 @@ topology SocketStack {
 topology UnixNetwork {
   import SocketStack
   instance stackv4v6
-  instance stack_app
+  instance app
   connections Start {
-    stack_app.stack -> stackv4v6.connect
+    app.stack -> stackv4v6.connect
   }
 }
 ```
@@ -260,18 +260,19 @@ applicative type sharing at the module level.
 ## Generating code
 
 ```sh
-# Single topology with entry point
-ofpp to-ml --topologies UnixNetwork mirage.fpp
+# Single topology: device catalogue + app config
+ofpp to-ml --topologies UnixNetwork mirage.fpp device-usage/network/config.fpp
 
-# Multiple topologies
-ofpp to-ml --topologies UnixNetwork,DirectNetwork mirage.fpp
+# Multiple topologies from multiple config files
+ofpp to-ml --topologies UnixNetwork,UnixDns mirage.fpp \
+  device-usage/network/config.fpp applications/dns/config.fpp
 ```
 
 ## Key design differences from Mirage/Functoria
 
 | Aspect | Mirage | ofpp |
 |---|---|---|
-| Input format | OCaml combinator DSL (`config.ml`) | FPP connection graph |
+| Input format | OCaml combinator DSL (`config.ml`) | FPP: `mirage.fpp` (catalogue) + `config.fpp` (app) |
 | Module naming | Mangled (`Tcpip_stack_socket_v4v6__13`) | Clean (`Socket_stack`) |
 | Async style | `Lwt.Infix` (`>>=`) | `Lwt.Syntax` (`let*`) |
 | Runtime args | `Mirage_runtime.register_arg` | `Mirage_runtime.register_arg` from `external param` |

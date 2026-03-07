@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "ping6_app",
+                   "instanceName": "app",
                    "inputPorts": [],
                    "outputPorts": [{"name": "net", "portNumbers": [0]},
                                     {"name": "eth", "portNumbers": [0]},
