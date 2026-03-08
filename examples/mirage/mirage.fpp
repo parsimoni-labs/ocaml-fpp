@@ -4,6 +4,9 @@
 @ Each device category has an interface (OCaml module type), concrete
 @ components (OCaml functors), and port types encoding connect signatures.
 @
+@ Layer 1 (construction): connect ports + output ports → functor wiring
+@ Layer 2 (interface):    typed ports on interfaces → module type signatures
+@
 @ Mapping to targets:
 @   port param (named)  → OCaml: ~label:v      C++: named arg
 @   port param (_N)     → OCaml: positional     C++: positional
@@ -13,7 +16,18 @@
 @   external param      → OCaml: Cmdliner term C++: runtime config
 @   instance(p = v)     → OCaml: inline value  C++: compile-time const
 
-@ ── External types ──────────────────────────────────────
+@ ══════════════════════════════════════════════════════
+@ External types
+@ ══════════════════════════════════════════════════════
+
+@ ocaml.type Cstruct.t
+type Buffer
+
+@ ocaml.type Ipaddr.t
+type IpAddr
+
+@ ocaml.type Ipaddr.Prefix.t
+type IpPrefix
 
 @ ocaml.type Ipaddr.V4.Prefix.t
 type Cidr
@@ -30,14 +44,105 @@ type Ipv6Addr
 @ ocaml.type Macaddr.t
 type Macaddr
 
-@ ── F Prime built-in port types ────────────────────────
+@ ocaml.type Ptime.t
+type Ptime
+
+@ ocaml.type Optint.Int63.t
+type Int63
+
+@ ocaml.type Duration.t
+type Duration
+
+@ ocaml.type [ `host ] Domain_name.t
+type DomainName
+
+@ ocaml.type Ipaddr.Set.t
+type IpAddrSet
+
+@ ══════════════════════════════════════════════════════
+@ Error enums
+@ ══════════════════════════════════════════════════════
+
+@ Block device errors (Mirage_block.error / write_error).
+enum BlockError { Disconnected }
+enum BlockWriteError { Disconnected, IsReadOnly }
+
+@ Network interface errors (Mirage_net.error).
+enum NetError { InvalidLength, Disconnected }
+
+@ Ethernet errors.
+enum EthError { ExceedsMtu }
+
+@ ARP errors.
+enum ArpError { Timeout }
+
+@ IP-layer errors (Tcpip.Ip.error).
+enum IpError { NoRoute, WouldFragment }
+
+@ ICMP errors.
+enum IcmpError { Unreach }
+
+@ TCP errors.
+enum TcpError { Timeout, Refused }
+
+@ Flow write error (Mirage_flow.write_error).
+enum FlowWriteError { Closed }
+
+@ Key-value store errors (Mirage_kv.error / write_error).
+enum KvError { NotFound, DictionaryExpected, ValueExpected }
+enum KvWriteError { NotFound, NoSpace, AlreadyPresent }
+
+@ DNS client errors.
+enum DnsError { Msg }
+
+@ ══════════════════════════════════════════════════════
+@ Info and config structs
+@ ══════════════════════════════════════════════════════
+
+@ Block device metadata (Mirage_block.info).
+struct BlockInfo {
+  readWrite: bool,
+  sectorSize: U32,
+  sizeSectors: U64
+}
+
+@ Network interface statistics (Mirage_net.stats).
+struct NetStats {
+  rxBytes: U64,
+  rxPkts: U32,
+  txBytes: U64,
+  txPkts: U32
+}
+
+@ TCP keepalive configuration (Tcp.Keepalive.t).
+struct TcpKeepalive {
+  after: U64,
+  interval: U64,
+  probes: U32
+}
+
+@ ══════════════════════════════════════════════════════
+@ Protocol enums
+@ ══════════════════════════════════════════════════════
+
+@ Ethernet frame types (Ethernet.Packet.proto).
+enum EthProto { ARP, IPv4, IPv6 }
+
+@ IP protocol numbers (Tcpip.Ip.proto).
+enum IpProto { TCP, UDP, ICMP }
+
+@ ══════════════════════════════════════════════════════
+@ F Prime built-in port types
+@ ══════════════════════════════════════════════════════
 
 module Fw {
   port PrmGet
   port PrmSet
 }
 
-@ ── Port types (connect signatures) ───────────────────
+@ ══════════════════════════════════════════════════════
+@ Port types: connect signatures (Layer 1)
+@ ══════════════════════════════════════════════════════
 @
 @ Named params → labeled (~name:value).
 @ _N prefix → positional args.
@@ -91,26 +196,171 @@ struct DnsClientConf {
 port DnsClientConnect(conf: DnsClientConf)
 
 @ ══════════════════════════════════════════════════════
+@ Port types: device operations (Layer 2)
+@ ══════════════════════════════════════════════════════
+@
+@ These ports model the operations each device exposes.
+@ Return type = error enum for failable I/O operations.
+@ Return type = data struct/type for queries.
+@ No return type for fire-and-forget.
+
+@ ── Flow operations ───────────────────────────────────
+@ Mirage_flow.S: reliable byte stream abstraction.
+
+port FlowRead -> Buffer
+port FlowWrite(_0: Buffer) -> FlowWriteError
+port FlowClose
+
+@ ── Block operations ──────────────────────────────────
+@ Mirage_block.S: sector-addressed block device.
+
+port BlockGetInfo -> BlockInfo
+port BlockRead(offset: U64, _0: Buffer) -> BlockError
+port BlockWrite(offset: U64, _0: Buffer) -> BlockWriteError
+
+@ ── Network operations ────────────────────────────────
+@ Mirage_net.S: raw network interface.
+
+port NetWrite(size: U32, _0: Buffer) -> NetError
+port NetMac -> Macaddr
+port NetMtu -> U32
+port NetGetStats -> NetStats
+port NetResetStats
+
+@ ── Ethernet operations ───────────────────────────────
+@ Ethernet.S: ethernet frame layer.
+
+port EthWrite(dst: Macaddr, proto: EthProto, _0: Buffer) -> EthError
+port EthMac -> Macaddr
+port EthMtu -> U32
+
+@ ── ARP operations ────────────────────────────────────
+@ Arp.S: IPv4 address resolution.
+
+port ArpQuery(ip: Ipv4Addr) -> Macaddr
+port ArpAddIp(ip: Ipv4Addr)
+port ArpRemoveIp(ip: Ipv4Addr)
+port ArpRecv(_0: Buffer)
+
+@ ── ICMP operations ───────────────────────────────────
+@ Icmpv4.S: ICMPv4 messages.
+
+port IcmpWrite(dst: Ipv4Addr, _0: Buffer) -> IcmpError
+port IcmpRecv(_0: Buffer)
+
+@ ── IP operations ─────────────────────────────────────
+@ Tcpip.Ip.S: IP packet layer.
+
+port IpWrite(dst: IpAddr, proto: IpProto, _0: Buffer) -> IpError
+port IpSrc(dst: IpAddr) -> IpAddr
+port IpMtu(dst: IpAddr) -> U32
+
+@ ── UDP operations ────────────────────────────────────
+@ Tcpip.Udp.S: connectionless datagram transport.
+
+port UdpWrite(dst: IpAddr, dstPort: U16, _0: Buffer)
+port UdpListen($port: U16)
+port UdpUnlisten($port: U16)
+
+@ ── TCP operations ────────────────────────────────────
+@ Tcpip.Tcp.S: connection-oriented stream transport.
+
+port TcpCreateConnection(dst: IpAddr, dstPort: U16) -> TcpError
+port TcpListen($port: U16)
+port TcpUnlisten($port: U16)
+
+@ ── Stack operations ──────────────────────────────────
+@ Tcpip.Stack.V4V6: composite TCP/IP stack.
+
+port StackListen
+
+@ ── KV operations ─────────────────────────────────────
+@ Mirage_kv.RO / RW: key-value store.
+
+port KvGet(key: string) -> KvError
+port KvGetPartial(key: string, offset: I64, length: U32) -> KvError
+port KvList(key: string) -> KvError
+port KvExists(key: string) -> KvError
+port KvSize(key: string) -> KvError
+port KvLastModified(key: string) -> KvError
+port KvDigest(key: string) -> KvError
+port KvSet(key: string, value: string) -> KvWriteError
+port KvSetPartial(key: string, offset: I64, value: string) -> KvWriteError
+port KvRemove(key: string) -> KvWriteError
+port KvRename(source: string, dest: string) -> KvWriteError
+
+@ ── Clock operations ──────────────────────────────────
+@ Mirage_clock.PCLOCK / MCLOCK.
+
+port PclockNow -> I64
+port MclockElapsed -> I64
+
+@ ── Time operations ───────────────────────────────────
+@ Mirage_time.S / Mirage_sleep.S.
+
+port SleepNs(ns: I64)
+
+@ ── DNS operations ────────────────────────────────────
+@ Dns_client_mirage.S: DNS resolution.
+
+port DnsGetaddrinfo(name: DomainName) -> DnsError
+port DnsGethostbyname(name: DomainName) -> DnsError
+port DnsGethostbyname6(name: DomainName) -> DnsError
+
+@ ── Happy Eyeballs operations ─────────────────────────
+@ Happy_eyeballs_mirage.S: RFC 8305 dual-stack connection.
+
+port HeConnect(host: string, $port: U16) -> DnsError
+port HeConnectIp(dst: IpAddr, $port: U16) -> DnsError
+
+@ ══════════════════════════════════════════════════════
+@ Flow abstraction
+@ ══════════════════════════════════════════════════════
+
+module Mirage_flow {
+  @ Reliable byte stream (TCP connections, TLS channels).
+  interface S {
+    sync input port read: FlowRead
+    sync input port write: FlowWrite
+    sync input port close: FlowClose
+  }
+}
+
+@ ══════════════════════════════════════════════════════
 @ Infrastructure devices
 @ ══════════════════════════════════════════════════════
 
 module Mirage_sleep {
-  interface S { sync input port connect: serial }
+  @ Wall-clock sleep.
+  interface S {
+    sync input port connect: serial
+    sync input port sleepNs: SleepNs
+  }
 }
 
 module Mirage_ptime {
-  interface S { sync input port connect: serial }
+  @ POSIX clock (wall time).
+  interface S {
+    sync input port connect: serial
+    sync input port now: PclockNow
+  }
 }
 
 module Mirage_mtime {
-  interface S { sync input port connect: serial }
+  @ Monotonic clock (elapsed time).
+  interface S {
+    sync input port connect: serial
+    sync input port elapsed: MclockElapsed
+  }
 }
 
 module Mirage_crypto_rng {
+  @ Cryptographic random number generator.
   interface S { sync input port connect: serial }
 }
 
 module Mirage_logs {
+  @ Logging infrastructure.
   interface S { sync input port connect: serial }
 }
 
@@ -119,8 +369,12 @@ module Mirage_logs {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_block {
+  @ Sector-addressed block device.
   interface S {
     sync input port connect: serial
+    sync input port getInfo: BlockGetInfo
+    sync input port read: BlockRead
+    sync input port write: BlockWrite
   }
 }
 
@@ -150,11 +404,25 @@ passive component Ccm_block {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_kv {
+  @ Read-only key-value store.
   interface RO {
     sync input port connect: serial
+    sync input port $get: KvGet
+    sync input port getPartial: KvGetPartial
+    sync input port list: KvList
+    sync input port exists: KvExists
+    sync input port $size: KvSize
+    sync input port lastModified: KvLastModified
+    sync input port digest: KvDigest
   }
+
+  @ Read-write key-value store (extends RO).
   interface RW {
-    sync input port connect: serial
+    import Mirage_kv.RO
+    sync input port $set: KvSet
+    sync input port setPartial: KvSetPartial
+    sync input port remove: KvRemove
+    sync input port rename: KvRename
   }
 }
 
@@ -225,8 +493,14 @@ passive component Tar_kv_rw {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_net {
+  @ Raw network interface (L2).
   interface S {
     sync input port connect: serial
+    sync input port write: NetWrite
+    sync input port mac: NetMac
+    sync input port mtu: NetMtu
+    sync input port getStats: NetGetStats
+    sync input port resetStats: NetResetStats
   }
 }
 
@@ -257,8 +531,12 @@ passive component Backend {
 @ ══════════════════════════════════════════════════════
 
 module Ethernet {
+  @ Ethernet frame layer (L2).
   interface S {
     sync input port connect: serial
+    sync input port write: EthWrite
+    sync input port mac: EthMac
+    sync input port mtu: EthMtu
   }
 
   passive component Make {
@@ -272,8 +550,13 @@ module Ethernet {
 @ ══════════════════════════════════════════════════════
 
 module Arp {
+  @ IPv4 address resolution protocol.
   interface S {
     sync input port connect: serial
+    sync input port query: ArpQuery
+    sync input port addIp: ArpAddIp
+    sync input port removeIp: ArpRemoveIp
+    sync input port recv: ArpRecv
   }
 
   passive component Make {
@@ -287,8 +570,11 @@ module Arp {
 @ ══════════════════════════════════════════════════════
 
 module Icmpv4 {
+  @ ICMPv4 protocol.
   interface S {
     sync input port connect: serial
+    sync input port write: IcmpWrite
+    sync input port recv: IcmpRecv
   }
 
   passive component Make {
@@ -303,23 +589,39 @@ module Icmpv4 {
 
 module Tcpip {
   module Udp {
+    @ Connectionless datagram transport.
     interface S {
       sync input port connect: serial
+      sync input port write: UdpWrite
+      sync input port listen: UdpListen
+      sync input port unlisten: UdpUnlisten
     }
   }
   module Tcp {
+    @ Connection-oriented stream transport.
+    @ Flow operations (read/write/close) apply to individual connections.
     interface S {
       sync input port connect: serial
+      sync input port createConnection: TcpCreateConnection
+      sync input port listen: TcpListen
+      sync input port unlisten: TcpUnlisten
     }
   }
   module Ip {
+    @ IP packet layer (v4, v6, or dual-stack).
     interface S {
       sync input port connect: serial
+      sync input port write: IpWrite
+      sync input port src: IpSrc
+      sync input port mtu: IpMtu
     }
   }
   module Stack {
+    @ Composite TCP/IP dual-stack.
+    @ Provides sub-module accessors: udp, tcp, ip.
     interface V4V6 {
       sync input port connect: serial
+      sync input port listen: StackListen
     }
   }
 }
@@ -404,6 +706,7 @@ module Stackv4v6 {
 @ ══════════════════════════════════════════════════════
 
 module Conduit_mirage {
+  @ Protocol-agnostic network connection.
   interface S {
     sync input port connect: serial
   }
@@ -427,8 +730,11 @@ module Conduit_tcp {
 @ ══════════════════════════════════════════════════════
 
 module Happy_eyeballs_mirage {
+  @ RFC 8305 dual-stack connection establishment.
   interface S {
     sync input port connect: serial
+    sync input port heConnect: HeConnect
+    sync input port heConnectIp: HeConnectIp
   }
 
   passive component Make {
@@ -439,8 +745,12 @@ module Happy_eyeballs_mirage {
 }
 
 module Dns_client_mirage {
+  @ DNS client (recursive resolver).
   interface S {
     sync input port connect: serial
+    sync input port getaddrinfo: DnsGetaddrinfo
+    sync input port gethostbyname: DnsGethostbyname
+    sync input port gethostbyname6: DnsGethostbyname6
   }
 }
 
@@ -484,6 +794,19 @@ module Cohttp_mirage {
 
     passive component Make {
       import Cohttp_mirage.Server.S
+      output port conduit: serial
+    }
+  }
+
+  module Client {
+    interface S {
+      sync input port connect: serial
+    }
+
+    @ cohttp_client : resolver -> conduit -> http_client
+    passive component Make {
+      import Cohttp_mirage.Client.S
+      output port resolver: serial
       output port conduit: serial
     }
   }
@@ -603,25 +926,6 @@ module Resolver_mirage {
 @ Unix system resolver (no deps).
 passive component Resolver_unix_system {
   import Resolver_mirage.S
-}
-
-@ ══════════════════════════════════════════════════════
-@ Cohttp client (legacy, needs resolver + conduit)
-@ ══════════════════════════════════════════════════════
-
-module Cohttp_mirage {
-  module Client {
-    interface S {
-      sync input port connect: serial
-    }
-
-    @ cohttp_client : resolver -> conduit -> http_client
-    passive component Make {
-      import Cohttp_mirage.Client.S
-      output port resolver: serial
-      output port conduit: serial
-    }
-  }
 }
 
 @ ══════════════════════════════════════════════════════
@@ -747,4 +1051,3 @@ topology DnsStack {
     dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
   }
 }
-
