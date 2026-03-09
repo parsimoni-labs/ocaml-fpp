@@ -481,7 +481,7 @@ let trim_trailing_newlines s =
   done;
   String.sub s 0 (!i + 1) ^ "\n"
 
-let gen_ml_topologies ppf tu topologies =
+let gen_ml_topologies ppf tu ~target topologies =
   let all_topos = Fpp.topologies tu in
   let topos =
     List.filter
@@ -521,7 +521,7 @@ let gen_ml_topologies ppf tu topologies =
            (fun (t : Fpp.Ast.def_topology) -> t.topo_name.data)
            entry_topos)
     in
-    Fpp.Gen_ml.pp_entry_point ppf ~topo_name entry_names
+    Fpp.Gen_ml.pp_entry_point ppf ~target ~topo_name entry_names
   end
 
 let gen_mli_topologies ppf tu topologies =
@@ -565,11 +565,11 @@ let gen_ml_all ppf tu ~sm_name =
     sms;
   List.iter (pp_wrapped_topo ppf tu ~wrap) topos
 
-let gen_ml_for_tu ppf tu ~sm_name ~topologies =
-  if topologies <> [] then gen_ml_topologies ppf tu topologies
+let gen_ml_for_tu ppf tu ~sm_name ~target ~topologies =
+  if topologies <> [] then gen_ml_topologies ppf tu ~target topologies
   else gen_ml_all ppf tu ~sm_name
 
-let to_ml ~output ~sm_name ~topologies files =
+let to_ml ~output ~sm_name ~target ~topologies files =
   match parse_files files with
   | None -> 1
   | Some per_file ->
@@ -580,7 +580,7 @@ let to_ml ~output ~sm_name ~topologies files =
       let buf = Buffer.create 4096 in
       let ppf = Fmt.with_buffer buf in
       Fmt.pf ppf "[@@@@@@ocamlformat \"disable\"]@.";
-      gen_ml_for_tu ppf tu ~sm_name ~topologies;
+      gen_ml_for_tu ppf tu ~sm_name ~target ~topologies;
       Fmt.flush ppf ();
       let text = Buffer.contents buf in
       if text <> "" then write_output output text;
@@ -624,12 +624,43 @@ let topologies_t =
            Comma-separated names (e.g. $(b,--topologies T1,T2)). Module prefix \
            for entry points is inferred from the input filename.")
 
-let to_ml_term =
-  let to_ml output sm_name topologies_lists files =
-    let topologies = List.concat topologies_lists in
-    to_ml ~output ~sm_name ~topologies files
+let target_t =
+  let parse s =
+    match Fpp.Gen_ml.target_of_string s with
+    | Some t -> Ok t
+    | None -> Error (`Msg (Fmt.str "unknown target %S" s))
   in
-  Term.(const to_ml $ to_ml_output_t $ sm_name_t $ topologies_t $ to_ml_files_t)
+  let pp ppf t =
+    Fmt.string ppf
+      (match t with
+      | Fpp.Gen_ml.Unix -> "unix"
+      | MacOSX -> "macosx"
+      | Xen -> "xen"
+      | Qubes -> "qubes"
+      | Hvt -> "hvt"
+      | Spt -> "spt"
+      | Virtio -> "virtio"
+      | Muen -> "muen"
+      | Genode -> "genode")
+  in
+  let target_conv = Arg.conv (parse, pp) in
+  Arg.(
+    value
+    & opt target_conv Fpp.Gen_ml.Unix
+    & info [ "target"; "t" ] ~docv:"TARGET"
+        ~doc:
+          "Deployment target. Determines the OS main loop module. One of \
+           $(b,unix), $(b,macosx), $(b,xen), $(b,qubes), $(b,hvt), $(b,spt), \
+           $(b,virtio), $(b,muen), $(b,genode). Defaults to $(b,unix).")
+
+let to_ml_term =
+  let to_ml output sm_name target topologies_lists files =
+    let topologies = List.concat topologies_lists in
+    to_ml ~output ~sm_name ~target ~topologies files
+  in
+  Term.(
+    const to_ml $ to_ml_output_t $ sm_name_t $ target_t $ topologies_t
+    $ to_ml_files_t)
 
 let to_ml_cmd =
   let info =
@@ -650,6 +681,8 @@ let to_ml_cmd =
             "$(iname) --topologies T1 model.fpp         # one topology + entry \
              point";
           `P "$(iname) --topologies T1,T2 model.fpp      # multiple topologies";
+          `P
+            "$(iname) -t hvt --topologies T1 model.fpp  # Solo5/hvt entry point";
           `P "$(iname) --sm Thermostat model.fpp        # select one SM";
         ]
   in
