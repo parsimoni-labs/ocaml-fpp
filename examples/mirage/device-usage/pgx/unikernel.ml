@@ -3,23 +3,23 @@ open Cmdliner
 
 let database =
   let doc = Arg.info ~doc:"database to use" [ "db"; "pgdatabase" ] in
-  Mirage_runtime.register_arg Arg.(value & opt string "postgres" doc)
+  Arg.(value & opt string "postgres" doc)
 
 let port =
   let doc = Arg.info ~doc:"port to use for postgresql" [ "p"; "pgport" ] in
-  Mirage_runtime.register_arg Arg.(value & opt int 5432 doc)
+  Arg.(value & opt int 5432 doc)
 
 let hostname =
   let doc = Arg.info ~doc:"host for postgres database" [ "h"; "pghost" ] in
-  Mirage_runtime.register_arg Arg.(value & opt string "localhost" doc)
+  Arg.(required & opt (some string) None doc)
 
 let user =
   let doc = Arg.info ~doc:"postgres user" [ "u"; "pguser" ] in
-  Mirage_runtime.register_arg Arg.(value & opt string "postgres" doc)
+  Arg.(required & opt (some string) None doc)
 
 let password =
-  let doc = Arg.info ~doc:"postgres password" [ "pgpassword" ] in
-  Mirage_runtime.register_arg Arg.(value & opt string "" doc)
+  let doc = Key.Arg.info ~doc:"postgres password" [ "pgpassword" ] in
+  Arg.(required & opt (some string) None doc)
 
 type t = {
   password : string;
@@ -29,8 +29,21 @@ type t = {
   user : string;
 }
 
-module Make (S : Tcpip.Stack.V4V6) = struct
-  module Pgx_mirage = Pgx_lwt_mirage.Make (S)
+let setup =
+  Term.(
+    const (fun password database port host user ->
+        { password; database; port; host; user })
+    $ password $ database $ port $ host $ user)
+
+module Make
+    (RANDOM : Mirage_random.S)
+    (TIME : Mirage_time.S)
+    (PCLOCK : Mirage_clock.PCLOCK)
+    (MCLOCK : Mirage_clock.MCLOCK)
+    (STACK : Tcpip.Stack.V4) =
+struct
+  module Pgx_mirage = Pgx_lwt_mirage.Make (RANDOM) (TIME) (MCLOCK) (STACK)
+  module Logs_reporter = Mirage_logs.Make (PCLOCK)
 
   type user = { id : int; email : string }
 
@@ -76,12 +89,10 @@ module Make (S : Tcpip.Stack.V4V6) = struct
         Logs.info (fun m -> m "{id = %d; email = %s}\n" id email))
       users
 
-  let start stack =
-    let password = password ()
-    and database = database ()
-    and port = port ()
-    and host = hostname ()
-    and user = user () in
+  let start _random _time _pclock _mclock stack
+      { password; database; port; host; user } =
+    Logs.(set_level (Some Info));
+    Logs_reporter.(create () |> run) @@ fun () ->
     let pgx = Pgx_mirage.connect stack in
     setup_database ~port ~host ~user ~password ~database pgx () >>= fun () ->
     print_users (get_users ~port ~host ~user ~password ~database pgx ())

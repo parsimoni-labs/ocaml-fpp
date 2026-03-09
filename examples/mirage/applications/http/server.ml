@@ -102,6 +102,10 @@ let hash ~version ~create ?seed length =
             ("content-type", "text/plain");
           ]
         in
+        (* XXX(dinosaure): Connection: Close header is only true for http/1.1.
+           For h2, curl complains and abruptely closes the connection. The most
+           important seems Content-Length which closes properly the connection
+           on both sides. *)
         let headers =
           match version with
           | `HTTP_1_1 -> ("connection", "close") :: headers

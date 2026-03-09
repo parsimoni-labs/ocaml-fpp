@@ -73,9 +73,7 @@ module Dispatch (FS : Mirage_kv.RO) (S : HTTP) = struct
     S.make ~conn_closed ~callback ()
 end
 
-module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (_ : Tcpip.Stack.V4V6) =
-struct
-  module Http = Cohttp_mirage.Server.Make (Conduit_mirage.TCP)
+module HTTPS (DATA : Mirage_kv.RO) (KEYS : Mirage_kv.RO) (Http : HTTP) = struct
   module X509 = Tls_mirage.X509 (KEYS)
   module D = Dispatch (DATA) (Http)
 
@@ -86,18 +84,18 @@ struct
     in
     Lwt.return conf
 
-  let start data keys _stack =
+  let start data keys http =
     tls_init keys >>= fun cfg ->
     let tls = `TLS (cfg, `TCP (https_port ())) in
     let tcp = `TCP (http_port ()) in
     let https =
       Https_log.info (fun f ->
           f "listening for HTTPS on %d/TCP" (https_port ()));
-      Http.listen tls @@ D.serve (D.dispatcher data)
+      http tls @@ D.serve (D.dispatcher data)
     in
     let http =
       Http_log.info (fun f -> f "listening for HTTP on %d/TCP" (http_port ()));
-      Http.listen tcp @@ D.serve (D.redirect (https_port ()))
+      http tcp @@ D.serve (D.redirect (https_port ()))
     in
     Lwt.join [ https; http ]
 end

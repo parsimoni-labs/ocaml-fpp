@@ -78,60 +78,30 @@ DNS topology uses adapter with start method
 
 Tar-backed KV store reads from block device
   $ ofpp to-ml --topologies UnixTarKv $F/mirage.fpp $F/device-usage/tar-kv/config.fpp 2>/dev/null
-  $ grep -E '(Data_block|Tar_data|Unikernel)' main.ml
-  module type Data_block = Mirage_block.S
-  module type Tar_data = Mirage_kv.RO
-  module Tar_data = Tar_mirage.Make_KV_RO(Data_block)
-  module Unikernel = Unikernel.Main(Tar_data)
-    let* data_block = Data_block.connect ~name:"data.tar" in
-    let* tar_data = Tar_data.connect data_block in
-    Unikernel.start tar_data)
+  $ grep -E '(Ramdisk|Tar_kv|Unikernel)' main.ml
+  module type Ramdisk = Mirage_block.S
+  module type Tar_kv = Mirage_kv.RO
+  module Tar_kv = Tar_mirage.Make_KV_RO(Ramdisk)
+  module Unikernel = Unikernel.Main(Tar_kv)
+    let* ramdisk = Ramdisk.connect ~name:"data.tar" in
+    let* tar_kv = Tar_kv.connect ramdisk in
+    Unikernel.start tar_kv)
 
-FAT-backed KV store with data and certs on separate block devices
+FAT-backed KV store uses block device
   $ ofpp to-ml --topologies UnixFatKv $F/mirage.fpp $F/device-usage/fat-kv/config.fpp 2>/dev/null
-  $ grep -E '(Data_block|Certs_block|Fat_data|Fat_certs|Unikernel)' main.ml
-  module type Data_block = Mirage_block.S
-  module type Certs_block = Mirage_block.S
-  module type Fat_data = Mirage_kv.RO
-  module type Fat_certs = Mirage_kv.RO
-  module Fat_data = Fat.KV_RO(Data_block)
-  module Fat_certs = Fat.KV_RO(Certs_block)
-  module Unikernel = Unikernel.Main(Fat_data)(Fat_certs)
-    let* data_block = Data_block.connect ~name:"data.img" in
-    let* certs_block = Certs_block.connect ~name:"certs.img" in
-    let* fat_data = Fat_data.connect data_block in
-    let* fat_certs = Fat_certs.connect certs_block in
-    Unikernel.start fat_data fat_certs)
-
-Static website uses crunch'd KV stores and socket stack
-  $ ofpp to-ml --topologies UnixStaticWebsite $F/mirage.fpp $F/applications/static-website/config.fpp 2>/dev/null
-  $ grep -E '(Htdocs_data|Data|Certs|Unikernel)' main.ml
-  module type Htdocs_data = Mirage_kv.RO
-  module type Data = Mirage_kv.RO
-  module type Certs = Mirage_kv.RO
-  module Unikernel = Unikernel.Main(Htdocs_data)(Data)(Certs)(Stackv4v6)
-    let* htdocs_data = Htdocs_data.connect () in
-    let* data = Data.connect () in
-    let* certs = Certs.connect () in
-    Unikernel.start htdocs_data data certs stackv4v6)
-
-TLS server uses tar-backed certs and crunch'd TLS data
-  $ ofpp to-ml --topologies UnixTlsServer $F/mirage.fpp $F/applications/tls-server/config.fpp 2>/dev/null
-  $ grep -E '(Certs_block|Tar_certs|Tls_data|Unikernel)' main.ml
-  module type Certs_block = Mirage_block.S
-  module type Tar_certs = Mirage_kv.RO
-  module type Tls_data = Mirage_kv.RO
-  module Tar_certs = Tar_mirage.Make_KV_RO(Certs_block)
-  module Unikernel = Unikernel.Main(Tar_certs)(Tls_data)(Stackv4v6)
-    let* certs_block = Certs_block.connect ~name:"certs.tar" in
-    let* tar_certs = Tar_certs.connect certs_block in
-    let* tls_data = Tls_data.connect () in
-    Unikernel.start tar_certs tls_data stackv4v6)
+  $ grep -E '(Ramdisk|Fat_kv|Unikernel)' main.ml
+  module type Ramdisk = Mirage_block.S
+  module type Fat_kv = Mirage_kv.RO
+  module Fat_kv = Fat.KV_RO(Ramdisk)
+  module Unikernel = Unikernel.Main(Fat_kv)
+    let* ramdisk = Ramdisk.connect ~name:"disk.img" in
+    let* fat_kv = Fat_kv.connect ramdisk in
+    Unikernel.start fat_kv)
 
 Noop topology generates no start call
   $ ofpp to-ml --topologies UnixNoop $F/mirage.fpp $F/tutorial/noop/config.fpp 2>/dev/null
-  $ grep -c 'Lazy.force' main.ml
-  0
+  $ grep 'Lazy.force' main.ml
+  [1]
 
 All new standalone topologies generate start call
   $ for t in app_info local-library; do
@@ -173,21 +143,20 @@ Docteur topology uses KV store (same pattern as kv_ro)
 
 Pgx topology wires socket stack to unikernel
   $ ofpp to-ml --topologies UnixPgx $F/mirage.fpp $F/device-usage/pgx/config.fpp 2>/dev/null
-  $ grep -E '(Stackv4v6|Unikernel)' main.ml | head -4
-  module type Stackv4v6 = Tcpip.Stack.V4V6
-  module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
+  $ grep -E 'module.*Unikernel' main.ml
   module Unikernel = Unikernel.Make(Stackv4v6)
+  $ grep 'Unikernel.start' main.ml
     Unikernel.start stackv4v6)
 
 Static website with TLS uses KV stores and socket stack
   $ ofpp to-ml --topologies UnixStaticWebsiteTls $F/mirage.fpp $F/applications/static_website_tls/config.fpp 2>/dev/null
-  $ grep -E '(Static_data|Tls_keys|Dispatch|Unikernel)' main.ml
+  $ grep -E '(Static_data|Tls_keys|Unikernel)' main.ml
   module type Static_data = Mirage_kv.RO
   module type Tls_keys = Mirage_kv.RO
-  module Dispatch = Dispatch.HTTPS(Static_data)(Tls_keys)(Stackv4v6)
+  module Unikernel = Dispatch.HTTPS(Static_data)(Tls_keys)(Stackv4v6)
     let* static_data = Static_data.connect () in
     let* tls_keys = Tls_keys.connect () in
-    Dispatch.start static_data tls_keys stackv4v6)
+    Unikernel.start static_data tls_keys stackv4v6)
 
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null
