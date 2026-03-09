@@ -8,6 +8,17 @@
 
     External state machines (no body) produce no output. *)
 
+(** {1 Target platform} *)
+
+type target = Unix | MacOSX | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+
+val target_of_string : string -> target option
+(** Parse a target name (case-insensitive). *)
+
+val os_module_of_target : target -> string
+(** [os_module_of_target t] is the OS main module name for [t]: ["Unix_os"],
+    ["Xen_os"], or ["Solo5_os"]. *)
+
 val pp : Ast.def_state_machine Fmt.t
 (** Pretty-prints a state machine definition as an OCaml module. External state
     machines (no body) produce no output. *)
@@ -41,24 +52,27 @@ val topology_active_instance_names :
     the last group binding. *)
 
 val pp_entry_point :
-  Format.formatter -> topo_name:string -> (string * string) list -> unit
-(** [pp_entry_point ppf ~topo_name names] emits a Mirage_runtime-based entry
-    point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
+  Format.formatter ->
+  target:target ->
+  topo_name:string ->
+  (string * string) list ->
+  unit
+(** [pp_entry_point ppf ~target ~topo_name names] emits a Mirage_runtime-based
+    entry point that registers cmdliner arguments, parses [Mirage_bootvar.argv],
     initialises RNG and logging, forces the last lazy group binding, and runs
-    via [Unix_os.Main.run]. *)
+    via the appropriate OS main loop for [target]. *)
 
 val pp_topology_module_types : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology_module_types tu ppf topo] emits [module type X = sig ... end]
-    declarations for components that have typed interface ports. Used alongside
-    [pp_topology] when a [.mli] is also generated, so OCaml checks the derived
-    signature against the named [@ ocaml.sig] constraint. *)
+    declarations for components that have typed interface ports. The sig path is
+    derived from the component's [import] declaration. *)
 
 (** {2 .mli Generation} *)
 
 val pp_topology_mli : Ast.translation_unit -> Ast.def_topology Fmt.t
 (** [pp_topology_mli tu] pretty-prints the interface of a topology. Emits module
     declarations for all non-runtime instances and [val] declarations for each
-    connection group lazy binding. Instances with [@ ocaml.sig] get the named
+    connection group lazy binding. Instances with [import] get the interface
     module type; non-leaf instances without it get [sig type t end]; leaf
     instances with qualified component paths get module aliases. *)
 

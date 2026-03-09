@@ -155,13 +155,14 @@ silently omitted.
 | FPP annotation | Effect | Example |
 |---|---|---|
 | `@ ocaml.type T` | Map FPP type to OCaml type | `@ ocaml.type Ipaddr.V4.Prefix.t` on `type Cidr` |
-| `@ ocaml.sig Path.S` | Module type constraint | `@ ocaml.sig Mirage_kv.RO` on component |
-| `@ ocaml.module X` | Override module name | `@ ocaml.module Tar_mirage.Make_KV_RO` |
 
-Every instance has a module name: its instance name, capitalised
-(e.g. `instance ethernet` → module `Ethernet`).  For non-leaf instances,
-the component's qualified FPP path IS the OCaml functor path.
-For unqualified component names, the default is `Instance_name.Make`.
+This is the only annotation needed.  Module names and signatures are
+derived from FPP structure directly:
+
+- Instance name → OCaml module name (capitalised: `instance ethernet` → `Ethernet`)
+- Component path → functor path (`instance ipv4: Static_ipv4.Make` → `Static_ipv4.Make(...)`)
+- `import Mirage_block.S` → `module type Ramdisk = Mirage_block.S` (from interface path)
+- Unqualified component → default `Instance_name.Make`
 
 ## Topology composition
 

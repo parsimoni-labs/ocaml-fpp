@@ -9,6 +9,28 @@
     each state is a phantom type, and the state GADT ensures that transitions
     are well-typed. *)
 
+(* ── Target platform ──────────────────────────────────────────────── *)
+
+type target = Unix | MacOSX | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+
+let target_of_string s =
+  match String.lowercase_ascii s with
+  | "unix" -> Some Unix
+  | "macosx" | "macos" -> Some MacOSX
+  | "xen" -> Some Xen
+  | "qubes" -> Some Qubes
+  | "hvt" -> Some Hvt
+  | "spt" -> Some Spt
+  | "virtio" -> Some Virtio
+  | "muen" -> Some Muen
+  | "genode" -> Some Genode
+  | _ -> None
+
+let os_module_of_target = function
+  | Unix | MacOSX -> "Unix_os"
+  | Xen | Qubes -> "Xen_os"
+  | Hvt | Spt | Virtio | Muen | Genode -> "Solo5_os"
+
 (* ── Name conversion ──────────────────────────────────────────────── *)
 
 let camel_to_snake s =
@@ -898,25 +920,13 @@ let pp ppf (sm : Ast.def_state_machine) =
 
 (* ── Annotation parsing ──────────────────────────────────────────── *)
 
-type ocaml_annots = { sig_path : string option }
-
 let starts_with ~prefix s =
   let plen = String.length prefix in
   String.length s >= plen && String.sub s 0 plen = prefix
 
-let parse_ocaml_annotations annots =
-  List.fold_left
-    (fun acc s ->
-      let s = String.trim s in
-      if starts_with ~prefix:"ocaml.sig " s then
-        let v = String.trim (String.sub s 10 (String.length s - 10)) in
-        { sig_path = Some v }
-      else acc)
-    { sig_path = None } annots
-
 (** Extract the sig path from a component's [import] declaration. The qualified
     identifier of the imported interface (e.g. [Ethernet.S]) is used directly as
-    the OCaml module type path. Falls back to [None] if no import exists. *)
+    the OCaml module type path. Returns [None] if no import exists. *)
 let import_sig_path (comp : Ast.def_component) =
   List.find_map
     (fun ann ->
@@ -925,62 +935,6 @@ let import_sig_path (comp : Ast.def_component) =
           Some (Ast.qual_ident_to_string qi.data)
       | _ -> None)
     comp.comp_members
-
-(** Parse OCaml annotations, falling back to [import] for [sig_path]. *)
-let parse_ocaml_annotations_with_import annots comp =
-  let ca = parse_ocaml_annotations annots in
-  match ca.sig_path with
-  | Some _ -> ca
-  | None -> { sig_path = import_sig_path comp }
-
-(** Extract pre-annotations for a component definition from tu_members. For
-    qualified identifiers (e.g. [Cohttp_mirage.Server]), searches within the
-    named module. For unqualified names, searches top-level first. *)
-let component_annots tu comp_qi =
-  let find_in members name =
-    List.find_map
-      (fun ((pre, node, _) : Ast.module_member Ast.node Ast.annotated) ->
-        match node.Ast.data with
-        | Ast.Mod_def_component c when c.comp_name.data = name -> Some pre
-        | _ -> None)
-      members
-  in
-  let result =
-    match comp_qi with
-    | Ast.Qualified _ ->
-        let parts = Ast.qual_ident_to_list comp_qi in
-        let comp_name = (List.nth parts (List.length parts - 1)).data in
-        let mod_parts =
-          List.filteri (fun i _ -> i < List.length parts - 1) parts
-        in
-        let rec search_in members path =
-          match path with
-          | [] -> find_in members comp_name
-          | (m : _ Ast.node) :: rest ->
-              List.find_map
-                (fun ((_, node, _) : Ast.module_member Ast.node Ast.annotated)
-                   ->
-                  match node.Ast.data with
-                  | Ast.Mod_def_module md when md.Ast.module_name.data = m.data
-                    ->
-                      search_in md.Ast.module_members rest
-                  | _ -> None)
-                members
-        in
-        search_in tu.Ast.tu_members mod_parts
-    | Ast.Unqualified id ->
-        let name = id.data in
-        let top = find_in tu.Ast.tu_members name in
-        if Option.is_some top then top
-        else
-          List.find_map
-            (fun ((_, node, _) : Ast.module_member Ast.node Ast.annotated) ->
-              match node.Ast.data with
-              | Ast.Mod_def_module m -> find_in m.Ast.module_members name
-              | _ -> None)
-            tu.Ast.tu_members
-  in
-  Option.value ~default:[] result
 
 (** Render an FPP default expression as an OCaml literal. *)
 let rec ocaml_literal_of_expr (e : Ast.expr) =
@@ -2211,24 +2165,18 @@ let pp_functor_applications ppf all_conns module_break sorted =
             targets))
     sorted
 
-(** Emit [module type X = Sig.Path] for components with interface ports and a
-    [sig_path]. Uses the same alias as the [.mli] so that the two files are
-    consistent; the FPP-level port–signature compatibility is validated by the
-    FPP toolchain, not by the OCaml compiler. *)
+(** Emit [module type X = Sig.Path] for components with interface ports and an
+    [import] declaration. The import path is used directly as the OCaml module
+    type path. *)
 let pp_derived_module_types ppf tu module_break non_rt =
   List.iter
     (fun ( inst_name,
-           (ci : Ast.def_component_instance),
+           (_ci : Ast.def_component_instance),
            (comp : Ast.def_component) ) ->
       if is_runtime_component comp then ()
       else
         let ports = interface_ports tu comp in
-        let ca =
-          parse_ocaml_annotations_with_import
-            (component_annots tu ci.inst_component.data)
-            comp
-        in
-        match ca.sig_path with
+        match import_sig_path comp with
         | None -> ()
         | Some sig_path ->
             if ports = [] then ()
@@ -2437,20 +2385,15 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
       pf ppf "@,"
     in
     (* Module type declarations: [module type X = Sig.S] for components with
-       [import] or [@ ocaml.sig] and interface ports. Emitted before module
-       declarations so that modules can use the short name [module X : X]. *)
+       [import] and interface ports. Emitted before module declarations so
+       that modules can use the short name [module X : X]. *)
     List.iter
       (fun ( inst_name,
-             (ci : Ast.def_component_instance),
+             (_ci : Ast.def_component_instance),
              (comp : Ast.def_component) ) ->
         if is_runtime_component comp then ()
         else
-          let ca =
-            parse_ocaml_annotations_with_import
-              (component_annots tu ci.inst_component.data)
-              comp
-          in
-          match ca.sig_path with
+          match import_sig_path comp with
           | None -> ()
           | Some sig_path ->
               let ports = interface_ports tu comp in
@@ -2467,30 +2410,25 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
              (ci : Ast.def_component_instance),
              (comp : Ast.def_component) ) ->
         let mod_name = constructor_name inst_name in
-        let ca =
-          parse_ocaml_annotations_with_import
-            (component_annots tu ci.inst_component.data)
-            comp
-        in
+        let sig_path = import_sig_path comp in
         let has_sig_module_type =
-          ca.sig_path <> None && interface_ports tu comp <> []
+          sig_path <> None && interface_ports tu comp <> []
         in
         let targets = target_instances inst_name comp all_conns sorted in
         let comp_path = Ast.qual_ident_to_string ci.inst_component.data in
         let has_qualified_leaf =
           targets = [] && String.contains comp_path '.' && comp_path <> mod_name
         in
-        (* Mirror the .ml: skip leaves that don't produce a module binding *)
         let has_ml_binding = targets <> [] || has_qualified_leaf in
         if not has_ml_binding then ()
         else
-          match (ca.sig_path, targets) with
+          match (sig_path, targets) with
           | Some _, _ when has_sig_module_type ->
               module_break ();
               pf ppf "module %s : %s" mod_name (constructor_name inst_name)
-          | Some sig_path, _ ->
+          | Some sp, _ ->
               module_break ();
-              pf ppf "module %s : %s" mod_name sig_path
+              pf ppf "module %s : %s" mod_name sp
           | None, [] when has_qualified_leaf ->
               module_break ();
               pf ppf "module %s = %s" mod_name comp_path
@@ -2551,10 +2489,11 @@ let topology_active_instance_names tu (topo : Ast.def_topology) =
     parses [Mirage_bootvar.argv], initialises RNG and logging, calls the last
     group function, and runs via [Unix_os.Main.run]. Each element of [names] is
     [(func_name, func_name)]. *)
-let pp_entry_point ppf ~topo_name names =
+let pp_entry_point ppf ~target ~topo_name names =
   match names with
   | [] -> ()
   | _ ->
+      let os = os_module_of_target target in
       pf ppf
         "let mirage_runtime_delay__key = Mirage_runtime.register_arg @@@@ \
          Mirage_runtime.delay@.";
@@ -2588,4 +2527,4 @@ let pp_entry_point ppf ~topo_name names =
       pf ppf "    let* _ = Lazy.force %s in@." last_func;
       pf ppf "    Lwt.return ()@.";
       pf ppf "  in@.";
-      pf ppf "  Unix_os.Main.run t; exit 0@."
+      pf ppf "  %s.Main.run t; exit 0@." os

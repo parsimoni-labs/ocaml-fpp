@@ -1312,20 +1312,28 @@ let connect = lazy (
   let* tcp = Tcp.connect ~ipv4_only:(runtime__ipv4_only ()) ~ipv6_only:(runtime__ipv6_only ()) in
   Stack.connect udp tcp)|}
 
-(* ── Topology .mli: @ ocaml.sig ──────────────────────────────────── *)
+(* ── Topology .mli: import interface ─────────────────────────────── *)
 
 let test_mli_sig_path () =
-  check_output ~msg:"@ ocaml.sig emits module type constraint in .mli"
+  check_output ~msg:"import derives module type constraint in .mli"
     (render_topo_mli
        {|
     port P
+    module Net {
+      interface S { sync input port connect: serial }
+    }
+    module Block {
+      interface S { sync input port connect: serial }
+    }
     module Uni {
-      @ ocaml.sig Net.S
-      passive component Net { sync input port connect: serial }
+      passive component Net {
+        import Net.S
+      }
     }
     module Ram {
-      @ ocaml.sig Block.S
-      passive component Block { sync input port connect: serial }
+      passive component Block {
+        import Block.S
+      }
     }
     passive component App {
       output port net: P
@@ -1390,11 +1398,11 @@ end
 
 val connect : Eth.t Lwt.t Lazy.t|}
 
-(* ── Topology .mli: @ ocaml.sig + typed ports ────────────────────── *)
+(* ── Topology .mli: import + typed ports ──────────────────────────── *)
 
 let test_mli_sig_with_typed_ports () =
   check_output
-    ~msg:"@ ocaml.sig takes precedence; typed ports still appear in derived sig"
+    ~msg:"import derives sig path; typed ports still appear in derived sig"
     (render_topo_mli
        {|
     @ ocaml.type Macaddr.t
@@ -1403,12 +1411,16 @@ let test_mli_sig_with_typed_ports () =
     port GetMac -> Mac
     port GetMtu -> U32
 
-    @ ocaml.sig Ethernet.S
+    module Ethernet {
+      interface S {
+        sync input port connect: serial
+        sync input port mac: GetMac
+        sync input port mtu: GetMtu
+      }
+    }
     passive component Eth {
-      sync input port connect: serial
+      import Ethernet.S
       output port net: serial
-      sync input port mac: GetMac
-      sync input port mtu: GetMtu
     }
     passive component Net { sync input port connect: serial }
     passive component App {
