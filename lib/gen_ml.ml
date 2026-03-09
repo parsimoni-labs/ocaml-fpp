@@ -1339,8 +1339,10 @@ let resolve_topology_instances tu (topo : Ast.def_topology) =
       | _ -> None)
     topo.topo_members
 
-(** Collect direct connections from a topology, grouped by graph name. Groups
-    with the same name (e.g. from imported sub-topologies) are merged. *)
+(** Collect direct construction connections from a topology, grouped by graph
+    name. Groups with the same name (e.g. from imported sub-topologies) are
+    merged. Dataflow groups (named [Dataflow]) are excluded — they model runtime
+    callback wiring, not functor construction dependencies. *)
 let collect_direct_connections (topo : Ast.def_topology) =
   let raw =
     List.filter_map
@@ -1349,12 +1351,14 @@ let collect_direct_connections (topo : Ast.def_topology) =
         | Ast.Topo_spec_connection_graph
             (Ast.Graph_direct { graph_name; graph_connections }) ->
             let name = camel_to_snake graph_name.data in
-            let conns =
-              List.map
-                (fun conn_ann -> (Ast.unannotate conn_ann).Ast.data)
-                graph_connections
-            in
-            Some (name, conns)
+            if name = "dataflow" then None
+            else
+              let conns =
+                List.map
+                  (fun conn_ann -> (Ast.unannotate conn_ann).Ast.data)
+                  graph_connections
+              in
+              Some (name, conns)
         | _ -> None)
       topo.topo_members
   in

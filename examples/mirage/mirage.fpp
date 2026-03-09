@@ -1,20 +1,5 @@
 @ MirageOS device catalogue.
-@
-@ This file models the MirageOS device graph using native FPP constructs.
-@ Each device category has an interface (OCaml module type), concrete
-@ components (OCaml functors), and port types encoding connect signatures.
-@
-@ Layer 1 (construction): connect ports + output ports → functor wiring
-@ Layer 2 (interface):    typed ports on interfaces → module type signatures
-@
-@ Mapping to targets:
-@   port param (named)  → OCaml: ~label:v      C++: named arg
-@   port param (_N)     → OCaml: positional     C++: positional
-@   struct-typed param  → OCaml: expand fields  C++: expand fields
-@   struct field w/ def → OCaml: optional label C++: has default
-@   output port + conn  → OCaml: functor arg   C++: dep injection
-@   external param      → OCaml: Cmdliner term C++: runtime config
-@   instance(p = v)     → OCaml: inline value  C++: compile-time const
+@ See README.md for the two-layer design and translation conventions.
 
 @ ══════════════════════════════════════════════════════
 @ External types
@@ -74,7 +59,6 @@ enum BlockWriteError { Disconnected, IsReadOnly }
 @ ocaml.type Mirage_net.Net.error
 enum NetError { InvalidLength, Disconnected }
 
-@ Ethernet errors (no top-level type; abstract inside S).
 enum EthError { ExceedsMtu }
 
 @ ocaml.type Arp_packet.error
@@ -83,7 +67,6 @@ enum ArpError { Timeout }
 @ ocaml.type Tcpip.Ip.error
 enum IpError { NoRoute, WouldFragment }
 
-@ ICMP errors (abstract inside S).
 enum IcmpError { Unreach }
 
 @ ocaml.type Tcpip.Tcp.error
@@ -92,7 +75,6 @@ enum TcpError { Timeout, Refused }
 @ ocaml.type Mirage_flow.write_error
 enum FlowWriteError { Closed }
 
-@ Flow shutdown direction (Mirage_flow).
 enum FlowShutdownMode { Read, Write, ReadWrite }
 
 @ ocaml.type Mirage_kv.error
@@ -100,7 +82,6 @@ enum KvError { NotFound, DictionaryExpected, ValueExpected }
 @ ocaml.type Mirage_kv.write_error
 enum KvWriteError { NotFound, NoSpace, AlreadyPresent }
 
-@ DNS client errors (abstract inside S).
 enum DnsError { Msg }
 
 @ ══════════════════════════════════════════════════════
@@ -122,7 +103,6 @@ struct NetStats {
   txPkts: U32
 }
 
-@ TCP keepalive configuration (Tcp.Keepalive.t).
 struct TcpKeepalive {
   after: U64,
   interval: U64,
@@ -133,10 +113,7 @@ struct TcpKeepalive {
 @ Protocol enums
 @ ══════════════════════════════════════════════════════
 
-@ Ethernet frame types (Ethernet.Packet.proto).
 enum EthProto { ARP, IPv4, IPv6 }
-
-@ IP protocol numbers (Tcpip.Ip.proto).
 enum IpProto { TCP, UDP, ICMP }
 
 @ ══════════════════════════════════════════════════════
@@ -151,11 +128,6 @@ module Fw {
 @ ══════════════════════════════════════════════════════
 @ Port types: connect signatures (Layer 1)
 @ ══════════════════════════════════════════════════════
-@
-@ Named params → labeled (~name:value).
-@ _N prefix → positional args.
-@ Struct-typed params → expand as labeled fields; fields with defaults
-@   become optional labels.
 
 port SocketConnect(ipv4Only: bool, ipv6Only: bool, _0: Cidr, _1: Cidr6)
 
@@ -165,7 +137,6 @@ port NetifConnect(_0: string)
 
 port Ipv4Connect(cidr: Cidr)
 
-@ Struct with defaults → optional labeled args.
 struct Ipv6Conf { noInit: bool } default { noInit = false }
 port Ipv6Connect(conf: Ipv6Conf)
 
@@ -175,7 +146,6 @@ port HttpServerConnect($port: U16)
 
 port ChamelonConnect(programBlockSize: U32)
 
-@ All fields optional (library provides defaults).
 struct HappyEyeballsConf {
   aaaa_timeout: U64,
   connect_delay: U64,
@@ -193,7 +163,6 @@ struct HappyEyeballsConf {
 }
 port HappyEyeballsConnect(conf: HappyEyeballsConf)
 
-@ All fields optional (library provides defaults).
 struct DnsClientConf {
   cache_size: U32,
   timeout: U64
@@ -206,34 +175,25 @@ port DnsClientConnect(conf: DnsClientConf)
 @ ══════════════════════════════════════════════════════
 @ Port types: device operations (Layer 2)
 @ ══════════════════════════════════════════════════════
-@
-@ These ports model the operations each device exposes.
-@ Return type = error enum for failable I/O operations.
-@ Return type = data struct/type for queries.
-@ No return type for fire-and-forget.
 
-@ ── Universal operations ─────────────────────────────────
-@ Mirage_device.S: every device has disconnect.
+@ ── Universal ────────────────────────────────────────────
 
 port Disconnect
 
-@ ── Flow operations ───────────────────────────────────
-@ Mirage_flow.S: reliable byte stream abstraction.
+@ ── Flow ──────────────────────────────────────────────
 
 port FlowRead -> Buffer
 port FlowWrite(_0: Buffer) -> FlowWriteError
 port FlowClose
 port FlowShutdown(mode: FlowShutdownMode) -> FlowWriteError
 
-@ ── Block operations ──────────────────────────────────
-@ Mirage_block.S: sector-addressed block device.
+@ ── Block ─────────────────────────────────────────────
 
 port BlockGetInfo -> BlockInfo
 port BlockRead(offset: U64, _0: Buffer) -> BlockError
 port BlockWrite(offset: U64, _0: Buffer) -> BlockWriteError
 
-@ ── Network operations ────────────────────────────────
-@ Mirage_net.S: raw network interface.
+@ ── Network ───────────────────────────────────────────
 
 port NetWrite(size: U32, _0: Buffer) -> NetError
 port NetMac -> Macaddr
@@ -243,8 +203,7 @@ port NetResetStats
 port NetListen
 port NetDisconnect
 
-@ ── Ethernet operations ───────────────────────────────
-@ Ethernet.S: ethernet frame layer.
+@ ── Ethernet ──────────────────────────────────────────
 
 port EthWrite(dst: Macaddr, proto: EthProto, _0: Buffer) -> EthError
 port EthMac -> Macaddr
@@ -252,48 +211,42 @@ port EthMtu -> U32
 port EthInput(_0: Buffer)
 port EthDisconnect
 
-@ ── ARP operations ────────────────────────────────────
-@ Arp.S: IPv4 address resolution.
+@ ── ARP ───────────────────────────────────────────────
 
 port ArpQuery(ip: Ipv4Addr) -> Macaddr
 port ArpAddIp(ip: Ipv4Addr)
 port ArpRemoveIp(ip: Ipv4Addr)
 port ArpRecv(_0: Buffer)
 
-@ ── ICMP operations ───────────────────────────────────
-@ Icmpv4.S: ICMPv4 messages.
+@ ── ICMP ──────────────────────────────────────────────
 
 port IcmpWrite(dst: Ipv4Addr, _0: Buffer) -> IcmpError
 port IcmpRecv(_0: Buffer)
 
-@ ── IP operations ─────────────────────────────────────
-@ Tcpip.Ip.S: IP packet layer.
+@ ── IP ────────────────────────────────────────────────
 
+port IpInput(src: IpAddr, dst: IpAddr, _0: Buffer)
 port IpWrite(dst: IpAddr, proto: IpProto, _0: Buffer) -> IpError
 port IpSrc(dst: IpAddr) -> IpAddr
 port IpMtu(dst: IpAddr) -> U32
 
-@ ── UDP operations ────────────────────────────────────
-@ Tcpip.Udp.S: connectionless datagram transport.
+@ ── UDP ───────────────────────────────────────────────
 
 port UdpWrite(dst: IpAddr, dstPort: U16, _0: Buffer)
 port UdpListen($port: U16)
 port UdpUnlisten($port: U16)
 
-@ ── TCP operations ────────────────────────────────────
-@ Tcpip.Tcp.S: connection-oriented stream transport.
+@ ── TCP ───────────────────────────────────────────────
 
 port TcpCreateConnection(dst: IpAddr, dstPort: U16) -> TcpError
 port TcpListen($port: U16)
 port TcpUnlisten($port: U16)
 
-@ ── Stack operations ──────────────────────────────────
-@ Tcpip.Stack.V4V6: composite TCP/IP stack.
+@ ── Stack ─────────────────────────────────────────────
 
 port StackListen
 
-@ ── KV operations ─────────────────────────────────────
-@ Mirage_kv.RO / RW: key-value store.
+@ ── KV ────────────────────────────────────────────────
 
 port KvGet(key: string) -> KvError
 port KvGetPartial(key: string, offset: I64, length: U32) -> KvError
@@ -307,77 +260,63 @@ port KvSetPartial(key: string, offset: I64, value: string) -> KvWriteError
 port KvRemove(key: string) -> KvWriteError
 port KvRename(source: string, dest: string) -> KvWriteError
 
-@ ── Clock operations ──────────────────────────────────
-@ Mirage_clock.PCLOCK / MCLOCK.
+@ ── Clock ─────────────────────────────────────────────
 
 port PclockNow -> I64
 port MclockElapsed -> I64
 
-@ ── Time operations ───────────────────────────────────
-@ Mirage_time.S / Mirage_sleep.S.
+@ ── Time ──────────────────────────────────────────────
 
 port SleepNs(ns: I64)
 
-@ ── DNS operations ────────────────────────────────────
-@ Dns_client_mirage.S: DNS resolution.
+@ ── DNS ───────────────────────────────────────────────
 
 port DnsGetaddrinfo(name: DomainName) -> DnsError
 port DnsGethostbyname(name: DomainName) -> DnsError
 port DnsGethostbyname6(name: DomainName) -> DnsError
 
-@ ── Happy Eyeballs operations ─────────────────────────
-@ Happy_eyeballs_mirage.S: RFC 8305 dual-stack connection.
+@ ── Happy Eyeballs ────────────────────────────────────
 
 port HeConnect(host: string, $port: U16) -> DnsError
 port HeConnectIp(dst: IpAddr, $port: U16) -> DnsError
 
-@ ── RNG operations ──────────────────────────────────────
-@ Mirage_crypto_rng: cryptographic randomness.
+@ ── RNG ───────────────────────────────────────────────
 
 port RngGenerate(len: U32) -> Buffer
 
-@ ── Vnetif backend operations ───────────────────────────
-@ Vnetif.BACKEND: virtual network interface backend.
+@ ── Vnetif backend ────────────────────────────────────
 
 port VnetifRegister -> Macaddr
 port VnetifUnregister(mac: Macaddr)
 port VnetifWrite(dst: Macaddr, _0: Buffer)
 
-@ ── Conduit operations ──────────────────────────────────
-@ Conduit_mirage: protocol-agnostic connection establishment.
-@ Established connections use Mirage_flow.S for data transfer.
+@ ── Conduit ───────────────────────────────────────────
 
 port ConduitResolve
 
-@ ── Mimic operations ────────────────────────────────────
-@ Mimic: protocol multiplexer (TCP, TLS, HTTP/2).
+@ ── Mimic ─────────────────────────────────────────────
 
 port MimicResolve -> DnsError
 
-@ ── HTTP operations ─────────────────────────────────────
-@ Cohttp/Paf/Http_mirage_client: HTTP request/response.
+@ ── HTTP ──────────────────────────────────────────────
 
 port HttpRequest(meth: string, uri: string, body: Buffer) -> Buffer
 port HttpListen
 
-@ ── Syslog operations ──────────────────────────────────
-@ Syslog: remote structured logging via UDP/TCP/TLS.
+@ ── Syslog ────────────────────────────────────────────
 
 port SyslogSend(msg: string)
 
-@ ── Git operations ─────────────────────────────────────
-@ Git_mirage: git smart transport (fetch/push).
+@ ── Git ───────────────────────────────────────────────
 
 port GitFetch(uri: string) -> DnsError
 port GitPush(uri: string) -> DnsError
 
-@ ── Resolver operations ────────────────────────────────
-@ Resolver_mirage: hostname/service resolution.
+@ ── Resolver ──────────────────────────────────────────
 
 port ResolverResolve(host: string)
 
-@ ── Monitoring operations ──────────────────────────────
-@ Monitoring: metrics reporting.
+@ ── Monitoring ────────────────────────────────────────
 
 port MonitoringEnable(tags: string)
 
@@ -386,7 +325,6 @@ port MonitoringEnable(tags: string)
 @ ══════════════════════════════════════════════════════
 
 module Mirage_flow {
-  @ Reliable byte stream (TCP connections, TLS channels).
   interface S {
     sync input port read: FlowRead
     sync input port write: FlowWrite
@@ -400,7 +338,6 @@ module Mirage_flow {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_sleep {
-  @ Wall-clock sleep.
   interface S {
     sync input port connect: serial
     sync input port sleepNs: SleepNs
@@ -408,7 +345,6 @@ module Mirage_sleep {
 }
 
 module Mirage_ptime {
-  @ POSIX clock (wall time).
   interface S {
     sync input port connect: serial
     sync input port now: PclockNow
@@ -416,7 +352,6 @@ module Mirage_ptime {
 }
 
 module Mirage_mtime {
-  @ Monotonic clock (elapsed time).
   interface S {
     sync input port connect: serial
     sync input port elapsed: MclockElapsed
@@ -424,7 +359,6 @@ module Mirage_mtime {
 }
 
 module Mirage_crypto_rng {
-  @ Cryptographic random number generator.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -433,8 +367,6 @@ module Mirage_crypto_rng {
 }
 
 module Mirage_logs {
-  @ Logging infrastructure.
-  @ Minimal interface: setup installs the reporter.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -446,7 +378,6 @@ module Mirage_logs {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_block {
-  @ Sector-addressed block device.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -456,19 +387,16 @@ module Mirage_block {
   }
 }
 
-@ Block device backed by a file.
 passive component Block {
   import Mirage_block.S
   sync input port connect: BlockConnect
 }
 
-@ In-memory block device (ramdisk).
 passive component Ramdisk {
   import Mirage_block.S
   sync input port connect: BlockConnect
 }
 
-@ AES-CCM encrypted block device layer.
 passive component Ccm_block {
   import Mirage_block.S
   external param key: string
@@ -482,7 +410,6 @@ passive component Ccm_block {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_kv {
-  @ Read-only key-value store.
   interface RO {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -495,7 +422,6 @@ module Mirage_kv {
     sync input port digest: KvDigest
   }
 
-  @ Read-write key-value store (extends RO).
   interface RW {
     import Mirage_kv.RO
     sync input port $set: KvSet
@@ -505,29 +431,24 @@ module Mirage_kv {
   }
 }
 
-@ Static KV store (ocaml-crunch, embedded at build time).
 passive component Crunch {
   import Mirage_kv.RO
 }
 
-@ Direct filesystem access (Unix only).
 passive component Direct_kv_ro {
   import Mirage_kv.RO
   sync input port connect: BlockConnect
 }
 
-@ Opaque leaf KV (e.g. crunch-generated Static_t).
 passive component Kv {
   import Mirage_kv.RO
 }
 
-@ Block-backed read-only KV (generic).
 passive component Block_kv {
   import Mirage_kv.RO
   output port block: serial
 }
 
-@ Tar archive read-only KV on a block device.
 module Tar_mirage {
   passive component Make_KV_RO {
     import Mirage_kv.RO
@@ -535,7 +456,6 @@ module Tar_mirage {
   }
 }
 
-@ FAT filesystem read-only KV on a block device.
 module Fat {
   passive component KV_RO {
     import Mirage_kv.RO
@@ -543,25 +463,21 @@ module Fat {
   }
 }
 
-@ Direct filesystem access (Unix only, read-write).
 passive component Direct_kv_rw {
   import Mirage_kv.RW
   sync input port connect: BlockConnect
 }
 
-@ In-memory read-write KV store.
 passive component Kv_rw_mem {
   import Mirage_kv.RW
 }
 
-@ Chamelon (littlefs) read-write filesystem on a block device.
 passive component Chamelon {
   import Mirage_kv.RW
   sync input port connect: ChamelonConnect
   output port block: serial
 }
 
-@ Tar archive read-write KV on a block device.
 passive component Tar_kv_rw {
   import Mirage_kv.RW
   output port block: serial
@@ -572,7 +488,6 @@ passive component Tar_kv_rw {
 @ ══════════════════════════════════════════════════════
 
 module Mirage_net {
-  @ Raw network interface (L2).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -585,7 +500,6 @@ module Mirage_net {
   }
 }
 
-@ Network backend (e.g. vnetif for testing).
 module Vnetif {
   interface BACKEND {
     sync input port connect: serial
@@ -598,13 +512,14 @@ module Vnetif {
   passive component Make {
     import Mirage_net.S
     output port backend: serial
+    output port on_frame: serial
   }
 }
 
-@ Host network interface.
 passive component Netif {
   import Mirage_net.S
   sync input port connect: NetifConnect
+  output port on_frame: serial
 }
 
 passive component Backend {
@@ -616,7 +531,6 @@ passive component Backend {
 @ ══════════════════════════════════════════════════════
 
 module Ethernet {
-  @ Ethernet frame layer (L2).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -629,6 +543,9 @@ module Ethernet {
   passive component Make {
     import Ethernet.S
     output port net: serial
+    output port on_arp: serial
+    output port on_ipv4: serial
+    output port on_ipv6: serial
   }
 }
 
@@ -637,7 +554,6 @@ module Ethernet {
 @ ══════════════════════════════════════════════════════
 
 module Arp {
-  @ IPv4 address resolution protocol.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -658,7 +574,6 @@ module Arp {
 @ ══════════════════════════════════════════════════════
 
 module Icmpv4 {
-  @ ICMPv4 protocol.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -678,7 +593,6 @@ module Icmpv4 {
 
 module Tcpip {
   module Udp {
-    @ Connectionless datagram transport.
     interface S {
       sync input port connect: serial
       sync input port disconnect: Disconnect
@@ -688,8 +602,6 @@ module Tcpip {
     }
   }
   module Tcp {
-    @ Connection-oriented stream transport.
-    @ Flow operations (read/write/close) apply to individual connections.
     interface S {
       sync input port connect: serial
       sync input port disconnect: Disconnect
@@ -699,18 +611,16 @@ module Tcpip {
     }
   }
   module Ip {
-    @ IP packet layer (v4, v6, or dual-stack).
     interface S {
       sync input port connect: serial
       sync input port disconnect: Disconnect
+      sync input port $input: IpInput
       sync input port write: IpWrite
       sync input port src: IpSrc
       sync input port mtu: IpMtu
     }
   }
   module Stack {
-    @ Composite TCP/IP dual-stack.
-    @ Provides sub-module accessors: udp, tcp, ip.
     interface V4V6 {
       sync input port connect: serial
       sync input port disconnect: Disconnect
@@ -786,7 +696,6 @@ passive component Tcpv4v6_socket {
 }
 
 module Stackv4v6 {
-  @ Socket-backed stack (udp + tcp deps).
   passive component Make {
     import Tcpip.Stack.V4V6
     output port udp: serial
@@ -799,8 +708,6 @@ module Stackv4v6 {
 @ ══════════════════════════════════════════════════════
 
 module Conduit_mirage {
-  @ Protocol-agnostic network connection.
-  @ Established connections use Mirage_flow.S for data transfer.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -827,7 +734,6 @@ module Conduit_tcp {
 @ ══════════════════════════════════════════════════════
 
 module Happy_eyeballs_mirage {
-  @ RFC 8305 dual-stack connection establishment.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -843,7 +749,6 @@ module Happy_eyeballs_mirage {
 }
 
 module Dns_client_mirage {
-  @ DNS client (recursive resolver).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -854,7 +759,6 @@ module Dns_client_mirage {
 }
 
 module Dns_resolver {
-  @ connect takes (stack * happy_eyeballs) tuple; adapter unpacks via start.
   passive component Make {
     import Dns_client_mirage.S
     sync input port start: DnsClientConnect
@@ -868,14 +772,12 @@ module Dns_resolver {
 @ ══════════════════════════════════════════════════════
 
 module Mimic {
-  @ Protocol multiplexer (TCP, TLS, HTTP/2).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port resolve: MimicResolve
   }
 
-  @ mimic_happy_eyeballs : stackv4v6 -> happy_eyeballs -> dns_client -> mimic
   passive component Make {
     import Mimic.S
     output port stack: serial
@@ -890,7 +792,6 @@ module Mimic {
 
 module Cohttp_mirage {
   module Server {
-    @ HTTP server (Cohttp over Conduit).
     interface S {
       sync input port connect: serial
       sync input port disconnect: Disconnect
@@ -904,14 +805,12 @@ module Cohttp_mirage {
   }
 
   module Client {
-    @ HTTP client (Cohttp over Conduit).
     interface S {
       sync input port connect: serial
       sync input port disconnect: Disconnect
       sync input port $request: HttpRequest
     }
 
-    @ cohttp_client : resolver -> conduit -> http_client
     passive component Make {
       import Cohttp_mirage.Client.S
       output port resolver: serial
@@ -921,14 +820,12 @@ module Cohttp_mirage {
 }
 
 module Paf_mirage {
-  @ HTTP server (h2/httpaf over TCP).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port listen: HttpListen
   }
 
-  @ paf_server : ~port:int runtime_arg -> tcpv4v6 -> http_server
   passive component Server {
     import Paf_mirage.S
     sync input port connect: HttpServerConnect
@@ -937,14 +834,12 @@ module Paf_mirage {
 }
 
 module Http_mirage_client {
-  @ HTTP client (ALPN-negotiated, supports h2 and HTTP/1.1).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port $request: HttpRequest
   }
 
-  @ paf_client : tcpv4v6 -> mimic -> alpn_client
   passive component Make {
     import Http_mirage_client.S
     output port tcp: serial
@@ -957,26 +852,22 @@ module Http_mirage_client {
 @ ══════════════════════════════════════════════════════
 
 module Syslog {
-  @ Remote structured logging.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port send: SyslogSend
   }
 
-  @ syslog_udp : stackv4v6 -> syslog
   passive component Udp {
     import Syslog.S
     output port stack: serial
   }
 
-  @ syslog_tcp : stackv4v6 -> syslog
   passive component Tcp {
     import Syslog.S
     output port stack: serial
   }
 
-  @ syslog_tls : stackv4v6 -> kv_ro -> syslog
   passive component Tls {
     import Syslog.S
     output port stack: serial
@@ -989,7 +880,6 @@ module Syslog {
 @ ══════════════════════════════════════════════════════
 
 module Git_mirage {
-  @ Git smart transport (fetch/push over TCP/SSH/HTTP).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
@@ -997,15 +887,12 @@ module Git_mirage {
     sync input port push: GitPush
   }
 
-  @ git_tcp : tcpv4v6 -> mimic -> git_client
   passive component Tcp {
     import Git_mirage.S
     output port tcp: serial
     output port mimic: serial
   }
 
-  @ git_ssh : tcpv4v6 -> mimic -> git_client
-  @ (authenticator, key, password are runtime secrets)
   passive component Ssh {
     import Git_mirage.S
     external param authenticator: string default ""
@@ -1017,7 +904,6 @@ module Git_mirage {
     output port mimic: serial
   }
 
-  @ git_http : tcpv4v6 -> mimic -> git_client
   passive component Http {
     import Git_mirage.S
     external param authenticator: string default ""
@@ -1033,21 +919,18 @@ module Git_mirage {
 @ ══════════════════════════════════════════════════════
 
 module Resolver_mirage {
-  @ Hostname/service resolution (legacy conduit-based).
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port resolve: ResolverResolve
   }
 
-  @ resolver_dns : ?nameservers -> stackv4v6 -> resolver
   passive component Make {
     import Resolver_mirage.S
     output port stack: serial
   }
 }
 
-@ Unix system resolver (no deps).
 passive component Resolver_unix_system {
   import Resolver_mirage.S
 }
@@ -1056,7 +939,6 @@ passive component Resolver_unix_system {
 @ DHCP-based IPv4
 @ ══════════════════════════════════════════════════════
 
-@ ipv4_of_dhcp : network -> ethernet -> arpv4 -> ipv4
 module Dhcp_ipv4 {
   passive component Make {
     import Tcpip.Ip.S
@@ -1071,14 +953,12 @@ module Dhcp_ipv4 {
 @ ══════════════════════════════════════════════════════
 
 module Monitoring {
-  @ Metrics reporting.
   interface S {
     sync input port connect: serial
     sync input port disconnect: Disconnect
     sync input port enable: MonitoringEnable
   }
 
-  @ monitoring : stackv4v6 -> job
   passive component Make {
     import Monitoring.S
     output port stack: serial
@@ -1156,6 +1036,13 @@ topology TcpipStack {
     stack.icmpv4 -> icmp.connect
     stack.udpv4v6 -> udp.connect
     stack.tcpv4v6 -> tcp.connect
+  }
+
+  connections Dataflow {
+    net.on_frame -> ethernet.$input
+    ethernet.on_arp -> arp.recv
+    ethernet.on_ipv4 -> ipv4.$input
+    ethernet.on_ipv6 -> ipv6.$input
   }
 }
 
