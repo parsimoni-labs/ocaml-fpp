@@ -76,6 +76,58 @@ DNS topology uses adapter with start method
     let* dns_client = Dns_client.start stackv4v6 happy_eyeballs_mirage in
     Unikernel.start dns_client)
 
+Tar-backed KV store reads from block device
+  $ ofpp to-ml --topologies UnixTarKv $F/mirage.fpp $F/device-usage/tar-kv/config.fpp 2>/dev/null
+  $ grep -E '(Data_block|Tar_data|Unikernel)' main.ml
+  module type Data_block = Mirage_block.S
+  module type Tar_data = Mirage_kv.RO
+  module Tar_data = Tar_mirage.Make_KV_RO(Data_block)
+  module Unikernel = Unikernel.Main(Tar_data)
+    let* data_block = Data_block.connect ~name:"data.tar" in
+    let* tar_data = Tar_data.connect data_block in
+    Unikernel.start tar_data)
+
+FAT-backed KV store with data and certs on separate block devices
+  $ ofpp to-ml --topologies UnixFatKv $F/mirage.fpp $F/device-usage/fat-kv/config.fpp 2>/dev/null
+  $ grep -E '(Data_block|Certs_block|Fat_data|Fat_certs|Unikernel)' main.ml
+  module type Data_block = Mirage_block.S
+  module type Certs_block = Mirage_block.S
+  module type Fat_data = Mirage_kv.RO
+  module type Fat_certs = Mirage_kv.RO
+  module Fat_data = Fat.KV_RO(Data_block)
+  module Fat_certs = Fat.KV_RO(Certs_block)
+  module Unikernel = Unikernel.Main(Fat_data)(Fat_certs)
+    let* data_block = Data_block.connect ~name:"data.img" in
+    let* certs_block = Certs_block.connect ~name:"certs.img" in
+    let* fat_data = Fat_data.connect data_block in
+    let* fat_certs = Fat_certs.connect certs_block in
+    Unikernel.start fat_data fat_certs)
+
+Static website uses crunch'd KV stores and socket stack
+  $ ofpp to-ml --topologies UnixStaticWebsite $F/mirage.fpp $F/applications/static-website/config.fpp 2>/dev/null
+  $ grep -E '(Htdocs_data|Data|Certs|Unikernel)' main.ml
+  module type Htdocs_data = Mirage_kv.RO
+  module type Data = Mirage_kv.RO
+  module type Certs = Mirage_kv.RO
+  module Unikernel = Unikernel.Main(Htdocs_data)(Data)(Certs)(Stackv4v6)
+    let* htdocs_data = Htdocs_data.connect () in
+    let* data = Data.connect () in
+    let* certs = Certs.connect () in
+    Unikernel.start htdocs_data data certs stackv4v6)
+
+TLS server uses tar-backed certs and crunch'd TLS data
+  $ ofpp to-ml --topologies UnixTlsServer $F/mirage.fpp $F/applications/tls-server/config.fpp 2>/dev/null
+  $ grep -E '(Certs_block|Tar_certs|Tls_data|Unikernel)' main.ml
+  module type Certs_block = Mirage_block.S
+  module type Tar_certs = Mirage_kv.RO
+  module type Tls_data = Mirage_kv.RO
+  module Tar_certs = Tar_mirage.Make_KV_RO(Certs_block)
+  module Unikernel = Unikernel.Main(Tar_certs)(Tls_data)(Stackv4v6)
+    let* certs_block = Certs_block.connect ~name:"certs.tar" in
+    let* tar_certs = Tar_certs.connect certs_block in
+    let* tls_data = Tls_data.connect () in
+    Unikernel.start tar_certs tls_data stackv4v6)
+
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null
   $ grep -c 'Mirage_runtime' main.ml

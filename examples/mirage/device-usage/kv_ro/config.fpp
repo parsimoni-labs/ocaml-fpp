@@ -16,3 +16,12 @@ topology UnixKvRo {
     unikernel.kv -> static_t.connect
   }
 }
+
+topology Solo5KvRo {
+  instance static_t
+  instance unikernel
+
+  connections Start {
+    unikernel.kv -> static_t.connect
+  }
+}

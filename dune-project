@@ -60,6 +60,8 @@
   (mirage-ptime :with-test)
   (mirage-block-ramdisk :with-test)
   (mirage-net-unix :with-test)
+  (mirage-solo5 :with-test)
+  (mirage-net-solo5 :with-test)
   (conduit-mirage :with-test)
   (cohttp-mirage :with-test)
   (cohttp-lwt :with-test)

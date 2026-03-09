@@ -27,3 +27,22 @@ topology UnixPing6 {
     unikernel.ipv6 -> ipv6.connect
   }
 }
+
+topology Solo5Ping6 {
+  instance netif(_0 = "service")
+  instance ethernet
+  instance ipv6
+  instance unikernel
+
+  connections Connect {
+    ethernet.net -> netif.connect
+    ipv6.net -> netif.connect
+    ipv6.eth -> ethernet.connect
+  }
+
+  connections Start {
+    unikernel.net -> netif.connect
+    unikernel.eth -> ethernet.connect
+    unikernel.ipv6 -> ipv6.connect
+  }
+}

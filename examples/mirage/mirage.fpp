@@ -120,6 +120,8 @@ enum IpProto { TCP, UDP, ICMP }
 @ F Prime built-in port types
 @ ══════════════════════════════════════════════════════
 
+@ Required by components that declare param get/set ports (e.g. Ccm_block,
+@ Git_mirage.Ssh). The checker validates Fw.PrmGet and Fw.PrmSet exist.
 module Fw {
   port PrmGet
   port PrmSet

@@ -5,3 +5,7 @@ instance unikernel: Unikernel base id 0
 topology UnixHelloKey {
   instance unikernel
 }
+
+topology Solo5HelloKey {
+  instance unikernel
+}
