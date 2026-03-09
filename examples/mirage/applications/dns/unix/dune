@@ -1,4 +1,6 @@
-(copy_files ../*.ml)
+(copy_files ../unikernel.ml)
+
+(copy_files ../dns_client.ml)
 
 (rule
  (mode promote)

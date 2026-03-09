@@ -1,4 +1,4 @@
-(copy_files ../*.ml)
+(copy_files ../unikernel.ml)
 
 (rule
  (targets static_t.ml static_t.mli)

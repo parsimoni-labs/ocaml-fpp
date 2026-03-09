@@ -1,0 +1,63 @@
+(copy_files ../dispatch.ml)
+
+(rule
+ (targets static_data.ml static_data.mli)
+ (deps
+  (source_tree ../htdocs))
+ (action
+  (run ocaml-crunch ../htdocs -o static_data.ml)))
+
+(rule
+ (targets tls_keys.ml tls_keys.mli)
+ (deps
+  (source_tree ../tls))
+ (action
+  (run ocaml-crunch ../tls -o tls_keys.ml)))
+
+(rule
+ (mode promote)
+ (targets main.ml main.mli)
+ (deps
+  (:fpp ../../../mirage.fpp)
+  (:cfg ../config.fpp))
+ (action
+  (run %{bin:ofpp} to-ml --topologies UnixStaticWebsiteTls %{fpp} %{cfg})))
+
+(executable
+ (name main)
+ (modules main dispatch static_data tls_keys)
+ (libraries
+  lwt
+  lwt.unix
+  duration
+  mirage-runtime
+  mirage-bootvar
+  cmdliner-stdlib
+  mirage-logs
+  mirage-unix
+  mirage-crypto-rng-mirage
+  mirage-crypto-rng
+  mirage-sleep.unix
+  mirage-mtime.unix
+  mirage-ptime
+  mirage-ptime.unix
+  logs
+  fmt
+  cmdliner
+  ipaddr
+  uri
+  magic-mime
+  adapters
+  tcpip.stack-socket
+  conduit-mirage
+  cohttp-mirage
+  cohttp-lwt
+  cohttp
+  tls-mirage
+  x509
+  mirage-kv
+  mirage-kv-mem))
+
+(alias
+ (name runtest)
+ (deps main.exe))

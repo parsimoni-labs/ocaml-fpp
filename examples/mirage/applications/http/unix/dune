@@ -1,0 +1,83 @@
+(copy_files ../unikernel.ml)
+
+(copy_files ../server.ml)
+
+(copy_files ../connect.ml)
+
+(rule
+ (targets certs_data.ml certs_data.mli)
+ (deps
+  (source_tree ../certificates))
+ (action
+  (run ocaml-crunch ../certificates -o certs_data.ml)))
+
+(rule
+ (targets keys_data.ml keys_data.mli)
+ (deps
+  (source_tree ../keys))
+ (action
+  (run ocaml-crunch ../keys -o keys_data.ml)))
+
+(rule
+ (mode promote)
+ (targets main.ml main.mli)
+ (deps
+  (:fpp ../../../mirage.fpp)
+  (:cfg ../config.fpp))
+ (action
+  (run %{bin:ofpp} to-ml --topologies UnixHttp %{fpp} %{cfg})))
+
+(executable
+ (name main)
+ (modules main unikernel server connect certs_data keys_data)
+ (libraries
+  lwt
+  lwt.unix
+  duration
+  mirage-runtime
+  mirage-bootvar
+  cmdliner-stdlib
+  mirage-logs
+  mirage-unix
+  mirage-crypto-rng-mirage
+  mirage-crypto-rng
+  mirage-sleep.unix
+  mirage-mtime.unix
+  mirage-ptime
+  mirage-ptime.unix
+  logs
+  fmt
+  cmdliner
+  ipaddr
+  uri
+  adapters
+  tcpip
+  tcpip.stack-socket
+  conduit-mirage
+  cohttp-mirage
+  tls-mirage
+  x509
+  ca-certs-nss
+  mimic
+  mimic-happy-eyeballs
+  happy-eyeballs-mirage
+  dns-client-mirage
+  paf
+  paf-cohttp
+  h2
+  httpaf
+  digestif
+  hxd.core
+  hxd.string
+  base64
+  base64.rfc2045
+  rresult
+  mirage-kv
+  mirage-kv-mem
+  cstruct
+  bigstringaf
+  sexplib0))
+
+(alias
+ (name runtest)
+ (deps main.exe))

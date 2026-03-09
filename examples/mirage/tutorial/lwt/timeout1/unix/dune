@@ -1,0 +1,36 @@
+(copy_files ../unikernel.ml)
+
+(rule
+ (mode promote)
+ (targets main.ml main.mli)
+ (deps
+  (:fpp ../../../../mirage.fpp)
+  (:cfg ../config.fpp))
+ (action
+  (run %{bin:ofpp} to-ml --topologies UnixTimeout1 %{fpp} %{cfg})))
+
+(executable
+ (name main)
+ (modules main unikernel)
+ (libraries
+  lwt
+  lwt.unix
+  duration
+  mirage-runtime
+  mirage-bootvar
+  cmdliner-stdlib
+  mirage-logs
+  mirage-unix
+  mirage-crypto-rng-mirage
+  mirage-crypto-rng
+  mirage-sleep.unix
+  mirage-mtime.unix
+  mirage-ptime
+  mirage-ptime.unix
+  logs
+  fmt
+  randomconv))
+
+(alias
+ (name runtest)
+ (deps main.exe))

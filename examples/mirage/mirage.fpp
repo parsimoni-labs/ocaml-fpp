@@ -986,18 +986,17 @@ instance icmp: Icmpv4.Make base id 0
 instance udp: Udp.Make base id 0
 instance tcp: Tcp.Flow.Make base id 0
 instance stack: Tcpip_stack_direct.MakeV4V6 base id 0
+instance block: Block base id 0
 instance ramdisk: Ramdisk base id 0
-instance data: Kv base id 0
-instance certs: Kv base id 0
-instance htdocs_data: Kv base id 0
-instance tls_data: Kv base id 0
-instance data_block: Block base id 0
-instance certs_block: Block base id 0
-instance tar_data: Tar_mirage.Make_KV_RO base id 0
-instance tar_certs: Tar_mirage.Make_KV_RO base id 0
-instance fat_data: Fat.KV_RO base id 0
-instance fat_certs: Fat.KV_RO base id 0
+instance chamelon: Chamelon base id 0
+instance tar_kv: Tar_mirage.Make_KV_RO base id 0
+instance fat_kv: Fat.KV_RO base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
+instance conduit_tls: Conduit_mirage.TLS base id 0
+instance resolver_unix: Resolver_unix_system base id 0
+instance cohttp_server: Cohttp_mirage.Server.Make base id 0
+instance cohttp_client: Cohttp_mirage.Client.Make base id 0
+instance paf_server: Paf_mirage.Server base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0
 

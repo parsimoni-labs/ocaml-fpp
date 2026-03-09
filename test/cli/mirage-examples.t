@@ -128,6 +128,67 @@ TLS server uses tar-backed certs and crunch'd TLS data
     let* tls_data = Tls_data.connect () in
     Unikernel.start tar_certs tls_data stackv4v6)
 
+Noop topology generates no start call
+  $ ofpp to-ml --topologies UnixNoop $F/mirage.fpp $F/tutorial/noop/config.fpp 2>/dev/null
+  $ grep -c 'Lazy.force' main.ml
+  0
+
+All new standalone topologies generate start call
+  $ for t in app_info local-library; do
+  >   ofpp to-ml --topologies "$(grep -o 'Unix[A-Za-z]*' $F/tutorial/$t/config.fpp)" $F/mirage.fpp $F/tutorial/$t/config.fpp 2>/dev/null
+  >   grep -q 'Unikernel.start' main.ml && echo "$t: OK" || echo "$t: FAIL"
+  > done
+  app_info: OK
+  local-library: OK
+
+Lwt tutorial sub-examples all generate start call
+  $ for t in heads1 heads2 echo_server timeout1 timeout2; do
+  >   ofpp to-ml --topologies "$(grep -o 'Unix[A-Za-z0-9]*' $F/tutorial/lwt/$t/config.fpp)" $F/mirage.fpp $F/tutorial/lwt/$t/config.fpp 2>/dev/null
+  >   grep -q 'Unikernel.start' main.ml && echo "$t: OK" || echo "$t: FAIL"
+  > done
+  heads1: OK
+  heads2: OK
+  echo_server: OK
+  timeout1: OK
+  timeout2: OK
+
+Littlefs topology wires block device through chamelon RW store
+  $ ofpp to-ml --topologies UnixLittlefs $F/mirage.fpp $F/device-usage/littlefs/config.fpp 2>/dev/null
+  $ grep -E '(Block|Chamelon|Unikernel)' main.ml
+  module type Block = Mirage_block.S
+  module type Chamelon = Mirage_kv.RW
+  module Chamelon = Chamelon.Make(Block)
+  module Unikernel = Unikernel.Make(Chamelon)
+    let* block = Block.connect ~name:"littlefs" in
+    let* chamelon = Chamelon.connect ~program_block_size:16 block in
+    Unikernel.start chamelon)
+
+Docteur topology uses KV store (same pattern as kv_ro)
+  $ ofpp to-ml --topologies UnixDocteur $F/mirage.fpp $F/applications/docteur/config.fpp 2>/dev/null
+  $ grep -E '(Static_t|Unikernel)' main.ml
+  module type Static_t = Mirage_kv.RO
+  module Unikernel = Unikernel.Make(Static_t)
+    let* static_t = Static_t.connect () in
+    Unikernel.start static_t)
+
+Pgx topology wires socket stack to unikernel
+  $ ofpp to-ml --topologies UnixPgx $F/mirage.fpp $F/device-usage/pgx/config.fpp 2>/dev/null
+  $ grep -E '(Stackv4v6|Unikernel)' main.ml | head -4
+  module type Stackv4v6 = Tcpip.Stack.V4V6
+  module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
+  module Unikernel = Unikernel.Make(Stackv4v6)
+    Unikernel.start stackv4v6)
+
+Static website with TLS uses KV stores and socket stack
+  $ ofpp to-ml --topologies UnixStaticWebsiteTls $F/mirage.fpp $F/applications/static_website_tls/config.fpp 2>/dev/null
+  $ grep -E '(Static_data|Tls_keys|Dispatch|Unikernel)' main.ml
+  module type Static_data = Mirage_kv.RO
+  module type Tls_keys = Mirage_kv.RO
+  module Dispatch = Dispatch.HTTPS(Static_data)(Tls_keys)(Stackv4v6)
+    let* static_data = Static_data.connect () in
+    let* tls_keys = Tls_keys.connect () in
+    Dispatch.start static_data tls_keys stackv4v6)
+
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null
   $ grep -c 'Mirage_runtime' main.ml
