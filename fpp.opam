@@ -30,7 +30,6 @@ depends: [
   "conduit-mirage" {with-test}
   "cohttp-mirage" {with-test}
   "tar-mirage" {with-test}
-  "fat-filesystem" {with-test}
   "tcpip" {with-test}
   "mirage-kv" {with-test}
   "mirage-kv-mem" {with-test}
@@ -41,8 +40,8 @@ depends: [
   "cmdliner-stdlib" {with-test}
   "mirage-logs" {with-test}
   "mirage-unix" {with-test}
-  "mirage-crypto-rng-mirage" {with-test}
-  "mirage-crypto-rng" {with-test}
+  "mirage-crypto-rng-mirage" {>= "2.0.0" & with-test}
+  "mirage-crypto-rng" {>= "2.0.0" & with-test}
   "duration" {with-test}
   "mirage-sleep" {with-test}
   "mirage-mtime" {with-test}
@@ -51,40 +50,15 @@ depends: [
   "mirage-net-unix" {with-test}
   "mirage-solo5" {with-test}
   "mirage-net-solo5" {with-test}
-  "conduit-mirage" {with-test}
-  "cohttp-mirage" {with-test}
-  "cohttp-lwt" {with-test}
-  "cohttp" {with-test}
-  "tls-mirage" {with-test}
-  "x509" {with-test}
-  "magic-mime" {with-test}
   "uri" {with-test}
   "ipaddr" {with-test}
   "charrua" {with-test}
   "charrua-server" {with-test}
   "ocaml-crunch" {with-test}
   "dune-build-info" {with-test}
-  "randomconv" {with-test}
   "chamelon" {with-test}
   "hxd" {with-test}
-  "sexplib0" {with-test}
-  "pgx" {with-test}
-  "pgx_lwt" {with-test}
-  "pgx_lwt_mirage" {with-test}
-  "git" {with-test}
-  "git-unix" {with-test}
-  "smart_git" {with-test}
-  "mimic" {with-test}
-  "mimic-happy-eyeballs" {with-test}
-  "paf" {with-test}
-  "paf-cohttp" {with-test}
-  "h2" {with-test}
-  "httpaf" {with-test}
-  "digestif" {with-test}
-  "base64" {with-test}
-  "rresult" {with-test}
-  "bigstringaf" {with-test}
-  "ca-certs-nss" {with-test}
+  "mirage-block-unix" {with-test}
   "mirage-flow" {with-test}
   "odoc" {with-doc}
 ]

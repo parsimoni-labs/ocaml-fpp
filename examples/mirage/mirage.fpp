@@ -135,6 +135,8 @@ port SocketConnect(ipv4Only: bool, ipv6Only: bool, _0: Cidr, _1: Cidr6)
 
 port BlockConnect(name: string)
 
+port BlockUnixConnect(_0: string)
+
 port NetifConnect(_0: string)
 
 port Ipv4Connect(cidr: Cidr)
@@ -391,7 +393,7 @@ module Mirage_block {
 
 passive component Block {
   import Mirage_block.S
-  sync input port connect: BlockConnect
+  sync input port connect: BlockUnixConnect
 }
 
 passive component Ramdisk {
@@ -474,10 +476,12 @@ passive component Kv_rw_mem {
   import Mirage_kv.RW
 }
 
-passive component Chamelon {
-  import Mirage_kv.RW
-  sync input port connect: ChamelonConnect
-  output port block: serial
+module Kv {
+  passive component Make {
+    import Mirage_kv.RW
+    sync input port connect: ChamelonConnect
+    output port block: serial
+  }
 }
 
 passive component Tar_kv_rw {
@@ -988,7 +992,7 @@ instance tcp: Tcp.Flow.Make base id 0
 instance stack: Tcpip_stack_direct.MakeV4V6 base id 0
 instance block: Block base id 0
 instance ramdisk: Ramdisk base id 0
-instance chamelon: Chamelon base id 0
+instance chamelon: Kv.Make base id 0
 instance tar_kv: Tar_mirage.Make_KV_RO base id 0
 instance fat_kv: Fat.KV_RO base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0

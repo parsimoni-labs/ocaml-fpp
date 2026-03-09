@@ -32,7 +32,7 @@
   cmdliner
   git
   git-unix
-  smart_git
+  git-mirage
   digestif
   ptime
   mimic))

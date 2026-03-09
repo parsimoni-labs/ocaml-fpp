@@ -139,5 +139,5 @@ functor implementations, and a concrete module for the bound case.
   File "sm.ml", line 38, characters 30-34:
   38 | module Service = Service.Make(Data)
                                      ^^^^
-  Error: Unbound module Data
+  Error: Unbound module "Data"
   [2]

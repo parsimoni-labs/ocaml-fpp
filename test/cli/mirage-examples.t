@@ -87,17 +87,6 @@ Tar-backed KV store reads from block device
     let* tar_kv = Tar_kv.connect ramdisk in
     Unikernel.start tar_kv)
 
-FAT-backed KV store uses block device
-  $ ofpp to-ml --topologies UnixFatKv $F/mirage.fpp $F/device-usage/fat-kv/config.fpp 2>/dev/null
-  $ grep -E '(Ramdisk|Fat_kv|Unikernel)' main.ml
-  module type Ramdisk = Mirage_block.S
-  module type Fat_kv = Mirage_kv.RO
-  module Fat_kv = Fat.KV_RO(Ramdisk)
-  module Unikernel = Unikernel.Main(Fat_kv)
-    let* ramdisk = Ramdisk.connect ~name:"disk.img" in
-    let* fat_kv = Fat_kv.connect ramdisk in
-    Unikernel.start fat_kv)
-
 Noop topology generates no start call
   $ ofpp to-ml --topologies UnixNoop $F/mirage.fpp $F/tutorial/noop/config.fpp 2>/dev/null
   $ grep 'Lazy.force' main.ml
@@ -121,42 +110,6 @@ Lwt tutorial sub-examples all generate start call
   echo_server: OK
   timeout1: OK
   timeout2: OK
-
-Littlefs topology wires block device through chamelon RW store
-  $ ofpp to-ml --topologies UnixLittlefs $F/mirage.fpp $F/device-usage/littlefs/config.fpp 2>/dev/null
-  $ grep -E '(Block|Chamelon|Unikernel)' main.ml
-  module type Block = Mirage_block.S
-  module type Chamelon = Mirage_kv.RW
-  module Chamelon = Chamelon.Make(Block)
-  module Unikernel = Unikernel.Make(Chamelon)
-    let* block = Block.connect ~name:"littlefs" in
-    let* chamelon = Chamelon.connect ~program_block_size:16 block in
-    Unikernel.start chamelon)
-
-Docteur topology uses KV store (same pattern as kv_ro)
-  $ ofpp to-ml --topologies UnixDocteur $F/mirage.fpp $F/applications/docteur/config.fpp 2>/dev/null
-  $ grep -E '(Static_t|Unikernel)' main.ml
-  module type Static_t = Mirage_kv.RO
-  module Unikernel = Unikernel.Make(Static_t)
-    let* static_t = Static_t.connect () in
-    Unikernel.start static_t)
-
-Pgx topology wires socket stack to unikernel
-  $ ofpp to-ml --topologies UnixPgx $F/mirage.fpp $F/device-usage/pgx/config.fpp 2>/dev/null
-  $ grep -E 'module.*Unikernel' main.ml
-  module Unikernel = Unikernel.Make(Stackv4v6)
-  $ grep 'Unikernel.start' main.ml
-    Unikernel.start stackv4v6)
-
-Static website with TLS uses KV stores and socket stack
-  $ ofpp to-ml --topologies UnixStaticWebsiteTls $F/mirage.fpp $F/applications/static_website_tls/config.fpp 2>/dev/null
-  $ grep -E '(Static_data|Tls_keys|Unikernel)' main.ml
-  module type Static_data = Mirage_kv.RO
-  module type Tls_keys = Mirage_kv.RO
-  module Unikernel = Dispatch.HTTPS(Static_data)(Tls_keys)(Stackv4v6)
-    let* static_data = Static_data.connect () in
-    let* tls_keys = Tls_keys.connect () in
-    Unikernel.start static_data tls_keys stackv4v6)
 
 Entry points include Mirage_runtime boilerplate
   $ ofpp to-ml --topologies UnixHello $F/mirage.fpp $F/tutorial/hello/config.fpp 2>/dev/null

@@ -8,7 +8,7 @@ module Unikernel {
 instance unikernel: Unikernel.Make base id 0
 
 topology UnixLittlefs {
-  instance block(name = "littlefs")
+  instance block(_0 = "littlefs")
   instance chamelon(programBlockSize = 16)
   instance unikernel
 
