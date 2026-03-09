@@ -1608,38 +1608,38 @@ let resolve_port_def tu port_qi =
     tu.Ast.tu_members
 
 (** Build an association list mapping FPP type names to OCaml type strings, from
-    [@ ocaml.type X] annotations on abstract type definitions. *)
+    [@ ocaml.type X] annotations on abstract type, enum, and struct definitions.
+*)
 let build_type_env tu =
+  let extract_ocaml_type pre =
+    List.find_map
+      (fun s ->
+        let s = String.trim s in
+        if starts_with ~prefix:"ocaml.type " s then
+          Some (String.trim (String.sub s 11 (String.length s - 11)))
+        else None)
+      pre
+  in
   let from_members members =
     List.filter_map
       (fun ((pre, node, _) : Ast.module_member Ast.node Ast.annotated) ->
         match node.Ast.data with
         | Ast.Mod_def_abs_type t ->
-            let name = t.abs_name.data in
-            List.find_map
-              (fun s ->
-                let s = String.trim s in
-                if starts_with ~prefix:"ocaml.type " s then
-                  Some
-                    (name, String.trim (String.sub s 11 (String.length s - 11)))
-                else None)
-              pre
+            Option.map
+              (fun ty -> (t.abs_name.data, ty))
+              (extract_ocaml_type pre)
+        | Ast.Mod_def_enum e ->
+            Option.map
+              (fun ty -> (e.enum_name.data, ty))
+              (extract_ocaml_type pre)
+        | Ast.Mod_def_struct s ->
+            Option.map
+              (fun ty -> (s.struct_name.data, ty))
+              (extract_ocaml_type pre)
         | _ -> None)
       members
   in
   from_members tu.Ast.tu_members
-
-(** Extract [@ ocaml.type] annotations from pre-annotations. Returns all
-    matching values — on components these are extra type declarations for the
-    derived sig; on ports they give the raw OCaml val type. *)
-let ocaml_type_annots (pre : string list) =
-  List.filter_map
-    (fun s ->
-      let s = String.trim s in
-      if starts_with ~prefix:"ocaml.type " s then
-        Some (String.trim (String.sub s 11 (String.length s - 11)))
-      else None)
-    pre
 
 (** Extract a single [@ ocaml.name] annotation, if present. *)
 let port_ocaml_name (pre : string list) =
@@ -1661,31 +1661,106 @@ let port_ocaml_type (pre : string list) =
       else None)
     pre
 
-(** Collect interface sync input ports from a component, excluding [connect] and
-    [start] (which are structural, not interface ports). A port is an interface
-    port if it has a typed port reference OR an [@ ocaml.type] annotation.
-    Returns [(val_name, port_type_qi option, ocaml_type option)] triples. *)
-let interface_ports (comp : Ast.def_component) =
-  let method_name =
-    sync_input_port_name comp |> Option.value ~default:"connect"
+(** Resolve an FPP interface reference to its definition. Walks into modules for
+    qualified identifiers (e.g. [Mirage_block.S]). *)
+let resolve_interface tu intf_qi =
+  let find_in_members members name =
+    List.find_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Mod_def_interface i when i.intf_name.data = name -> Some i
+        | _ -> None)
+      members
   in
-  List.filter_map
-    (fun ((pre, node, _) : Ast.component_member Ast.node Ast.annotated) ->
+  match intf_qi with
+  | Ast.Unqualified id -> find_in_members tu.Ast.tu_members id.data
+  | Ast.Qualified _ ->
+      let ids = Ast.qual_ident_to_list intf_qi in
+      let rec walk members = function
+        | [] -> None
+        | [ id ] -> find_in_members members id.Ast.data
+        | id :: rest ->
+            let sub_members =
+              List.find_map
+                (fun ann ->
+                  match (Ast.unannotate ann).Ast.data with
+                  | Ast.Mod_def_module m when m.module_name.data = id.Ast.data
+                    ->
+                      Some m.module_members
+                  | _ -> None)
+                members
+            in
+            Option.bind sub_members (fun m -> walk m rest)
+      in
+      walk tu.Ast.tu_members ids
+
+(** Extract interface ports from an interface definition, recursively resolving
+    [import] directives. Returns the same triple format as [interface_ports]. *)
+let rec collect_interface_ports tu method_name (intf : Ast.def_interface) =
+  List.concat_map
+    (fun ((pre, node, _) : Ast.interface_member Ast.node Ast.annotated) ->
       match node.Ast.data with
-      | Ast.Comp_spec_port_instance (Ast.Port_general p)
+      | Ast.Intf_spec_port_instance (Ast.Port_general p)
         when p.gen_kind = Sync_input ->
           let fpp_name = camel_to_snake p.gen_name.data in
-          if fpp_name = method_name || fpp_name = "connect" then None
+          if fpp_name = method_name || fpp_name = "connect" then []
           else
             let ot = port_ocaml_type pre in
             if p.gen_port <> None || ot <> None then
               let name =
                 match port_ocaml_name pre with Some n -> n | None -> fpp_name
               in
-              Some (name, p.gen_port, ot)
-            else None
-      | _ -> None)
-    comp.comp_members
+              [ (name, p.gen_port, ot) ]
+            else []
+      | Ast.Intf_spec_import qi -> (
+          match resolve_interface tu qi.data with
+          | Some imported -> collect_interface_ports tu method_name imported
+          | None -> [])
+      | _ -> [])
+    intf.intf_members
+
+(** Collect interface sync input ports from a component, excluding [connect] and
+    [start] (which are structural, not interface ports). A port is an interface
+    port if it has a typed port reference OR an [@ ocaml.type] annotation.
+    Resolves [import InterfaceName] to include inherited interface ports.
+    Returns [(val_name, port_type_qi option, ocaml_type option)] triples. *)
+let interface_ports tu (comp : Ast.def_component) =
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  let direct =
+    List.filter_map
+      (fun ((pre, node, _) : Ast.component_member Ast.node Ast.annotated) ->
+        match node.Ast.data with
+        | Ast.Comp_spec_port_instance (Ast.Port_general p)
+          when p.gen_kind = Sync_input ->
+            let fpp_name = camel_to_snake p.gen_name.data in
+            if fpp_name = method_name || fpp_name = "connect" then None
+            else
+              let ot = port_ocaml_type pre in
+              if p.gen_port <> None || ot <> None then
+                let name =
+                  match port_ocaml_name pre with
+                  | Some n -> n
+                  | None -> fpp_name
+                in
+                Some (name, p.gen_port, ot)
+              else None
+        | _ -> None)
+      comp.comp_members
+  in
+  let imported =
+    List.concat_map
+      (fun ann ->
+        match (Ast.unannotate ann).Ast.data with
+        | Ast.Comp_spec_import_interface qi -> (
+            match resolve_interface tu qi.data with
+            | Some intf -> collect_interface_ports tu method_name intf
+            | None -> [])
+        | _ -> [])
+      comp.comp_members
+  in
+  imported @ direct
 
 (** Whether a port is an interface declaration (layer 2). Interface ports have a
     port type that defines a return type or parameters, or an [@ ocaml.type]
@@ -2132,68 +2207,32 @@ let pp_functor_applications ppf all_conns module_break sorted =
             targets))
     sorted
 
-(** Emit [module type X = sig ... end] for components with interface ports. The
-    derived sig uses [type t] (abstract). In the [.mli], the same module type
-    name is bound to the [@ ocaml.sig] path, so OCaml checks compatibility. *)
+(** Emit [module type X = Sig.Path] for components with interface ports and a
+    [sig_path]. Uses the same alias as the [.mli] so that the two files are
+    consistent; the FPP-level port–signature compatibility is validated by the
+    FPP toolchain, not by the OCaml compiler. *)
 let pp_derived_module_types ppf tu module_break non_rt =
-  let type_env = build_type_env tu in
   List.iter
-    (fun ( _inst_name,
+    (fun ( inst_name,
            (ci : Ast.def_component_instance),
            (comp : Ast.def_component) ) ->
       if is_runtime_component comp then ()
       else
-        let ports = interface_ports comp in
+        let ports = interface_ports tu comp in
         let ca =
           parse_ocaml_annotations_with_import
             (component_annots tu ci.inst_component.data)
             comp
         in
-        if ports = [] || ca.sig_path = None then ()
-        else begin
-          let comp_name = constructor_name comp.comp_name.data in
-          module_break ();
-          pf ppf "module type %s = sig" comp_name;
-          (* Extra type declarations from component-level @ ocaml.type *)
-          let comp_pre = component_annots tu ci.inst_component.data in
-          let extra_types = ocaml_type_annots comp_pre in
-          (* Always emit [type t] first, then extra types *)
-          pf ppf "@,  type t";
-          List.iter (fun ty -> pf ppf "@,  %s" ty) extra_types;
-          List.iter
-            (fun (name, port_qi, ocaml_ty) ->
-              match ocaml_ty with
-              | Some ty ->
-                  (* Raw OCaml type from @ ocaml.type on the port *)
-                  pf ppf "@,  val %s : %s" name ty
-              | None -> (
-                  match port_qi with
-                  | Some qi -> (
-                      match resolve_port_def tu qi.Ast.data with
-                      | Some port_def ->
-                          let param_types =
-                            List.map
-                              (fun ann ->
-                                let (fp : Ast.formal_param) =
-                                  (Ast.unannotate ann).Ast.data
-                                in
-                                ocaml_type_of_fpp_type ~type_env fp.fp_type.data)
-                              port_def.port_params
-                          in
-                          let ret =
-                            match port_def.port_return with
-                            | Some tn ->
-                                ocaml_type_of_fpp_type ~type_env tn.data
-                            | None -> "unit"
-                          in
-                          let all = ("t" :: param_types) @ [ ret ] in
-                          pf ppf "@,  val %s : %s" name
-                            (String.concat " -> " all)
-                      | None -> pf ppf "@,  val %s : t -> unit" name)
-                  | None -> pf ppf "@,  val %s : t -> unit" name))
-            ports;
-          pf ppf "@,end"
-        end)
+        match ca.sig_path with
+        | None -> ()
+        | Some sig_path ->
+            if ports = [] then ()
+            else begin
+              let mod_type_name = constructor_name inst_name in
+              module_break ();
+              pf ppf "module type %s = %s" mod_type_name sig_path
+            end)
     non_rt
 
 (** Pretty-print topology body. Module aliases and functor applications are at
@@ -2322,7 +2361,7 @@ let pp_main_entry_multi ppf topos =
     [sig type t val x : t -> T ... end]; otherwise emit [sig type t end]. *)
 let pp_mli_derived_sig tu ppf (comp : Ast.def_component) =
   let type_env = build_type_env tu in
-  let ports = interface_ports comp in
+  let ports = interface_ports tu comp in
   let method_name =
     sync_input_port_name comp |> Option.value ~default:"connect"
   in
@@ -2397,7 +2436,7 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
        [import] or [@ ocaml.sig] and interface ports. Emitted before module
        declarations so that modules can use the short name [module X : X]. *)
     List.iter
-      (fun ( _inst_name,
+      (fun ( inst_name,
              (ci : Ast.def_component_instance),
              (comp : Ast.def_component) ) ->
         if is_runtime_component comp then ()
@@ -2410,12 +2449,12 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
           match ca.sig_path with
           | None -> ()
           | Some sig_path ->
-              let ports = interface_ports comp in
+              let ports = interface_ports tu comp in
               if ports = [] then ()
               else begin
-                let comp_name = constructor_name comp.comp_name.data in
+                let mod_type_name = constructor_name inst_name in
                 module_break ();
-                pf ppf "module type %s = %s" comp_name sig_path
+                pf ppf "module type %s = %s" mod_type_name sig_path
               end)
       non_rt;
     (* Module declarations *)
@@ -2430,7 +2469,7 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
             comp
         in
         let has_sig_module_type =
-          ca.sig_path <> None && interface_ports comp <> []
+          ca.sig_path <> None && interface_ports tu comp <> []
         in
         let targets = target_instances inst_name comp all_conns sorted in
         let comp_path = Ast.qual_ident_to_string ci.inst_component.data in
@@ -2443,9 +2482,8 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
         else
           match (ca.sig_path, targets) with
           | Some _, _ when has_sig_module_type ->
-              let comp_name = constructor_name comp.comp_name.data in
               module_break ();
-              pf ppf "module %s : %s" mod_name comp_name
+              pf ppf "module %s : %s" mod_name (constructor_name inst_name)
           | Some sig_path, _ ->
               module_break ();
               pf ppf "module %s : %s" mod_name sig_path

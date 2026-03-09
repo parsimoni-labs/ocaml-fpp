@@ -59,54 +59,62 @@ type DomainName
 @ ocaml.type Ipaddr.Set.t
 type IpAddrSet
 
+@ ocaml.type Uri.t
+type Uri
+
 @ ══════════════════════════════════════════════════════
 @ Error enums
 @ ══════════════════════════════════════════════════════
 
-@ Block device errors (Mirage_block.error / write_error).
+@ ocaml.type Mirage_block.error
 enum BlockError { Disconnected }
+@ ocaml.type Mirage_block.write_error
 enum BlockWriteError { Disconnected, IsReadOnly }
 
-@ Network interface errors (Mirage_net.error).
+@ ocaml.type Mirage_net.Net.error
 enum NetError { InvalidLength, Disconnected }
 
-@ Ethernet errors.
+@ Ethernet errors (no top-level type; abstract inside S).
 enum EthError { ExceedsMtu }
 
-@ ARP errors.
+@ ocaml.type Arp_packet.error
 enum ArpError { Timeout }
 
-@ IP-layer errors (Tcpip.Ip.error).
+@ ocaml.type Tcpip.Ip.error
 enum IpError { NoRoute, WouldFragment }
 
-@ ICMP errors.
+@ ICMP errors (abstract inside S).
 enum IcmpError { Unreach }
 
-@ TCP errors.
+@ ocaml.type Tcpip.Tcp.error
 enum TcpError { Timeout, Refused }
 
-@ Flow write error (Mirage_flow.write_error).
+@ ocaml.type Mirage_flow.write_error
 enum FlowWriteError { Closed }
 
-@ Key-value store errors (Mirage_kv.error / write_error).
+@ Flow shutdown direction (Mirage_flow).
+enum FlowShutdownMode { Read, Write, ReadWrite }
+
+@ ocaml.type Mirage_kv.error
 enum KvError { NotFound, DictionaryExpected, ValueExpected }
+@ ocaml.type Mirage_kv.write_error
 enum KvWriteError { NotFound, NoSpace, AlreadyPresent }
 
-@ DNS client errors.
+@ DNS client errors (abstract inside S).
 enum DnsError { Msg }
 
 @ ══════════════════════════════════════════════════════
 @ Info and config structs
 @ ══════════════════════════════════════════════════════
 
-@ Block device metadata (Mirage_block.info).
+@ ocaml.type Mirage_block.info
 struct BlockInfo {
   readWrite: bool,
   sectorSize: U32,
   sizeSectors: U64
 }
 
-@ Network interface statistics (Mirage_net.stats).
+@ ocaml.type Mirage_net.stats
 struct NetStats {
   rxBytes: U64,
   rxPkts: U32,
@@ -204,12 +212,18 @@ port DnsClientConnect(conf: DnsClientConf)
 @ Return type = data struct/type for queries.
 @ No return type for fire-and-forget.
 
+@ ── Universal operations ─────────────────────────────────
+@ Mirage_device.S: every device has disconnect.
+
+port Disconnect
+
 @ ── Flow operations ───────────────────────────────────
 @ Mirage_flow.S: reliable byte stream abstraction.
 
 port FlowRead -> Buffer
 port FlowWrite(_0: Buffer) -> FlowWriteError
 port FlowClose
+port FlowShutdown(mode: FlowShutdownMode) -> FlowWriteError
 
 @ ── Block operations ──────────────────────────────────
 @ Mirage_block.S: sector-addressed block device.
@@ -226,6 +240,8 @@ port NetMac -> Macaddr
 port NetMtu -> U32
 port NetGetStats -> NetStats
 port NetResetStats
+port NetListen
+port NetDisconnect
 
 @ ── Ethernet operations ───────────────────────────────
 @ Ethernet.S: ethernet frame layer.
@@ -233,6 +249,8 @@ port NetResetStats
 port EthWrite(dst: Macaddr, proto: EthProto, _0: Buffer) -> EthError
 port EthMac -> Macaddr
 port EthMtu -> U32
+port EthInput(_0: Buffer)
+port EthDisconnect
 
 @ ── ARP operations ────────────────────────────────────
 @ Arp.S: IPv4 address resolution.
@@ -313,6 +331,56 @@ port DnsGethostbyname6(name: DomainName) -> DnsError
 port HeConnect(host: string, $port: U16) -> DnsError
 port HeConnectIp(dst: IpAddr, $port: U16) -> DnsError
 
+@ ── RNG operations ──────────────────────────────────────
+@ Mirage_crypto_rng: cryptographic randomness.
+
+port RngGenerate(len: U32) -> Buffer
+
+@ ── Vnetif backend operations ───────────────────────────
+@ Vnetif.BACKEND: virtual network interface backend.
+
+port VnetifRegister -> Macaddr
+port VnetifUnregister(mac: Macaddr)
+port VnetifWrite(dst: Macaddr, _0: Buffer)
+
+@ ── Conduit operations ──────────────────────────────────
+@ Conduit_mirage: protocol-agnostic connection establishment.
+@ Established connections use Mirage_flow.S for data transfer.
+
+port ConduitResolve
+
+@ ── Mimic operations ────────────────────────────────────
+@ Mimic: protocol multiplexer (TCP, TLS, HTTP/2).
+
+port MimicResolve -> DnsError
+
+@ ── HTTP operations ─────────────────────────────────────
+@ Cohttp/Paf/Http_mirage_client: HTTP request/response.
+
+port HttpRequest(meth: string, uri: string, body: Buffer) -> Buffer
+port HttpListen
+
+@ ── Syslog operations ──────────────────────────────────
+@ Syslog: remote structured logging via UDP/TCP/TLS.
+
+port SyslogSend(msg: string)
+
+@ ── Git operations ─────────────────────────────────────
+@ Git_mirage: git smart transport (fetch/push).
+
+port GitFetch(uri: string) -> DnsError
+port GitPush(uri: string) -> DnsError
+
+@ ── Resolver operations ────────────────────────────────
+@ Resolver_mirage: hostname/service resolution.
+
+port ResolverResolve(host: string)
+
+@ ── Monitoring operations ──────────────────────────────
+@ Monitoring: metrics reporting.
+
+port MonitoringEnable(tags: string)
+
 @ ══════════════════════════════════════════════════════
 @ Flow abstraction
 @ ══════════════════════════════════════════════════════
@@ -323,6 +391,7 @@ module Mirage_flow {
     sync input port read: FlowRead
     sync input port write: FlowWrite
     sync input port close: FlowClose
+    sync input port shutdown: FlowShutdown
   }
 }
 
@@ -356,12 +425,20 @@ module Mirage_mtime {
 
 module Mirage_crypto_rng {
   @ Cryptographic random number generator.
-  interface S { sync input port connect: serial }
+  interface S {
+    sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port generate: RngGenerate
+  }
 }
 
 module Mirage_logs {
   @ Logging infrastructure.
-  interface S { sync input port connect: serial }
+  @ Minimal interface: setup installs the reporter.
+  interface S {
+    sync input port connect: serial
+    sync input port disconnect: Disconnect
+  }
 }
 
 @ ══════════════════════════════════════════════════════
@@ -372,6 +449,7 @@ module Mirage_block {
   @ Sector-addressed block device.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port getInfo: BlockGetInfo
     sync input port read: BlockRead
     sync input port write: BlockWrite
@@ -407,6 +485,7 @@ module Mirage_kv {
   @ Read-only key-value store.
   interface RO {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port $get: KvGet
     sync input port getPartial: KvGetPartial
     sync input port list: KvList
@@ -496,7 +575,9 @@ module Mirage_net {
   @ Raw network interface (L2).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port write: NetWrite
+    sync input port listen: NetListen
     sync input port mac: NetMac
     sync input port mtu: NetMtu
     sync input port getStats: NetGetStats
@@ -508,6 +589,10 @@ module Mirage_net {
 module Vnetif {
   interface BACKEND {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port register: VnetifRegister
+    sync input port unregister: VnetifUnregister
+    sync input port write: VnetifWrite
   }
 
   passive component Make {
@@ -534,7 +619,9 @@ module Ethernet {
   @ Ethernet frame layer (L2).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port write: EthWrite
+    sync input port $input: EthInput
     sync input port mac: EthMac
     sync input port mtu: EthMtu
   }
@@ -553,6 +640,7 @@ module Arp {
   @ IPv4 address resolution protocol.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port query: ArpQuery
     sync input port addIp: ArpAddIp
     sync input port removeIp: ArpRemoveIp
@@ -573,6 +661,7 @@ module Icmpv4 {
   @ ICMPv4 protocol.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port write: IcmpWrite
     sync input port recv: IcmpRecv
   }
@@ -592,6 +681,7 @@ module Tcpip {
     @ Connectionless datagram transport.
     interface S {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
       sync input port write: UdpWrite
       sync input port listen: UdpListen
       sync input port unlisten: UdpUnlisten
@@ -602,6 +692,7 @@ module Tcpip {
     @ Flow operations (read/write/close) apply to individual connections.
     interface S {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
       sync input port createConnection: TcpCreateConnection
       sync input port listen: TcpListen
       sync input port unlisten: TcpUnlisten
@@ -611,6 +702,7 @@ module Tcpip {
     @ IP packet layer (v4, v6, or dual-stack).
     interface S {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
       sync input port write: IpWrite
       sync input port src: IpSrc
       sync input port mtu: IpMtu
@@ -621,6 +713,7 @@ module Tcpip {
     @ Provides sub-module accessors: udp, tcp, ip.
     interface V4V6 {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
       sync input port listen: StackListen
     }
   }
@@ -707,8 +800,12 @@ module Stackv4v6 {
 
 module Conduit_mirage {
   @ Protocol-agnostic network connection.
+  @ Established connections use Mirage_flow.S for data transfer.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port resolve: ConduitResolve
+    import Mirage_flow.S
   }
 
   passive component TLS {
@@ -733,6 +830,7 @@ module Happy_eyeballs_mirage {
   @ RFC 8305 dual-stack connection establishment.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port heConnect: HeConnect
     sync input port heConnectIp: HeConnectIp
   }
@@ -748,6 +846,7 @@ module Dns_client_mirage {
   @ DNS client (recursive resolver).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
     sync input port getaddrinfo: DnsGetaddrinfo
     sync input port gethostbyname: DnsGethostbyname
     sync input port gethostbyname6: DnsGethostbyname6
@@ -769,8 +868,11 @@ module Dns_resolver {
 @ ══════════════════════════════════════════════════════
 
 module Mimic {
+  @ Protocol multiplexer (TCP, TLS, HTTP/2).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port resolve: MimicResolve
   }
 
   @ mimic_happy_eyeballs : stackv4v6 -> happy_eyeballs -> dns_client -> mimic
@@ -788,8 +890,11 @@ module Mimic {
 
 module Cohttp_mirage {
   module Server {
+    @ HTTP server (Cohttp over Conduit).
     interface S {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
+      sync input port listen: HttpListen
     }
 
     passive component Make {
@@ -799,8 +904,11 @@ module Cohttp_mirage {
   }
 
   module Client {
+    @ HTTP client (Cohttp over Conduit).
     interface S {
       sync input port connect: serial
+      sync input port disconnect: Disconnect
+      sync input port $request: HttpRequest
     }
 
     @ cohttp_client : resolver -> conduit -> http_client
@@ -813,8 +921,11 @@ module Cohttp_mirage {
 }
 
 module Paf_mirage {
+  @ HTTP server (h2/httpaf over TCP).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port listen: HttpListen
   }
 
   @ paf_server : ~port:int runtime_arg -> tcpv4v6 -> http_server
@@ -826,8 +937,11 @@ module Paf_mirage {
 }
 
 module Http_mirage_client {
+  @ HTTP client (ALPN-negotiated, supports h2 and HTTP/1.1).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port $request: HttpRequest
   }
 
   @ paf_client : tcpv4v6 -> mimic -> alpn_client
@@ -843,8 +957,11 @@ module Http_mirage_client {
 @ ══════════════════════════════════════════════════════
 
 module Syslog {
+  @ Remote structured logging.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port send: SyslogSend
   }
 
   @ syslog_udp : stackv4v6 -> syslog
@@ -872,8 +989,12 @@ module Syslog {
 @ ══════════════════════════════════════════════════════
 
 module Git_mirage {
+  @ Git smart transport (fetch/push over TCP/SSH/HTTP).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port fetch: GitFetch
+    sync input port push: GitPush
   }
 
   @ git_tcp : tcpv4v6 -> mimic -> git_client
@@ -912,8 +1033,11 @@ module Git_mirage {
 @ ══════════════════════════════════════════════════════
 
 module Resolver_mirage {
+  @ Hostname/service resolution (legacy conduit-based).
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port resolve: ResolverResolve
   }
 
   @ resolver_dns : ?nameservers -> stackv4v6 -> resolver
@@ -947,8 +1071,11 @@ module Dhcp_ipv4 {
 @ ══════════════════════════════════════════════════════
 
 module Monitoring {
+  @ Metrics reporting.
   interface S {
     sync input port connect: serial
+    sync input port disconnect: Disconnect
+    sync input port enable: MonitoringEnable
   }
 
   @ monitoring : stackv4v6 -> job
