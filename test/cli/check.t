@@ -51,14 +51,14 @@ Verbose output with a component
   ✓ comp.fpp (1 component, 0 state machines, 0 topologies)
 
 Missing file
-  $ ofpp check nonexistent.fpp 2>&1
+  $ (r=$(ofpp check nonexistent.fpp 2>&1); rc=$?; printf '%s\n' "$r" | sed "s/'//g"; exit $rc)
   Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
          [OPTION]… FILE…
   ofpp: FILE… arguments: no nonexistent.fpp file or directory
   [1]
 
 No arguments
-  $ ofpp check 2>&1
+  $ (r=$(ofpp check 2>&1); rc=$?; printf '%s\n' "$r" | sed "s/'//g"; exit $rc)
   Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
          [OPTION]… FILE…
   ofpp: required argument FILE is missing

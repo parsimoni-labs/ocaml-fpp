@@ -482,8 +482,8 @@ Disabled analysis not promoted by --error (deadlock stays off)
 
 
 Unknown analysis in spec
-  $ ofpp check -w bogus ok.fpp 2>&1
+  $ (r=$(ofpp check -w bogus ok.fpp 2>&1); rc=$?; printf '%s\n' "$r" | sed "s/'//g"; exit $rc)
   Usage: ofpp check [--help] [--error=SPEC] [--verbose] [--warning=SPEC]
          [OPTION]… FILE…
-  ofpp: option -w: unknown analysis 'bogus'
+  ofpp: option -w: unknown analysis bogus
   [1]
