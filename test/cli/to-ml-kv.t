@@ -1,7 +1,7 @@
 KV store topology variants: compile and run all backend patterns.
 
 Setup
-  $ compile() { ocamlopt -w -23-32-26-27 sm.ml -o sm.exe 2>&1; }
+  $ compile() { local out; out=$(ocamlopt -w -23-32-26-27 sm.ml -o sm.exe 2>&1); local rc=$?; [ -n "$out" ] && printf '%s\n' "$out" | sed 's/Unbound module "\([^"]*\)"/Unbound module \1/g'; return $rc; }
   $ run() { ./sm.exe 2>&1; }
 
 Create FPP with four KV topology variants: leaf parameter, bound module,
@@ -139,5 +139,5 @@ functor implementations, and a concrete module for the bound case.
   File "sm.ml", line 38, characters 30-34:
   38 | module Service = Service.Make(Data)
                                      ^^^^
-  Error: Unbound module "Data"
+  Error: Unbound module Data
   [2]

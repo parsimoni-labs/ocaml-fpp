@@ -35,13 +35,16 @@ jobs:
         run: opam exec -- dune build
 
       - name: Unit tests
-        run: opam exec -- dune runtest test/
+        run: opam exec -- dune exec -- test/test.exe
 
       - name: Spec tests
         run: opam exec -- dune runtest test/spec/
 
       - name: CLI tests
         run: opam exec -- dune runtest test/cli/
+
+      - name: Upstream tests
+        run: opam exec -- dune runtest test/upstream/
 
       - name: Mirage examples
         run: opam exec -- dune runtest examples/mirage/
