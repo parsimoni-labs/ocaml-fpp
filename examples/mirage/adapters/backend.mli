@@ -5,3 +5,4 @@ include module type of struct
 end
 
 val connect : unit -> t Lwt.t
+(** [connect ()] creates a new in-memory Ethernet backend. *)

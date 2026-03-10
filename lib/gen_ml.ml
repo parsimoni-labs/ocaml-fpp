@@ -11,12 +11,12 @@
 
 (* ── Target platform ──────────────────────────────────────────────── *)
 
-type target = Unix | MacOSX | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+type target = Unix | Macosx | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
 
 let target_of_string s =
   match String.lowercase_ascii s with
   | "unix" -> Some Unix
-  | "macosx" | "macos" -> Some MacOSX
+  | "macosx" | "macos" -> Some Macosx
   | "xen" -> Some Xen
   | "qubes" -> Some Qubes
   | "hvt" -> Some Hvt
@@ -27,7 +27,7 @@ let target_of_string s =
   | _ -> None
 
 let os_module_of_target = function
-  | Unix | MacOSX -> "Unix_os"
+  | Unix | Macosx -> "Unix_os"
   | Xen | Qubes -> "Xen_os"
   | Hvt | Spt | Virtio | Muen | Genode -> "Solo5_os"
 

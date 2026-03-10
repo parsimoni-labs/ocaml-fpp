@@ -628,13 +628,13 @@ let target_t =
   let parse s =
     match Fpp.Gen_ml.target_of_string s with
     | Some t -> Ok t
-    | None -> Error (`Msg (Fmt.str "unknown target %S" s))
+    | None -> Fmt.error_msg "unknown target %S" s
   in
   let pp ppf t =
     Fmt.string ppf
       (match t with
       | Fpp.Gen_ml.Unix -> "unix"
-      | MacOSX -> "macosx"
+      | Macosx -> "macosx"
       | Xen -> "xen"
       | Qubes -> "qubes"
       | Hvt -> "hvt"

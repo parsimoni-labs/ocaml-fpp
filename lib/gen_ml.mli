@@ -10,7 +10,7 @@
 
 (** {1 Target platform} *)
 
-type target = Unix | MacOSX | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+type target = Unix | Macosx | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
 
 val target_of_string : string -> target option
 (** Parse a target name (case-insensitive). *)
@@ -63,9 +63,10 @@ val pp_entry_point :
     via the appropriate OS main loop for [target]. *)
 
 val pp_topology_module_types : Ast.translation_unit -> Ast.def_topology Fmt.t
-(** [pp_topology_module_types tu ppf topo] emits [module type X = sig ... end]
-    declarations for components that have typed interface ports. The sig path is
-    derived from the component's [import] declaration. *)
+(** [pp_topology_module_types tu] is a formatter that emits
+    [module type X = sig ... end] declarations for components that have typed
+    interface ports. The sig path is derived from the component's [import]
+    declaration. *)
 
 (** {2 .mli Generation} *)
 
