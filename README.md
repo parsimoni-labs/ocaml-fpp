@@ -356,7 +356,7 @@ dune exec -- ofpp check test/upstream/component/*.fpp
 dune runtest
 ```
 
-This runs over 1390 tests: unit tests covering core error checks,
+This runs 1400+ tests: unit tests covering core error checks,
 warning-level analyses, DOT rendering, code generation, and environment
 construction, plus upstream file parse and semantic check tests across all
 categories, and a cram test suite for the CLI including compile tests for

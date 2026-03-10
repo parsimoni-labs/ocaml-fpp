@@ -1,5 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 # Compare hand-written .ml/.mli files in examples/mirage against mirage-skeleton.
+# Also checks that every example directory has a run.t and a dune file.
 # Usage: ./scripts/diff-mirage-skeleton.sh [--quiet]
 #
 # Skips generated files (main.ml, main.mli, certs_data.*, keys_data.*)
@@ -54,16 +55,45 @@ for f in $(find "$EXAMPLES" \( -name '*.ml' -o -name '*.mli' \) | sort); do
   fi
 
   checked=$((checked + 1))
-  if ! diff -q "$skel" "$f" >/dev/null 2>&1; then
+  # Normalise formatting before comparing to ignore ocamlformat differences
+  case "$base" in
+    *.mli) kind=--intf ;; *) kind=--impl ;;
+  esac
+  fmt_skel=$(ocamlformat --disable-conf-files --enable-outside-detected-project "$kind" "$skel" 2>/dev/null) || fmt_skel=$(cat "$skel")
+  fmt_f=$(ocamlformat --disable-conf-files --enable-outside-detected-project "$kind" "$f" 2>/dev/null) || fmt_f=$(cat "$f")
+  if [ "$fmt_skel" != "$fmt_f" ]; then
     diffs=$((diffs + 1))
     echo "DIFF     $rel"
     if [ "$quiet" = false ]; then
-      diff -u "$skel" "$f" || true
+      diff -u <(echo "$fmt_skel") <(echo "$fmt_f") || true
       echo
+    fi
+  fi
+done
+
+# Check that every example directory (containing config.fpp) has run.t and dune
+no_runt=0
+no_dune=0
+for cfg in $(find "$EXAMPLES" -name 'config.fpp' | sort); do
+  dir=$(dirname "$cfg")
+  rel="${dir#$EXAMPLES/}"
+
+  if [ ! -f "$dir/run.t" ]; then
+    no_runt=$((no_runt + 1))
+    if [ "$quiet" = false ]; then
+      echo "NO run.t  $rel"
+    fi
+  fi
+
+  if [ ! -f "$dir/dune" ]; then
+    no_dune=$((no_dune + 1))
+    if [ "$quiet" = false ]; then
+      echo "NO dune   $rel"
     fi
   fi
 done
 
 echo "---"
 echo "checked: $checked  diffs: $diffs  missing: $missing"
-exit $diffs
+echo "examples missing run.t: $no_runt  missing dune: $no_dune"
+exit $((diffs + no_runt + no_dune))
