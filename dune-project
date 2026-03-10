@@ -29,7 +29,7 @@
   jsont
   menhir
   menhirLib
-  cmdliner
+  (cmdliner (>= 2.1.0))
   logs
   tty
   conf-graphviz
