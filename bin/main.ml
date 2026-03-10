@@ -634,7 +634,7 @@ let target_t =
     Fmt.string ppf
       (match t with
       | Fpp.Gen_ml.Unix -> "unix"
-      | Macosx -> "macosx"
+      | MacOS -> "macosx"
       | Xen -> "xen"
       | Qubes -> "qubes"
       | Hvt -> "hvt"

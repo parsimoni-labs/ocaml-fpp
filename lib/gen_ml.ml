@@ -11,12 +11,12 @@
 
 (* ── Target platform ──────────────────────────────────────────────── *)
 
-type target = Unix | Macosx | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+type target = Unix | MacOS | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
 
 let target_of_string s =
   match String.lowercase_ascii s with
   | "unix" -> Some Unix
-  | "macosx" | "macos" -> Some Macosx
+  | "macosx" | "macos" -> Some MacOS
   | "xen" -> Some Xen
   | "qubes" -> Some Qubes
   | "hvt" -> Some Hvt
@@ -27,7 +27,7 @@ let target_of_string s =
   | _ -> None
 
 let os_module_of_target = function
-  | Unix | Macosx -> "Unix_os"
+  | Unix | MacOS -> "Unix_os"
   | Xen | Qubes -> "Xen_os"
   | Hvt | Spt | Virtio | Muen | Genode -> "Solo5_os"
 
@@ -1989,40 +1989,20 @@ let pp_runtime_labelled_args ppf _inst_annots inst_name args connections =
         | None -> pf ppf " ~%s" arg)
     args
 
-(** Emit the connect expression for a single instance: [Mod.method args]. Does
-    not emit the [let*] prefix or [in] suffix — those are added by the caller.
-*)
-let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
-    (comp : Ast.def_component) connections sorted inst_annots =
-  let inst_var = sanitize_ident inst_name in
-  let mod_name = constructor_name inst_name in
-  let method_name =
-    sync_input_port_name comp |> Option.value ~default:"connect"
-  in
-  let targets =
-    target_instances ~runtime_only:true inst_name comp connections sorted
-  in
-  let rt_args = runtime_labelled_args inst_name sorted connections in
-  let params = component_params comp in
-  let port_params = connect_port_params tu comp in
-  let config_ports = unconnected_input_ports tu inst_name comp connections in
-  (* Exclude the sync input port from config_ports — it determines the method
-     name, not a labeled argument. *)
-  let config_ports =
-    List.filter
-      (fun (p : Ast.port_instance_general) ->
-        camel_to_snake p.gen_name.data <> method_name)
-      config_ports
-  in
-  pf ppf "%s.%s" mod_name method_name;
-  pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
-  let has_any_arg = rt_args <> [] in
-  let has_any_arg = ref has_any_arg in
-  (* Labeled params before targets *)
-  let positional_params = ref [] in
+(** Extract the base ID string from a component instance. *)
+let instance_base_id (ci : Ast.def_component_instance) =
+  ocaml_literal_of_expr ci.inst_base_id.data
+
+(** Binding name for a param: [{param_name}_{base_id}]. *)
+let param_binding_name ~base_id param_name = param_name ^ "_" ^ base_id
+
+(** Emit component params as labelled or positional arguments. *)
+let pp_component_params ppf has_any_arg positional_params ~base_id inst_annots
+    inst_name ci params =
   List.iteri
     (fun i ((p : Ast.spec_param), positional, optional) ->
       let param_name = camel_to_snake p.param_name.data in
+      let binding = param_binding_name ~base_id param_name in
       let prefix = if optional then "?" else "~" in
       match resolve_param_value inst_annots inst_name ci i p with
       | Some code ->
@@ -2032,19 +2012,17 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
               (fun () -> pf ppf " %s" code) :: !positional_params
           else pf ppf " %s%s:%s" prefix param_name code
       | None ->
-          if optional then () (* omit unresolved optional params *)
+          if optional then ()
           else (
             has_any_arg := true;
             if positional then
               positional_params :=
-                (fun () -> pf ppf " (%s__%s ())" inst_var param_name)
-                :: !positional_params
-            else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
-    params;
-  (* Port params expanded through struct types.  Struct-expanded fields are
-     labeled; [_N]-prefixed params are positional (prefix stripped); other
-     params are labeled.  Optional params (struct fields with defaults) are
-     omitted when unresolved.  Use [external param] for runtime config. *)
+                (fun () -> pf ppf " (%s ())" binding) :: !positional_params
+            else pf ppf " ~%s:(%s ())" param_name binding))
+    params
+
+(** Emit port params expanded through struct types. *)
+let pp_port_params ppf tu has_any_arg inst_annots inst_name port_params =
   let expanded_params = expand_port_params tu port_params in
   List.iter
     (fun (ep : effective_param) ->
@@ -2066,7 +2044,40 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
           if ep.ep_labeled then pf ppf " ~%s:%s" param_name code
           else pf ppf " %s" code
       | None -> ())
-    expanded_params;
+    expanded_params
+
+(** Emit the connect expression for a single instance: [Mod.method args]. Does
+    not emit the [let*] prefix or [in] suffix — those are added by the caller.
+*)
+let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
+    (comp : Ast.def_component) connections sorted inst_annots =
+  let mod_name = constructor_name inst_name in
+  let method_name =
+    sync_input_port_name comp |> Option.value ~default:"connect"
+  in
+  let targets =
+    target_instances ~runtime_only:true inst_name comp connections sorted
+  in
+  let rt_args = runtime_labelled_args inst_name sorted connections in
+  let params = component_params comp in
+  let port_params = connect_port_params tu comp in
+  let config_ports = unconnected_input_ports tu inst_name comp connections in
+  (* Exclude the sync input port from config_ports — it determines the method
+     name, not a labeled argument. *)
+  let config_ports =
+    List.filter
+      (fun (p : Ast.port_instance_general) ->
+        camel_to_snake p.gen_name.data <> method_name)
+      config_ports
+  in
+  pf ppf "%s.%s" mod_name method_name;
+  pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
+  let has_any_arg = ref (rt_args <> []) in
+  let positional_params = ref [] in
+  let base_id = instance_base_id ci in
+  pp_component_params ppf has_any_arg positional_params ~base_id inst_annots
+    inst_name ci params;
+  pp_port_params ppf tu has_any_arg inst_annots inst_name port_params;
   List.iter
     (fun (p : Ast.port_instance_general) ->
       has_any_arg := true;
@@ -2077,9 +2088,51 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
       has_any_arg := true;
       pf ppf " %s" (sanitize_ident target_inst))
     targets;
-  (* Positional params after targets *)
   List.iter (fun f -> f ()) (List.rev !positional_params);
   if not !has_any_arg then pf ppf " ()"
+
+(** Compute the set of instance names referenced by later instances or exports.
+*)
+let group_used_vars exports insts all_conns sorted =
+  let tbl = Hashtbl.create 8 in
+  List.iter (fun e -> Hashtbl.replace tbl e ()) exports;
+  List.iter
+    (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+      let targets =
+        target_instances ~runtime_only:true inst_name comp all_conns sorted
+      in
+      List.iter (fun (t, _) -> Hashtbl.replace tbl t ()) targets)
+    insts;
+  tbl
+
+(** Emit the let* chain for instances in a multi-instance group. *)
+let pp_group_let_chain ppf tu n need_tuple_return used_vars insts all_conns
+    sorted inst_annots exports =
+  List.iteri
+    (fun i (inst_name, ci, (comp : Ast.def_component)) ->
+      let is_last = i = n - 1 in
+      let sync = is_sync_return_method comp in
+      let var =
+        let v = sanitize_ident inst_name in
+        if Hashtbl.mem used_vars inst_name then v else "_" ^ v
+      in
+      if is_last && not need_tuple_return then (
+        pf ppf "@,  ";
+        if sync then pf ppf "Lwt.return (";
+        pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+        if sync then pf ppf ")")
+      else if sync then (
+        pf ppf "@,  let %s = " var;
+        pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+        pf ppf " in")
+      else (
+        pf ppf "@,  let* %s = " var;
+        pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+        pf ppf " in"))
+    insts;
+  if need_tuple_return then
+    pf ppf "@,  Lwt.return (%s)"
+      (String.concat ", " (List.map sanitize_ident exports))
 
 (** Emit a lazy group binding. [prev_group] is the name and exports of the
     previous group (if any). [exports] lists instance names this group must
@@ -2090,7 +2143,6 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
   let n = List.length insts in
   let has_cross_deps = prev_group <> None in
   let needs_lwt_syntax = n > 1 || has_cross_deps in
-  (* Determine if we need a tuple return *)
   let last_inst_name =
     match List.rev insts with (name, _, _) :: _ -> name | [] -> ""
   in
@@ -2101,7 +2153,6 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
     | _ -> true
   in
   if not needs_lwt_syntax then
-    (* Single instance, no cross-deps: one-liner *)
     match insts with
     | [ (inst_name, ci, comp) ] ->
         let sync = is_sync_return_method comp in
@@ -2113,7 +2164,6 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
     | _ -> ()
   else (
     pf ppf "@,@,let %s = lazy (" group_name;
-    (* Cross-group deps from previous group *)
     (match prev_group with
     | None -> ()
     | Some (prev_name, prev_exports) -> (
@@ -2125,52 +2175,15 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
             let names = List.map sanitize_ident prev_exports in
             pf ppf "@,  let* (%s) = Lazy.force %s in" (String.concat ", " names)
               prev_name));
-    (* Collect all instance names that are referenced as arguments by later
-       instances in this group, or appear in the exports tuple. *)
-    let used_vars =
-      let tbl = Hashtbl.create 8 in
-      List.iter (fun e -> Hashtbl.replace tbl e ()) exports;
-      List.iter
-        (fun (inst_name, _ci, (comp : Ast.def_component)) ->
-          let targets =
-            target_instances ~runtime_only:true inst_name comp all_conns sorted
-          in
-          List.iter (fun (t, _) -> Hashtbl.replace tbl t ()) targets)
-        insts;
-      tbl
-    in
-    (* let* chain for each instance *)
-    List.iteri
-      (fun i (inst_name, ci, (comp : Ast.def_component)) ->
-        let is_last = i = n - 1 in
-        let sync = is_sync_return_method comp in
-        let var =
-          let v = sanitize_ident inst_name in
-          if Hashtbl.mem used_vars inst_name then v else "_" ^ v
-        in
-        if is_last && not need_tuple_return then (
-          pf ppf "@,  ";
-          if sync then pf ppf "Lwt.return (";
-          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
-          if sync then pf ppf ")")
-        else if sync then (
-          pf ppf "@,  let %s = " var;
-          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
-          pf ppf " in")
-        else (
-          pf ppf "@,  let* %s = " var;
-          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
-          pf ppf " in"))
-      insts;
-    (* Tuple return for multi-export *)
-    if need_tuple_return then
-      pf ppf "@,  Lwt.return (%s)"
-        (String.concat ", " (List.map sanitize_ident exports));
+    let used_vars = group_used_vars exports insts all_conns sorted in
+    pp_group_let_chain ppf tu n need_tuple_return used_vars insts all_conns
+      sorted inst_annots exports;
     pf ppf ")")
 
 (** Emit a single Cmdliner term registration for one unresolved param. *)
-let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
+let pp_one_cmdliner_term ppf ~base_id (p : Ast.spec_param) =
   let param_name = camel_to_snake p.param_name.data in
+  let binding = param_binding_name ~base_id param_name in
   let is_bool_flag =
     p.param_type.data = Type_bool
     &&
@@ -2182,7 +2195,7 @@ let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
   let is_int64 =
     match p.param_type.data with Type_int (I64 | U64) -> true | _ -> false
   in
-  pf ppf "@,let %s__%s =" inst_var param_name;
+  pf ppf "@,let %s =" binding;
   let flag_name = String.map (fun c -> if c = '_' then '-' else c) param_name in
   pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name flag_name;
   if is_bool_flag then
@@ -2202,15 +2215,17 @@ let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
 
 (** Emit a single registration for an [external param]: reference the module's
     own Cmdliner term via [Mirage_runtime.register_arg @@ Module.param]. *)
-let pp_one_external_param ppf ~inst_var ~comp_path (p : Ast.spec_param) =
+let pp_one_external_param ppf ~base_id ~inst_name ~comp_path
+    (p : Ast.spec_param) =
   let param_name = camel_to_snake p.param_name.data in
+  let binding = param_binding_name ~base_id param_name in
   let mod_prefix =
     match String.rindex_opt comp_path '.' with
     | Some i -> String.sub comp_path 0 i
-    | None -> constructor_name inst_var
+    | None -> constructor_name inst_name
   in
-  pf ppf "@\nlet %s__%s = Mirage_runtime.register_arg @@@@ %s.%s" inst_var
-    param_name mod_prefix param_name
+  pf ppf "@\nlet %s = Mirage_runtime.register_arg @@@@ %s.%s" binding mod_prefix
+    param_name
 
 (** Emit [external param] registrations (must appear before module
     aliases/functor applications to avoid name shadowing). *)
@@ -2220,7 +2235,7 @@ let pp_external_param_terms ppf inst_annots sorted =
       if is_runtime_component comp then ()
       else begin
         let params = component_params comp in
-        let inst_var = sanitize_ident inst_name in
+        let base_id = instance_base_id ci in
         let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
         List.iteri
           (fun i ((p : Ast.spec_param), _positional, optional) ->
@@ -2228,7 +2243,7 @@ let pp_external_param_terms ppf inst_annots sorted =
               p.param_external
               && resolve_param_value inst_annots inst_name ci i p = None
               && not optional
-            then pp_one_external_param ppf ~inst_var ~comp_path p)
+            then pp_one_external_param ppf ~base_id ~inst_name ~comp_path p)
           params
       end)
     sorted
@@ -2241,14 +2256,14 @@ let pp_param_cmdliner_terms ppf _tu inst_annots sorted =
       if is_runtime_component comp then ()
       else begin
         let params = component_params comp in
-        let inst_var = sanitize_ident inst_name in
+        let base_id = instance_base_id ci in
         List.iteri
           (fun i ((p : Ast.spec_param), _positional, optional) ->
             if
               (not p.param_external)
               && resolve_param_value inst_annots inst_name ci i p = None
               && not optional
-            then pp_one_cmdliner_term ppf ~inst_var p)
+            then pp_one_cmdliner_term ppf ~base_id p)
           params
       end)
     sorted
@@ -2489,6 +2504,89 @@ let mli_return_type inst_name (comp : Ast.def_component) =
   in
   if method_name = "start" then "unit" else constructor_name inst_name ^ ".t"
 
+(** Emit [module type X = Sig.S] for components with [import] and interface
+    ports. *)
+let pp_mli_module_types ppf tu module_break non_rt =
+  List.iter
+    (fun ( inst_name,
+           (_ci : Ast.def_component_instance),
+           (comp : Ast.def_component) ) ->
+      if is_runtime_component comp then ()
+      else
+        match import_sig_path comp with
+        | None -> ()
+        | Some sig_path ->
+            if interface_ports tu comp <> [] then begin
+              module_break ();
+              pf ppf "module type %s = %s" (constructor_name inst_name) sig_path
+            end)
+    non_rt
+
+(** Emit module declarations for non-runtime instances. *)
+let pp_mli_module_decls ppf tu module_break non_rt all_conns sorted =
+  List.iter
+    (fun ( inst_name,
+           (ci : Ast.def_component_instance),
+           (comp : Ast.def_component) ) ->
+      let mod_name = constructor_name inst_name in
+      let sig_path = import_sig_path comp in
+      let has_sig_module_type =
+        sig_path <> None && interface_ports tu comp <> []
+      in
+      let targets = target_instances inst_name comp all_conns sorted in
+      let comp_path = Ast.qual_ident_to_string ci.inst_component.data in
+      let has_qualified_leaf =
+        targets = [] && String.contains comp_path '.' && comp_path <> mod_name
+      in
+      if not (targets <> [] || has_qualified_leaf) then ()
+      else
+        match (sig_path, targets) with
+        | Some _, _ when has_sig_module_type ->
+            module_break ();
+            pf ppf "module %s : %s" mod_name (constructor_name inst_name)
+        | Some sp, _ ->
+            module_break ();
+            pf ppf "module %s : %s" mod_name sp
+        | None, [] when has_qualified_leaf ->
+            module_break ();
+            pf ppf "module %s = %s" mod_name comp_path
+        | None, [] -> ()
+        | None, _ ->
+            module_break ();
+            pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)
+    non_rt
+
+(** Look up the return type for an exported instance name. *)
+let export_return_type non_rt name =
+  match List.find_opt (fun (n, _, _) -> n = name) non_rt with
+  | Some (_, _, comp) -> mli_return_type name comp
+  | None -> constructor_name name ^ ".t"
+
+(** Compute the return type string for a group binding. *)
+let group_return_type non_rt insts group_exports =
+  let last_inst_name =
+    match List.rev insts with (name, _, _) :: _ -> name | [] -> ""
+  in
+  match group_exports with
+  | ([] | [ _ ])
+    when group_exports = [] || List.hd group_exports = last_inst_name -> (
+      match List.rev insts with
+      | (name, _, comp) :: _ -> mli_return_type name comp
+      | [] -> "unit")
+  | _ ->
+      let types = List.map (export_return_type non_rt) group_exports in
+      "(" ^ String.concat " * " types ^ ")"
+
+(** Emit [val] declarations for lazy group bindings. *)
+let pp_mli_val_decls ppf non_rt groups all_conns =
+  let partitioned = partition_instances_by_group non_rt groups all_conns in
+  let exports = cross_group_exports partitioned all_conns in
+  List.iter2
+    (fun (gname, insts) group_exports ->
+      let ret_type = group_return_type non_rt insts group_exports in
+      pf ppf "@,@,val %s : %s Lwt.t Lazy.t" gname ret_type)
+    partitioned exports
+
 (** Pretty-print the .mli for a topology. Emits module declarations for all
     non-runtime instances, module aliases for leaves, and [val] declarations for
     each connection group lazy binding. *)
@@ -2501,7 +2599,6 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
   let non_rt = filter_non_runtime sorted in
   if non_rt = [] then ()
   else begin
-    let all_conns = connections in
     pf ppf "@[<v>(* Generated by ofpp to-ml from topology %s. *)"
       topo.topo_name.data;
     let first_module = ref true in
@@ -2511,91 +2608,9 @@ let pp_topology_mli tu ppf (topo : Ast.def_topology) =
         first_module := false);
       pf ppf "@,"
     in
-    (* Module type declarations: [module type X = Sig.S] for components with
-       [import] and interface ports. Emitted before module declarations so
-       that modules can use the short name [module X : X]. *)
-    List.iter
-      (fun ( inst_name,
-             (_ci : Ast.def_component_instance),
-             (comp : Ast.def_component) ) ->
-        if is_runtime_component comp then ()
-        else
-          match import_sig_path comp with
-          | None -> ()
-          | Some sig_path ->
-              let ports = interface_ports tu comp in
-              if ports = [] then ()
-              else begin
-                let mod_type_name = constructor_name inst_name in
-                module_break ();
-                pf ppf "module type %s = %s" mod_type_name sig_path
-              end)
-      non_rt;
-    (* Module declarations *)
-    List.iter
-      (fun ( inst_name,
-             (ci : Ast.def_component_instance),
-             (comp : Ast.def_component) ) ->
-        let mod_name = constructor_name inst_name in
-        let sig_path = import_sig_path comp in
-        let has_sig_module_type =
-          sig_path <> None && interface_ports tu comp <> []
-        in
-        let targets = target_instances inst_name comp all_conns sorted in
-        let comp_path = Ast.qual_ident_to_string ci.inst_component.data in
-        let has_qualified_leaf =
-          targets = [] && String.contains comp_path '.' && comp_path <> mod_name
-        in
-        let has_ml_binding = targets <> [] || has_qualified_leaf in
-        if not has_ml_binding then ()
-        else
-          match (sig_path, targets) with
-          | Some _, _ when has_sig_module_type ->
-              module_break ();
-              pf ppf "module %s : %s" mod_name (constructor_name inst_name)
-          | Some sp, _ ->
-              module_break ();
-              pf ppf "module %s : %s" mod_name sp
-          | None, [] when has_qualified_leaf ->
-              module_break ();
-              pf ppf "module %s = %s" mod_name comp_path
-          | None, [] -> ()
-          | None, _ ->
-              module_break ();
-              pf ppf "module %s : %a" mod_name (pp_mli_derived_sig tu) comp)
-      non_rt;
-    (* Val declarations for lazy group bindings *)
-    let partitioned = partition_instances_by_group non_rt groups all_conns in
-    let exports = cross_group_exports partitioned all_conns in
-    List.iter2
-      (fun (gname, insts) group_exports ->
-        let last_inst_name =
-          match List.rev insts with (name, _, _) :: _ -> name | [] -> ""
-        in
-        let need_tuple_return =
-          match group_exports with
-          | [] -> false
-          | [ single ] -> single <> last_inst_name
-          | _ -> true
-        in
-        let ret_type =
-          if need_tuple_return then
-            let types =
-              List.map
-                (fun name ->
-                  match List.find_opt (fun (n, _, _) -> n = name) non_rt with
-                  | Some (_, _, comp) -> mli_return_type name comp
-                  | None -> constructor_name name ^ ".t")
-                group_exports
-            in
-            "(" ^ String.concat " * " types ^ ")"
-          else
-            match List.rev insts with
-            | (name, _, comp) :: _ -> mli_return_type name comp
-            | [] -> "unit"
-        in
-        pf ppf "@,@,val %s : %s Lwt.t Lazy.t" gname ret_type)
-      partitioned exports;
+    pp_mli_module_types ppf tu module_break non_rt;
+    pp_mli_module_decls ppf tu module_break non_rt connections sorted;
+    pp_mli_val_decls ppf non_rt groups connections;
     pf ppf "@]@."
   end
 

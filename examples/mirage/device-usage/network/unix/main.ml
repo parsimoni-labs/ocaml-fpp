@@ -7,7 +7,7 @@ module type Stackv4v6 = Tcpip.Stack.V4V6
 
 module Stackv4v6 = Stackv4v6.Make(Udpv4v6_socket)(Tcpv4v6_socket)
 module Unikernel = Unikernel.Main(Stackv4v6)
-let unikernel__port =
+let port_0 =
   let doc = Cmdliner.Arg.info ~doc:"port" ["port"] in
   Mirage_runtime.register_arg Cmdliner.Arg.(value & opt int 8080 doc)
 
@@ -20,7 +20,7 @@ let connect = lazy (
 
 let start = lazy (
   let* stackv4v6 = Lazy.force connect in
-  Unikernel.start ~port:(unikernel__port ()) stackv4v6)
+  Unikernel.start ~port:(port_0 ()) stackv4v6)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
 let cmdliner_stdlib__key = Mirage_runtime.register_arg @@

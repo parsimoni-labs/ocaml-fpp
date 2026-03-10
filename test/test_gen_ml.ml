@@ -1400,7 +1400,7 @@ val connect : Eth.t Lwt.t Lazy.t|}
 
 (* ── Topology .mli: import + typed ports ──────────────────────────── *)
 
-let test_mli_sig_with_typed_ports () =
+let test_mli_typed_port_sig () =
   check_output
     ~msg:"import derives sig path; typed ports still appear in derived sig"
     (render_topo_mli
@@ -1560,6 +1560,6 @@ let suite =
       Alcotest.test_case "mli_sig_path" `Quick test_mli_sig_path;
       Alcotest.test_case "mli_typed_ports" `Quick test_mli_typed_ports;
       Alcotest.test_case "mli_sig_with_typed_ports" `Quick
-        test_mli_sig_with_typed_ports;
+        test_mli_typed_port_sig;
       Alcotest.test_case "mli_import_sig_path" `Quick test_mli_import_sig_path;
     ] )

@@ -10,7 +10,7 @@
 
 (** {1 Target platform} *)
 
-type target = Unix | Macosx | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
+type target = Unix | MacOS | Xen | Qubes | Hvt | Spt | Virtio | Muen | Genode
 
 val target_of_string : string -> target option
 (** Parse a target name (case-insensitive). *)

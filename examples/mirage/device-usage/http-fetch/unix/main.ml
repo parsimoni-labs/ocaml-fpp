@@ -13,7 +13,7 @@ module Resolver_unix = Resolver_unix.Make(Stackv4v6)
 module Conduit_tcp = Conduit_tcp.Make(Stackv4v6)
 module Cohttp_client = Cohttp_mirage.Client.Make(Resolver_unix)(Conduit_tcp)
 module Unikernel = Unikernel.Client(Cohttp_client)
-let unikernel__uri =
+let uri_0 =
   let doc = Cmdliner.Arg.info ~doc:"uri" ["uri"] in
   Mirage_runtime.register_arg Cmdliner.Arg.(value & opt string "https://mirageos.org" doc)
 
@@ -29,7 +29,7 @@ let start = lazy (
   let* resolver_unix = Resolver_unix.connect stackv4v6 in
   let* conduit_tcp = Conduit_tcp.start stackv4v6 in
   let cohttp_client = Cohttp_client.ctx resolver_unix conduit_tcp in
-  Unikernel.start ~uri:(unikernel__uri ()) cohttp_client)
+  Unikernel.start ~uri:(uri_0 ()) cohttp_client)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
 let cmdliner_stdlib__key = Mirage_runtime.register_arg @@
