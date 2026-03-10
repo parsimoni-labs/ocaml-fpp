@@ -107,17 +107,15 @@ Unreachable state
   > }
   > EOF
   $ ofpp check unreachable.fpp
-  ╭───┬─────────────────────┬────┬───────────────────────────────────────────────╮
-  │   │ Location            │ SM │ Warning                                       │
-  ├───┼─────────────────────┼────┼───────────────────────────────────────────────┤
-  │ ! │ unreachable.fpp:4:8 │ M  │ signal 's' not handled in state 'S'           │
-  │ ! │ unreachable.fpp:5:8 │ M  │ signal 's' not handled in state 'T'           │
-  │ ! │ unreachable.fpp:2:9 │ M  │ unused signal 's'                             │
-  │ ! │ unreachable.fpp:4:8 │ M  │ state 'S' has no outgoing transitions         │
-  │   │                     │    │ (potential deadlock)                          │
-  │ ! │ unreachable.fpp:5:8 │ M  │ state 'T' has no outgoing transitions         │
-  │   │                     │    │ (potential deadlock)                          │
-  ╰───┴─────────────────────┴────┴───────────────────────────────────────────────╯
+  ╭───┬─────────────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location            │ SM │ Warning                                                    │
+  ├───┼─────────────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ unreachable.fpp:4:8 │ M  │ signal 's' not handled in state 'S'                        │
+  │ ! │ unreachable.fpp:5:8 │ M  │ signal 's' not handled in state 'T'                        │
+  │ ! │ unreachable.fpp:2:9 │ M  │ unused signal 's'                                          │
+  │ ! │ unreachable.fpp:4:8 │ M  │ state 'S' has no outgoing transitions (potential deadlock) │
+  │ ! │ unreachable.fpp:5:8 │ M  │ state 'T' has no outgoing transitions (potential deadlock) │
+  ╰───┴─────────────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✗ unreachable.fpp:5:8: error in SM 'M': unreachable state 'T'
   
@@ -212,16 +210,15 @@ Signal coverage warnings
   > }
   > EOF
   $ ofpp check coverage.fpp
-  ╭───┬──────────────────┬────┬──────────────────────────────────────────────────╮
-  │   │ Location         │ SM │ Warning                                          │
-  ├───┼──────────────────┼────┼──────────────────────────────────────────────────┤
-  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S'             │
-  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T'             │
-  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T'             │
-  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                               │
-  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential │
-  │   │                  │    │ deadlock)                                        │
-  ╰───┴──────────────────┴────┴──────────────────────────────────────────────────╯
+  ╭───┬──────────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                                                    │
+  ├───┼──────────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S'                       │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T'                       │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T'                       │
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                                         │
+  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential deadlock) │
+  ╰───┴──────────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✓ coverage.fpp
 
@@ -243,16 +240,15 @@ Signal coverage with inherited handlers
 
 Signal coverage warnings don't affect exit code
   $ ofpp check coverage.fpp; echo "exit=$?"
-  ╭───┬──────────────────┬────┬──────────────────────────────────────────────────╮
-  │   │ Location         │ SM │ Warning                                          │
-  ├───┼──────────────────┼────┼──────────────────────────────────────────────────┤
-  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S'             │
-  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T'             │
-  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T'             │
-  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                               │
-  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential │
-  │   │                  │    │ deadlock)                                        │
-  ╰───┴──────────────────┴────┴──────────────────────────────────────────────────╯
+  ╭───┬──────────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                                                    │
+  ├───┼──────────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ coverage.fpp:5:8 │ M  │ signal 's2' not handled in state 'S'                       │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's1' not handled in state 'T'                       │
+  │ ! │ coverage.fpp:6:8 │ M  │ signal 's2' not handled in state 'T'                       │
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                                         │
+  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential deadlock) │
+  ╰───┴──────────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✓ coverage.fpp
   exit=0
@@ -284,14 +280,13 @@ Liveness: cycle with exit (no warning)
   > }
   > EOF
   $ ofpp check cycle_exit.fpp
-  ╭───┬────────────────────┬────┬────────────────────────────────────────────────╮
-  │   │ Location           │ SM │ Warning                                        │
-  ├───┼────────────────────┼────┼────────────────────────────────────────────────┤
-  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's1' not handled in state 'C'           │
-  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's2' not handled in state 'C'           │
-  │ ! │ cycle_exit.fpp:7:8 │ M  │ state 'C' has no outgoing transitions          │
-  │   │                    │    │ (potential deadlock)                           │
-  ╰───┴────────────────────┴────┴────────────────────────────────────────────────╯
+  ╭───┬────────────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location           │ SM │ Warning                                                    │
+  ├───┼────────────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's1' not handled in state 'C'                       │
+  │ ! │ cycle_exit.fpp:7:8 │ M  │ signal 's2' not handled in state 'C'                       │
+  │ ! │ cycle_exit.fpp:7:8 │ M  │ state 'C' has no outgoing transitions (potential deadlock) │
+  ╰───┴────────────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✓ cycle_exit.fpp
 
@@ -363,13 +358,12 @@ Deadlock: sink state with no transitions
   > }
   > EOF
   $ ofpp check sink.fpp
-  ╭───┬──────────────┬────┬──────────────────────────────────────────────────────╮
-  │   │ Location     │ SM │ Warning                                              │
-  ├───┼──────────────┼────┼──────────────────────────────────────────────────────┤
-  │ ! │ sink.fpp:5:8 │ M  │ signal 's' not handled in state 'B'                  │
-  │ ! │ sink.fpp:5:8 │ M  │ state 'B' has no outgoing transitions (potential     │
-  │   │              │    │ deadlock)                                            │
-  ╰───┴──────────────┴────┴──────────────────────────────────────────────────────╯
+  ╭───┬──────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location     │ SM │ Warning                                                    │
+  ├───┼──────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ sink.fpp:5:8 │ M  │ signal 's' not handled in state 'B'                        │
+  │ ! │ sink.fpp:5:8 │ M  │ state 'B' has no outgoing transitions (potential deadlock) │
+  ╰───┴──────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✓ sink.fpp
 
@@ -433,13 +427,12 @@ Contextual hints for undefined references
 
 Disable coverage with --warning
   $ ofpp check --warning=-cov coverage.fpp
-  ╭───┬──────────────────┬────┬──────────────────────────────────────────────────╮
-  │   │ Location         │ SM │ Warning                                          │
-  ├───┼──────────────────┼────┼──────────────────────────────────────────────────┤
-  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                               │
-  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential │
-  │   │                  │    │ deadlock)                                        │
-  ╰───┴──────────────────┴────┴──────────────────────────────────────────────────╯
+  ╭───┬──────────────────┬────┬────────────────────────────────────────────────────────────╮
+  │   │ Location         │ SM │ Warning                                                    │
+  ├───┼──────────────────┼────┼────────────────────────────────────────────────────────────┤
+  │ ! │ coverage.fpp:3:9 │ M  │ unused signal 's2'                                         │
+  │ ! │ coverage.fpp:6:8 │ M  │ state 'T' has no outgoing transitions (potential deadlock) │
+  ╰───┴──────────────────┴────┴────────────────────────────────────────────────────────────╯
   
   ✓ coverage.fpp
 

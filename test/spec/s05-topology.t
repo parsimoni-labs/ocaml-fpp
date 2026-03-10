@@ -162,18 +162,14 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:28:11 │ <tu>.T │ input port 'commandSequencer.cmdIn' has no        │
-  │   │             │        │ incoming connection                               │
-  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'commandDispatcher.cmdRespIn' has no   │
-  │   │             │        │ incoming connection                               │
-  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'commandDispatcher.cmdRegIn' has no    │
-  │   │             │        │ incoming connection                               │
-  │ ! │ t.fpp:29:11 │ <tu>.T │ input port 'eventLogger.cmdIn' has no incoming    │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬─────────────────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                             │
+  ├───┼─────────────┼────────┼─────────────────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:28:11 │ <tu>.T │ input port 'commandSequencer.cmdIn' has no incoming connection      │
+  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'commandDispatcher.cmdRespIn' has no incoming connection │
+  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'commandDispatcher.cmdRegIn' has no incoming connection  │
+  │ ! │ t.fpp:29:11 │ <tu>.T │ input port 'eventLogger.cmdIn' has no incoming connection           │
+  ╰───┴─────────────┴────────┴─────────────────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -199,14 +195,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:15:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming         │
-  │   │             │        │ connection                                        │
-  │ ! │ t.fpp:14:11 │ <tu>.T │ input port 'eventLogger.logIn' has no incoming    │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                   │
+  ├───┼─────────────┼────────┼───────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:15:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming connection      │
+  │ ! │ t.fpp:14:11 │ <tu>.T │ input port 'eventLogger.logIn' has no incoming connection │
+  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -263,14 +257,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:22:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming         │
-  │   │             │        │ connection                                        │
-  │ ! │ t.fpp:21:11 │ <tu>.T │ input port 'paramDb.prmSetIn' has no incoming     │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬──────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                  │
+  ├───┼─────────────┼────────┼──────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:22:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming connection     │
+  │ ! │ t.fpp:21:11 │ <tu>.T │ input port 'paramDb.prmSetIn' has no incoming connection │
+  ╰───┴─────────────┴────────┴──────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -296,14 +288,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:14:11 │ <tu>.T │ input port 'telemetryDatabase.tlmIn' has no       │
-  │   │             │        │ incoming connection                               │
-  │ ! │ t.fpp:15:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming         │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬─────────────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                         │
+  ├───┼─────────────┼────────┼─────────────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:14:11 │ <tu>.T │ input port 'telemetryDatabase.tlmIn' has no incoming connection │
+  │ ! │ t.fpp:15:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming connection            │
+  ╰───┴─────────────┴────────┴─────────────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -327,14 +317,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:12:11 │ <tu>.T │ input port 'textLogger.textIn' has no incoming    │
-  │   │             │        │ connection                                        │
-  │ ! │ t.fpp:13:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming         │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                   │
+  ├───┼─────────────┼────────┼───────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:12:11 │ <tu>.T │ input port 'textLogger.textIn' has no incoming connection │
+  │ ! │ t.fpp:13:11 │ <tu>.T │ input port 'sensor.cmdIn' has no incoming connection      │
+  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -387,14 +375,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:18:11 │ <tu>.T │ input port 'sensorA.cmdIn' has no incoming        │
-  │   │             │        │ connection                                        │
-  │ ! │ t.fpp:19:11 │ <tu>.T │ input port 'sensorB.cmdIn' has no incoming        │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                               │
+  ├───┼─────────────┼────────┼───────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:18:11 │ <tu>.T │ input port 'sensorA.cmdIn' has no incoming connection │
+  │ ! │ t.fpp:19:11 │ <tu>.T │ input port 'sensorB.cmdIn' has no incoming connection │
+  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -460,16 +446,13 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬──────────┬─────────────────────────────────────────────────╮
-  │   │ Location    │ SM       │ Warning                                         │
-  ├───┼─────────────┼──────────┼─────────────────────────────────────────────────┤
-  │ ! │ t.fpp:39:11 │ <tu>.CDH │ input port 'commandDispatcher.cmdRespIn' has no │
-  │   │             │          │ incoming connection                             │
-  │ ! │ t.fpp:39:11 │ <tu>.CDH │ input port 'commandDispatcher.cmdRegIn' has no  │
-  │   │             │          │ incoming connection                             │
-  │ ! │ t.fpp:43:19 │ <tu>.CDH │ input port 'socketGroundInterface.comTlmIn' has │
-  │   │             │          │ no incoming connection                          │
-  ╰───┴─────────────┴──────────┴─────────────────────────────────────────────────╯
+  ╭───┬─────────────┬──────────┬────────────────────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM       │ Warning                                                                │
+  ├───┼─────────────┼──────────┼────────────────────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:39:11 │ <tu>.CDH │ input port 'commandDispatcher.cmdRespIn' has no incoming connection    │
+  │ ! │ t.fpp:39:11 │ <tu>.CDH │ input port 'commandDispatcher.cmdRegIn' has no incoming connection     │
+  │ ! │ t.fpp:43:19 │ <tu>.CDH │ input port 'socketGroundInterface.comTlmIn' has no incoming connection │
+  ╰───┴─────────────┴──────────┴────────────────────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -533,16 +516,13 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬────────┬───────────────────────────────────────────────────╮
-  │   │ Location    │ SM     │ Warning                                           │
-  ├───┼─────────────┼────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:28:11 │ <tu>.T │ input port 'adcs.cmdIn' has no incoming           │
-  │   │             │        │ connection                                        │
-  │ ! │ t.fpp:26:11 │ <tu>.T │ input port 'commandDispatcher.cmdIn' has no       │
-  │   │             │        │ incoming connection                               │
-  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'rateGroup1Hz.cycleIn' has no incoming │
-  │   │             │        │ connection                                        │
-  ╰───┴─────────────┴────────┴───────────────────────────────────────────────────╯
+  ╭───┬─────────────┬────────┬─────────────────────────────────────────────────────────────────╮
+  │   │ Location    │ SM     │ Warning                                                         │
+  ├───┼─────────────┼────────┼─────────────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:28:11 │ <tu>.T │ input port 'adcs.cmdIn' has no incoming connection              │
+  │ ! │ t.fpp:26:11 │ <tu>.T │ input port 'commandDispatcher.cmdIn' has no incoming connection │
+  │ ! │ t.fpp:27:11 │ <tu>.T │ input port 'rateGroup1Hz.cycleIn' has no incoming connection    │
+  ╰───┴─────────────┴────────┴─────────────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 
@@ -584,14 +564,12 @@ Empty topology
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬─────────────┬─────────┬──────────────────────────────────────────────────╮
-  │   │ Location    │ SM      │ Warning                                          │
-  ├───┼─────────────┼─────────┼──────────────────────────────────────────────────┤
-  │ ! │ t.fpp:7:11  │ <tu>.T1 │ input port 'blk.connect' has no incoming         │
-  │   │             │         │ connection                                       │
-  │ ! │ t.fpp:10:11 │ <tu>.T2 │ input port 'blk.connect' has no incoming         │
-  │   │             │         │ connection                                       │
-  ╰───┴─────────────┴─────────┴──────────────────────────────────────────────────╯
+  ╭───┬─────────────┬─────────┬─────────────────────────────────────────────────────╮
+  │   │ Location    │ SM      │ Warning                                             │
+  ├───┼─────────────┼─────────┼─────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:7:11  │ <tu>.T1 │ input port 'blk.connect' has no incoming connection │
+  │ ! │ t.fpp:10:11 │ <tu>.T2 │ input port 'blk.connect' has no incoming connection │
+  ╰───┴─────────────┴─────────┴─────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 

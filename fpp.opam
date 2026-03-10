@@ -10,7 +10,7 @@ homepage: "https://github.com/parsimoni-labs/ocaml-fpp"
 bug-reports: "https://github.com/parsimoni-labs/ocaml-fpp/issues"
 depends: [
   "ocaml" {>= "4.14"}
-  "dune" {>= "3.0" & >= "3.20"}
+  "dune" {>= "3.21" & >= "3.20"}
   "fmt"
   "jsont"
   "menhir"
@@ -101,6 +101,7 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/parsimoni-labs/ocaml-fpp.git"
+x-maintenance-intent: ["(latest)"]
 pin-depends: [
   ["tty.dev" "git+https://tangled.org/gazagnaire.org/ocaml-tty.git"]
 ]

@@ -1,2 +1,3 @@
 (cram
- (deps %{bin:ofpp}))
+ (deps %{bin:ofpp})
+ (setup_scripts ../setup.sh))

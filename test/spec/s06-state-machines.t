@@ -56,14 +56,13 @@ FPP Spec §6 — State Machine Behavior Elements
   > }
   > EOF
   $ ofpp check t.fpp
-  ╭───┬───────────┬──────────┬───────────────────────────────────────────────────╮
-  │   │ Location  │ SM       │ Warning                                           │
-  ├───┼───────────┼──────────┼───────────────────────────────────────────────────┤
-  │ ! │ t.fpp:9:8 │ Internal │ signal 'Done' not handled in state 'Finished'     │
-  │ ! │ t.fpp:9:8 │ Internal │ signal 'Tick' not handled in state 'Finished'     │
-  │ ! │ t.fpp:9:8 │ Internal │ state 'Finished' has no outgoing transitions      │
-  │   │           │          │ (potential deadlock)                              │
-  ╰───┴───────────┴──────────┴───────────────────────────────────────────────────╯
+  ╭───┬───────────┬──────────┬───────────────────────────────────────────────────────────────────╮
+  │   │ Location  │ SM       │ Warning                                                           │
+  ├───┼───────────┼──────────┼───────────────────────────────────────────────────────────────────┤
+  │ ! │ t.fpp:9:8 │ Internal │ signal 'Done' not handled in state 'Finished'                     │
+  │ ! │ t.fpp:9:8 │ Internal │ signal 'Tick' not handled in state 'Finished'                     │
+  │ ! │ t.fpp:9:8 │ Internal │ state 'Finished' has no outgoing transitions (potential deadlock) │
+  ╰───┴───────────┴──────────┴───────────────────────────────────────────────────────────────────╯
   
   ✓ t.fpp
 

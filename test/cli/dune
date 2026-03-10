@@ -2,4 +2,5 @@
  (deps
   %{bin:ofpp}
   (source_tree data)
-  (source_tree ../../examples/mirage)))
+  (source_tree ../../examples/mirage))
+ (setup_scripts ../setup.sh))
