@@ -8,4 +8,5 @@
   conduit-mirage
   tls-mirage
   dns-client-mirage
-  happy-eyeballs-mirage))
+  happy-eyeballs-mirage
+  mirage-vnetif))

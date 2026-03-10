@@ -1,3 +1,5 @@
-Build the timeout2 unikernel (race condition makes output non-deterministic).
+Run the timeout2 unikernel (race between 0-3s random delay and 2s timeout).
 
-  $ test -x ./unix/main.exe
+  $ strip() { sed 's/^[^ ]*: //'; }
+  $ timeout 10 ./unix/main.exe 2>&1 | strip | grep -cE "(Cancelled|Returned)"
+  1

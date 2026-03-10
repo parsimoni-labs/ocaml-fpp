@@ -1,5 +1,9 @@
 (copy_files ../unikernel.ml)
 
+(copy_files ../git_store.ml)
+
+(copy_files ../git_ctx.ml)
+
 (rule
  (mode promote)
  (targets main.ml main.mli)
@@ -11,8 +15,7 @@
 
 (executable
  (name main)
- (enabled_if false)
- (modules main unikernel)
+ (modules main unikernel git_store git_ctx)
  (libraries
   lwt
   lwt.unix
@@ -36,8 +39,9 @@
   git.nss.smart
   digestif
   ptime
-  mimic))
+  mimic
+  happy-eyeballs-lwt))
 
 (alias
  (name runtest)
- (deps main.ml))
+ (deps main.exe))

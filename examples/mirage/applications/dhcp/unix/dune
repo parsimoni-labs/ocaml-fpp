@@ -29,7 +29,8 @@
   mirage-ptime.unix
   logs
   fmt
-  mirage-net-unix
+  adapters
+  mirage-vnetif
   ethernet
   arp
   charrua-server

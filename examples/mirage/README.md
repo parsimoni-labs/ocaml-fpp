@@ -247,6 +247,26 @@ ofpp to-ml --topologies UnixNetwork,UnixDns mirage.fpp \
 | Callbacks | Not modeled | Output ports + `Dataflow` connections |
 | Boilerplate | ~90 lines per example | ~10-20 lines per example |
 
+## Adapters
+
+The `adapters/` directory contains thin wrappers that bridge MirageOS
+libraries to the FPP codegen conventions.  Each adapter makes an
+upstream module look like a standard FPP device (functor with
+`connect`/`start`).
+
+| Adapter | Wraps | Why |
+|---|---|---|
+| `conduit_tcp.ml` | `Conduit_mirage.TCP(S)` | Adds `start` (identity — the stack value IS the conduit value) so the codegen can wire it as a normal device |
+| `conduit_tls.ml` | `Conduit_mirage.TLS(Conduit_mirage.TCP(S))` | Like `conduit_tcp` but adds TLS support so the server can accept both TCP and TLS listeners |
+| `stackv4v6.ml` | `Tcpip_stack_socket.V4V6` | Provides a functor shell — the upstream module is not a functor but the codegen expects one |
+| `dns_resolver.ml` | `Dns_client_mirage.Make(S)(H)` | Unpacks the `(S.t * H.t)` tuple that `connect` expects into separate arguments for the connection graph |
+| `resolver_unix.ml` | `Resolver_mirage.Make(S)` | Adds `connect` that calls `v` and unwraps the result so the codegen can use it as a device constructor |
+| `backend.ml` | `Basic_backend.Make` | Wraps the synchronous `create` as `connect` returning `Lwt.t` for the in-memory Vnetif backend |
+
+Adapters are local to the examples — they are not part of the `fpp`
+library.  Application-specific adapters (like `git_store.ml` and
+`git_ctx.ml` in the git example) live alongside the unikernel code.
+
 ## Known limitations
 
 - **Option types.** FPP lacks option types, so optional positional args

@@ -8,10 +8,15 @@ module Unikernel {
 instance unikernel: Unikernel.Main base id 0
 
 topology UnixDhcp {
-  instance netif(_0 = "tap0")
+  instance backend
+  instance net
   instance unikernel
 
+  connections Connect {
+    net.backend -> backend.connect
+  }
+
   connections Start {
-    unikernel.net -> netif.connect
+    unikernel.net -> net.connect
   }
 }

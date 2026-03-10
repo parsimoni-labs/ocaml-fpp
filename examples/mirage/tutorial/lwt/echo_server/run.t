@@ -1,3 +1,5 @@
-Echo server listens on a port — just verify it builds.
+Run the echo server (simulated input, 10 iterations).
 
-  $ test -x ./unix/main.exe
+  $ strip() { sed 's/^[^ ]*: //'; }
+  $ timeout 30 ./unix/main.exe 2>&1 | strip | grep -c "application"
+  10

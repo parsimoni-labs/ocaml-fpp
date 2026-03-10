@@ -10,19 +10,21 @@ module Unikernel {
 instance unikernel: Unikernel.Main base id 0
 
 topology UnixPing6 {
-  instance netif(_0 = "tap0")
+  instance backend
+  instance net
   instance ethernet
   instance ipv6
   instance unikernel
 
   connections Connect {
-    ethernet.net -> netif.connect
-    ipv6.net -> netif.connect
+    net.backend -> backend.connect
+    ethernet.net -> net.connect
+    ipv6.net -> net.connect
     ipv6.eth -> ethernet.connect
   }
 
   connections Start {
-    unikernel.net -> netif.connect
+    unikernel.net -> net.connect
     unikernel.eth -> ethernet.connect
     unikernel.ipv6 -> ipv6.connect
   }

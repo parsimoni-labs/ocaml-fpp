@@ -1,2 +1,2 @@
 (cram
- (deps unix/main.ml))
+ (deps unix/main.exe))
