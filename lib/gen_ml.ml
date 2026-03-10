@@ -1060,8 +1060,7 @@ let component_params (comp : Ast.def_component) =
       match node.Ast.data with
       | Ast.Comp_spec_param p ->
           let positional =
-            p.param_external
-            || List.exists (fun a -> String.trim a = "ocaml.positional") pre
+            List.exists (fun a -> String.trim a = "ocaml.positional") pre
           in
           let optional =
             List.exists (fun a -> String.trim a = "ocaml.optional") pre
@@ -1092,7 +1091,8 @@ let cmdliner_conv_of_fpp_type (tn : Ast.type_name) =
   match tn with
   | Type_bool -> "bool"
   | Type_int (I8 | I16 | U8 | U16) -> "int"
-  | Type_int (I32 | U32 | I64 | U64) -> "int"
+  | Type_int (I32 | U32) -> "int"
+  | Type_int (I64 | U64) -> "int64"
   | Type_float (F32 | F64) -> "float"
   | Type_string _ -> "string"
   | Type_qual _ -> "string"
@@ -2171,18 +2171,34 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
 (** Emit a single Cmdliner term registration for one unresolved param. *)
 let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
   let param_name = camel_to_snake p.param_name.data in
-  let conv = cmdliner_conv_of_fpp_type p.param_type.data in
-  let default =
+  let is_bool_flag =
+    p.param_type.data = Type_bool
+    &&
     match p.param_default with
-    | Some e -> ocaml_literal_of_expr e.data
-    | None -> "\"\""
+    | Some { data = Expr_literal (Lit_bool false); _ } -> true
+    | None -> true
+    | _ -> false
+  in
+  let is_int64 =
+    match p.param_type.data with Type_int (I64 | U64) -> true | _ -> false
   in
   pf ppf "@,let %s__%s =" inst_var param_name;
-  pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name
-    (inst_var ^ "-"
-    ^ String.map (fun c -> if c = '_' then '-' else c) param_name);
-  pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
-    conv default
+  let flag_name = String.map (fun c -> if c = '_' then '-' else c) param_name in
+  pf ppf "@,  let doc = Cmdliner.Arg.info ~doc:%S [%S] in" param_name flag_name;
+  if is_bool_flag then
+    pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & flag doc)"
+  else
+    let conv = cmdliner_conv_of_fpp_type p.param_type.data in
+    let default =
+      match p.param_default with
+      | Some e ->
+          let lit = ocaml_literal_of_expr e.data in
+          if is_int64 then lit ^ "L" else lit
+      | None -> if is_int64 then "0L" else "\"\""
+    in
+    pf ppf
+      "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
+      conv default
 
 (** Emit a single registration for an [external param]: reference the module's
     own Cmdliner term via [Mirage_runtime.register_arg @@ Module.param]. *)

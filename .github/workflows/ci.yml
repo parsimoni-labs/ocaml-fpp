@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: '5.3'
+          opam-pin: false
+          dune-cache: true
+
+      - name: Pin local packages
+        run: |
+          opam pin add tty.dev git+https://tangled.org/gazagnaire.org/ocaml-tty.git --no-action
+          opam pin add fpp.dev . --no-action
+
+      - name: Install dependencies
+        run: opam install --deps-only --with-test ./fpp.opam
+
+      - name: Build
+        run: opam exec -- dune build
+
+      - name: Unit tests
+        run: opam exec -- dune runtest test/
+
+      - name: Spec tests
+        run: opam exec -- dune runtest test/spec/
+
+      - name: CLI tests
+        run: opam exec -- dune runtest test/cli/
+
+      - name: Mirage examples
+        run: opam exec -- dune runtest examples/mirage/

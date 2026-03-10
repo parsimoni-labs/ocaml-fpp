@@ -4,7 +4,7 @@
     through the public {!Fpp.Check} API. Derived from upstream [component/] and
     [component_instance_def/] tests. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Pass cases ──────────────────────────────────────────────────────── *)
 

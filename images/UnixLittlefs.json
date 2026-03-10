@@ -1,0 +1,22 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "unikernel",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "kv", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "chamelon",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "block", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "block",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[1, 0, 0, 0], [2, 0, 0, 0]], [[0, 0, 0, 0], [1, 0, 0, 0]]]
+}

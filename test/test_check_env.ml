@@ -4,7 +4,7 @@
     tests verify edge cases in environment construction and external state
     machine handling. *)
 
-open Check_test_helpers
+open Test_helpers
 
 let test_external_sm () = expect_no_errors {| state machine M |}
 

@@ -2,6 +2,7 @@ module Unikernel {
   passive component Main {
     async input port start: serial
     output port stack: serial
+    param $port: U32 default 8080
   }
 }
 

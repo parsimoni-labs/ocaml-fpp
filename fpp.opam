@@ -60,6 +60,29 @@ depends: [
   "hxd" {with-test}
   "mirage-block-unix" {with-test}
   "mirage-flow" {with-test}
+  "git" {with-test}
+  "git-unix" {with-test}
+  "tls-mirage" {with-test}
+  "paf" {with-test}
+  "happy-eyeballs-lwt" {with-test}
+  "digestif" {with-test}
+  "ptime" {with-test}
+  "mimic" {with-test}
+  "mimic-happy-eyeballs" {with-test}
+  "ca-certs-nss" {with-test}
+  "x509" {with-test}
+  "mirage-crypto-pk" {with-test}
+  "magic-mime" {with-test}
+  "randomconv" {with-test}
+  "cohttp" {with-test}
+  "cohttp-lwt" {with-test}
+  "base64" {with-test}
+  "checkseum" {with-test}
+  "httpaf" {with-test}
+  "ohex" {with-test}
+  "rresult" {with-test}
+  "sexplib0" {with-test}
+  "chamelon-unix" {with-test}
   "odoc" {with-doc}
 ]
 build: [

@@ -4,7 +4,7 @@
     dependency graph is built correctly. Derived from upstream [cycle/] tests.
 *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Pass cases ──────────────────────────────────────────────────────── *)
 

@@ -11,6 +11,5 @@ module Make
 struct
   include Dns_client_mirage.Make (S) (H)
 
-  let start ?cache_size ?edns ?nameservers ?timeout s h =
-    connect ?cache_size ?edns ?nameservers ?timeout (s, h)
+  let start s h = connect (s, h)
 end

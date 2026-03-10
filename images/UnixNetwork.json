@@ -2,7 +2,7 @@
   "columns": [
                [
                  {
-                   "instanceName": "app",
+                   "instanceName": "unikernel",
                    "inputPorts": [],
                    "outputPorts": [{"name": "stack", "portNumbers": [0]}]
                  }],

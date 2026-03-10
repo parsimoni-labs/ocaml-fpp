@@ -2,15 +2,21 @@
   "columns": [
                [
                  {
-                   "instanceName": "app",
+                   "instanceName": "unikernel",
                    "inputPorts": [],
                    "outputPorts": [{"name": "net", "portNumbers": [0]}]
                  }],
                [
                  {
-                   "instanceName": "netif",
+                   "instanceName": "net",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "backend", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "backend",
                    "inputPorts": [{"name": "connect", "portNumbers": [0]}],
                    "outputPorts": []
                  }]],
-  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]]]
+  "connections": [[[1, 0, 0, 0], [2, 0, 0, 0]], [[0, 0, 0, 0], [1, 0, 0, 0]]]
 }

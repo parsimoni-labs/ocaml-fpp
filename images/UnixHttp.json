@@ -1,0 +1,104 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "dns_client",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]},
+                                    {
+                                      "name": "happy_eyeballs",
+                                      "portNumbers": [0]
+                                    }]
+                 },
+                 {
+                   "instanceName": "unikernel",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "certs", "portNumbers": [0]},
+                                    {"name": "keys", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]},
+                                    {"name": "conn", "portNumbers": [0]},
+                                    {"name": "http", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "certs_data",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "keys_data",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "connect",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "_tcp", "portNumbers": [0]},
+                                    {"name": "he", "portNumbers": [0]}]
+                 },
+                 {
+                   "instanceName": "http_server",
+                   "inputPorts": [{"name": "init", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "mimic_happy_eyeballs",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "_stack", "portNumbers": [0]},
+                                    {
+                                      "name": "happy_eyeballs",
+                                      "portNumbers": [0]
+                                    }]
+                 }],
+               [
+                 {
+                   "instanceName": "happy_eyeballs_mirage",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect_device",
+                                     "portNumbers": [0, 1]
+                                   }],
+                   "outputPorts": [{"name": "stack", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "stackv4v6",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": [{"name": "udp", "portNumbers": [0]},
+                                    {"name": "tcp", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "udpv4v6_socket",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "tcpv4v6_socket",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2, 3]
+                                   }],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[4, 0, 0, 0], [5, 0, 0, 0]], [[4, 0, 1, 0], [5, 1, 0, 0]],
+                   [[3, 0, 0, 0], [4, 0, 0, 0]],
+                   [[0, 0, 0, 0], [4, 0, 0, 1]],
+                   [[0, 0, 1, 0], [3, 0, 0, 0]],
+                   [[2, 0, 0, 0], [4, 0, 0, 2]],
+                   [[2, 0, 1, 0], [3, 0, 0, 1]],
+                   [[1, 2, 0, 0], [5, 1, 0, 1]],
+                   [[1, 2, 1, 0], [2, 0, 0, 0]],
+                   [[1, 3, 0, 0], [5, 1, 0, 2]],
+                   [[0, 1, 0, 0], [1, 0, 0, 0]],
+                   [[0, 1, 1, 0], [1, 1, 0, 0]],
+                   [[0, 1, 2, 0], [5, 1, 0, 3]],
+                   [[0, 1, 3, 0], [1, 2, 0, 0]], [[0, 1, 4, 0], [1, 3, 0, 0]]
+                 ]
+}

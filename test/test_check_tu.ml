@@ -4,7 +4,7 @@
     definition, component, and topology checks. These tests exercise
     cross-module interactions that span multiple check phases. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Empty and minimal TUs ───────────────────────────────────────────── *)
 

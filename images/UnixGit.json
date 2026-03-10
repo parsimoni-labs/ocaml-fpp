@@ -1,0 +1,22 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "unikernel",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "git", "portNumbers": [0]},
+                                    {"name": "ctx", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "git_store",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 },
+                 {
+                   "instanceName": "git_ctx",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[0, 0, 0, 0], [1, 0, 0, 0]], [[0, 0, 1, 0], [1, 1, 0, 0]]]
+}

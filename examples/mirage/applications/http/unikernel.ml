@@ -6,16 +6,6 @@ let port =
   let doc = Arg.info ~doc:"Port of HTTP service." [ "p"; "port" ] in
   Arg.(value & opt int 8080 doc)
 
-let use_tls =
-  let doc =
-    Arg.info ~doc:"Start an HTTP server with a TLS certificate." [ "tls" ]
-  in
-  Mirage_runtime.register_arg Arg.(value & flag doc)
-
-let tls_port =
-  let doc = Arg.info ~doc:"Port of HTTPS service." [ "tls-port" ] in
-  Mirage_runtime.register_arg Arg.(value & opt int 4343 doc)
-
 let alpn =
   let alpns = [ "h2"; "http/1.1" ] in
   let doc =
@@ -23,8 +13,7 @@ let alpn =
       (Arg.doc_alts alpns)
   in
   let doc = Arg.info ~doc [ "alpn" ] in
-  Mirage_runtime.register_arg
-    Arg.(value & opt_all (enum (List.map (fun v -> (v, v)) alpns)) alpns doc)
+  Arg.(value & opt_all (enum (List.map (fun v -> (v, v)) alpns)) alpns doc)
 
 let ( <.> ) f g x = f (g x)
 let always x _ = x
@@ -138,11 +127,12 @@ struct
     in
     Paf.serve http_1_1_service http_server |> fun (`Initialized th) -> th
 
-  let start certificate_ro key_ro tcpv4v6 ctx http_server =
+  let start ~tls:use_tls ~tls_port ~alpn certificate_ro key_ro tcpv4v6 ctx
+      http_server =
     let open Lwt.Infix in
     let authenticator = Connect.authenticator in
     tls key_ro certificate_ro >>= fun tls ->
-    if use_tls () then
+    if use_tls then
       let tls =
         let certificates =
           match tls with
@@ -153,11 +143,11 @@ struct
                  private key. Received error %s."
                 m
         in
-        let alpn_protocols = alpn () in
+        let alpn_protocols = alpn in
         match Tls.Config.server ~certificates ~alpn_protocols () with
         | Error (`Msg m) -> Fmt.failwith "TLS configuration error: %s." m
         | Ok tls -> tls
       in
-      run_with_tls ~ctx ~authenticator ~tls http_server (tls_port ()) tcpv4v6
+      run_with_tls ~ctx ~authenticator ~tls http_server tls_port tcpv4v6
     else run ~ctx ~authenticator http_server
 end

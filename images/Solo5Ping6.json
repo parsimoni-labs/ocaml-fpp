@@ -1,0 +1,39 @@
+{
+  "columns": [
+               [
+                 {
+                   "instanceName": "unikernel",
+                   "inputPorts": [],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]},
+                                    {"name": "eth", "portNumbers": [0]},
+                                    {"name": "ipv6", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ipv6",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0]}],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]},
+                                    {"name": "eth", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "ethernet",
+                   "inputPorts": [{"name": "connect", "portNumbers": [0, 1]}],
+                   "outputPorts": [{"name": "net", "portNumbers": [0]}]
+                 }],
+               [
+                 {
+                   "instanceName": "netif",
+                   "inputPorts": [
+                                   {
+                                     "name": "connect",
+                                     "portNumbers": [0, 1, 2]
+                                   }],
+                   "outputPorts": []
+                 }]],
+  "connections": [[[2, 0, 0, 0], [3, 0, 0, 0]], [[1, 0, 0, 0], [3, 0, 0, 1]],
+                   [[1, 0, 1, 0], [2, 0, 0, 0]],
+                   [[0, 0, 0, 0], [3, 0, 0, 2]],
+                   [[0, 0, 1, 0], [2, 0, 0, 1]], [[0, 0, 2, 0], [1, 0, 0, 0]]
+                 ]
+}

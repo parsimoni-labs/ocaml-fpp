@@ -2,6 +2,7 @@ module Unikernel {
   passive component Make {
     async input port start: serial
     output port dns: serial
+    external param domainName: string
   }
 }
 

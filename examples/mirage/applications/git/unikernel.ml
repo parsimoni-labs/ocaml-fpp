@@ -1,15 +1,10 @@
 open Cmdliner
 open Lwt.Infix
 
-let branch =
-  let doc = Arg.info ~doc:"The Git remote branch." [ "branch" ] in
-  Mirage_runtime.register_arg Arg.(value & opt string "refs/heads/master" doc)
-
-let endp_c = Arg.conv Smart_git.Endpoint.(of_string, pp)
-
 let remote =
+  let endp_c = Arg.conv Smart_git.Endpoint.(of_string, pp) in
   let doc = Arg.info ~doc:"Remote Git repository." [ "r"; "remote" ] in
-  Mirage_runtime.register_arg Arg.(required & opt (some endp_c) None doc)
+  Arg.(required & opt (some endp_c) None doc)
 
 module Make (Store : Git.S) (_ : sig end) = struct
   module Sync = Git.Mem.Sync (Store)
@@ -66,16 +61,17 @@ module Make (Store : Git.S) (_ : sig end) = struct
       `Report_status;
     ]
 
-  let start git ctx =
-    let edn = remote () and branch = Git.Reference.v (branch ()) in
-    Sync.fetch ~capabilities ~ctx edn git ~deepen:(`Depth 1) `All
+  let start ~branch ~remote git ctx =
+    let branch = Git.Reference.v branch in
+    Sync.fetch ~capabilities ~ctx remote git ~deepen:(`Depth 1) `All
     >>= failwith Sync.pp_error >>= empty_commit branch git
     >>= failwith Store.pp_error
     >>= fun () ->
-    Sync.push ~capabilities ~ctx edn git [ `Update (branch, branch) ]
+    Sync.push ~capabilities ~ctx remote git [ `Update (branch, branch) ]
     >>= failwith Sync.pp_error
     >>= fun () ->
-    Sync.fetch ~capabilities ~ctx edn git ~deepen:(`Depth 1) `All >>= function
+    Sync.fetch ~capabilities ~ctx remote git ~deepen:(`Depth 1) `All
+    >>= function
     | Ok (Some _) -> Lwt.return_unit
     | Ok None -> Lwt.return_unit
     | Error err -> Fmt.failwith "%a" Sync.pp_error err

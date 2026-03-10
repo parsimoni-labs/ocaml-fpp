@@ -3,7 +3,7 @@
     Name redefinition, initial transitions, undefined references, duplicate
     signal transitions, reachability, choice cycles, and contextual hints. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Name redefinition ──────────────────────────────────────────────── *)
 

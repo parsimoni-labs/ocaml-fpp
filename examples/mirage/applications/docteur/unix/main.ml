@@ -10,7 +10,7 @@ open Lwt.Syntax
 
 let start = lazy (
   let* static_t = Static_t.connect () in
-  Unikernel.start static_t (unikernel__filename ()))
+  Unikernel.start ~filename:(unikernel__filename ()) static_t)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
 let cmdliner_stdlib__key = Mirage_runtime.register_arg @@

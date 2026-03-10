@@ -4,7 +4,7 @@
     public {!Fpp.Check} API. Derived from upstream [array/], [enum/], [struct/],
     [constant/], and [type/] tests. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Array pass cases ────────────────────────────────────────────────── *)
 

@@ -4,7 +4,7 @@
     Derived from upstream [redef/] tests (constant, enum, component, module name
     collisions, struct members, enum constants). *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Pass cases ──────────────────────────────────────────────────────── *)
 

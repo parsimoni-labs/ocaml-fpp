@@ -130,7 +130,7 @@ let test_pass abs_path () =
   let errs = errors_of_file abs_path in
   if errs <> [] then
     Alcotest.failf "expected no errors, got: [%s]"
-      (Check_test_helpers.format_diags errs)
+      (Test_helpers.format_diags errs)
 
 let test_fail ~rel abs_path () =
   let diags = diags_of_file ~config:all_errors_config abs_path in
@@ -143,7 +143,7 @@ let test_fail ~rel abs_path () =
           List.exists
             (fun (d : Fpp.Check.diagnostic) ->
               List.exists
-                (fun pat -> Check_test_helpers.msg_contains ~substr:pat d.msg)
+                (fun pat -> Test_helpers.msg_contains ~substr:pat d.msg)
                 patterns)
             diags
         in
@@ -151,7 +151,7 @@ let test_fail ~rel abs_path () =
           Alcotest.failf
             "diagnostics found but none match expected patterns [%s]: %s"
             (String.concat "; " patterns)
-            (Check_test_helpers.format_diags diags)
+            (Test_helpers.format_diags diags)
 
 (* ── Suite construction ────────────────────────────────────────────── *)
 

@@ -3,7 +3,7 @@
     Signal coverage, liveness, unused declarations, transition shadowing, and
     deadlock detection. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Signal coverage ────────────────────────────────────────────────── *)
 

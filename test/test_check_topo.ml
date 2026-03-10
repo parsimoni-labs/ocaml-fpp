@@ -4,7 +4,7 @@
     references, and duplicate detection through the public {!Fpp.Check} API.
     Derived from upstream [component_instance_def/] and [top_import/] tests. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Instance pass cases ─────────────────────────────────────────────── *)
 

@@ -2,6 +2,7 @@ module Unikernel {
   passive component Client {
     async input port start: serial
     output port http: serial
+    param uri: string default "https://mirageos.org"
   }
 }
 

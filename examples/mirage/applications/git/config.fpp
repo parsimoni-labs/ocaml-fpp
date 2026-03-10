@@ -12,6 +12,8 @@ module Unikernel {
     async input port start: serial
     output port git: serial
     output port ctx: serial
+    param branch: string default "refs/heads/master"
+    external param remote: string
   }
 }
 

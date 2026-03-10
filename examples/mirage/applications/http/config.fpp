@@ -14,6 +14,9 @@ module Unikernel {
     output port tcp: serial
     output port conn: serial
     output port http: serial
+    param tls: bool default false
+    param tlsPort: U32 default 4343
+    external param alpn: string
   }
 }
 

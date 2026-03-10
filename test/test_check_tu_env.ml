@@ -5,7 +5,7 @@
     access, and component lookup through the public {!Fpp.Check} API. Derived
     from upstream [constant/] tests. *)
 
-open Check_test_helpers
+open Test_helpers
 
 (* ── Constant resolution pass cases ──────────────────────────────────── *)
 

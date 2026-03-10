@@ -7,14 +7,14 @@ let domain_name =
         Domain_name.pp )
   in
   let doc = Arg.info ~doc:"The domain-name to resolve." [ "domain-name" ] in
-  Mirage_runtime.register_arg Arg.(required & opt (some name_c) None doc)
+  Arg.(required & opt (some name_c) None doc)
 
 module Make (DNS : Dns_client_mirage.S) = struct
-  let start dns =
+  let start ~domain_name dns =
     let open Lwt.Infix in
-    DNS.gethostbyname dns (domain_name ()) >|= function
+    DNS.gethostbyname dns domain_name >|= function
     | Ok ipv4 ->
         Logs.info (fun m ->
-            m "%a: %a" Domain_name.pp (domain_name ()) Ipaddr.V4.pp ipv4)
+            m "%a: %a" Domain_name.pp domain_name Ipaddr.V4.pp ipv4)
     | Error (`Msg err) -> failwith err
 end

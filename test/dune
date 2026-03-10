@@ -1,5 +1,5 @@
 (test
  (name test)
- (libraries fpp alcotest)
+ (libraries fpp alcotest test_helpers)
  (deps
   (source_tree upstream)))
