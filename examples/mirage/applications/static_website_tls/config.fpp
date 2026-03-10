@@ -9,22 +9,21 @@ module Dispatch {
 
 instance static_data: Kv base id 0
 instance tls_keys: Kv base id 0
-instance conduit_tcp: Conduit_tcp.Make base id 0
 instance cohttp_server: Cohttp_mirage.Server.Make base id 0
 instance unikernel: Dispatch.HTTPS base id 0
 
 topology UnixStaticWebsiteTls {
   import SocketStack
   instance stackv4v6
-  instance conduit_tcp
+  instance conduit_tls
   instance cohttp_server
   instance static_data
   instance tls_keys
   instance unikernel
 
   connections Start {
-    conduit_tcp.stack -> stackv4v6.connect
-    cohttp_server.conduit -> conduit_tcp.start
+    conduit_tls.stack -> stackv4v6.connect
+    cohttp_server.conduit -> conduit_tls.start
     unikernel.data -> static_data.connect
     unikernel.keys -> tls_keys.connect
     unikernel.http -> cohttp_server.listen

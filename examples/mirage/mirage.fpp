@@ -720,14 +720,17 @@ module Conduit_mirage {
     sync input port resolve: ConduitResolve
     import Mirage_flow.S
   }
-
-  passive component TLS {
-    import Conduit_mirage.S
-    output port conduit: serial
-  }
 }
 
 module Conduit_tcp {
+  passive component Make {
+    import Conduit_mirage.S
+    async input port start: serial
+    output port stack: serial
+  }
+}
+
+module Conduit_tls {
   passive component Make {
     import Conduit_mirage.S
     async input port start: serial
@@ -1006,7 +1009,7 @@ instance chamelon: Kv.Make base id 0
 instance tar_kv: Tar_mirage.Make_KV_RO base id 0
 instance fat_kv: Fat.KV_RO base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
-instance conduit_tls: Conduit_mirage.TLS base id 0
+instance conduit_tls: Conduit_tls.Make base id 0
 instance resolver_unix: Resolver_unix.Make base id 0
 instance cohttp_server: Cohttp_mirage.Server.Make base id 0
 instance cohttp_client: Cohttp_mirage.Client.Make base id 0

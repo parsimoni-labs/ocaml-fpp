@@ -6,5 +6,6 @@
   tcpip
   tcpip.stack-socket
   conduit-mirage
+  tls-mirage
   dns-client-mirage
   happy-eyeballs-mirage))
