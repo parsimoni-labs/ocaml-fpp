@@ -1,0 +1,1 @@
+export COLUMNS=120
