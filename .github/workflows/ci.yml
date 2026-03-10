@@ -11,7 +11,7 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     env:
-      COLUMNS: '120'
+      COLUMNS: '80'
 
     steps:
       - uses: actions/checkout@v4
