@@ -1,7 +1,7 @@
 Generated OCaml from state machines and topologies must compile and run correctly.
 
 Setup: compile helper using ocamlopt directly (avoids nested dune deadlock)
-  $ compile() { ocamlopt -w -23-32 sm.ml -o sm.exe 2>&1; }
+  $ compile() { local out; out=$(ocamlopt -w -23-32 sm.ml -o sm.exe 2>&1); local rc=$?; [ -n "$out" ] && printf '%s\n' "$out" | sed 's/Unbound module "\([^"]*\)"/Unbound module \1/g'; return $rc; }
   $ run() { ./sm.exe 2>&1; }
 
 Simple state machines (no actions or guards)
@@ -396,7 +396,7 @@ Topology: simple 2-component wiring
   File "sm.ml", line 4, characters 28-34:
   4 | module Sensor = Sensor.Make(Logger)
                                   ^^^^^^
-  Error: Unbound module "Logger"
+  Error: Unbound module Logger
   [2]
 
 Topology: typed port wiring compiles and field access works
@@ -442,7 +442,7 @@ Topology: typed port wiring compiles and field access works
   File "sm.ml", line 4, characters 32-40:
   4 | module Producer = Producer.Make(Consumer)
                                       ^^^^^^^^
-  Error: Unbound module "Consumer"
+  Error: Unbound module Consumer
   [2]
 
 Topology + SM merged in one file compiles
@@ -489,7 +489,7 @@ Topology + SM merged in one file compiles
   File "sm.ml", line 39, characters 28-34:
   39 | module Sensor = Sensor.Make(Logger)
                                    ^^^^^^
-  Error: Unbound module "Logger"
+  Error: Unbound module Logger
   [2]
 
 Full pipeline: SM + topology wiring
@@ -594,5 +594,5 @@ Full pipeline: SM + topology wiring
   File "sm.ml", line 54, characters 28-34:
   54 | module Filter = Filter.Make(Logger)
                                    ^^^^^^
-  Error: Unbound module "Logger"
+  Error: Unbound module Logger
   [2]
