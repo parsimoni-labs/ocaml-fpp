@@ -68,7 +68,7 @@
   (ipaddr :with-test)
   (charrua (and (>= 3.0.0) :with-test))
   (charrua-server (and (>= 3.0.0) :with-test))
-  (ocaml-crunch :with-test)
+  (crunch :with-test)
   (dune-build-info :with-test)
   (chamelon :with-test)
   (hxd :with-test)

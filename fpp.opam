@@ -54,7 +54,7 @@ depends: [
   "ipaddr" {with-test}
   "charrua" {>= "3.0.0" & with-test}
   "charrua-server" {>= "3.0.0" & with-test}
-  "ocaml-crunch" {with-test}
+  "crunch" {with-test}
   "dune-build-info" {with-test}
   "chamelon" {with-test}
   "hxd" {with-test}
