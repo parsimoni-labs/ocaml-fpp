@@ -25,6 +25,12 @@ jobs:
           opam pin add tty.dev git+https://tangled.org/gazagnaire.org/ocaml-tty.git --no-action
           opam pin add fpp.dev . --no-action
 
+      - name: Cache opam dependencies
+        uses: actions/cache@v4
+        with:
+          path: _opam
+          key: opam-${{ runner.os }}-${{ hashFiles('fpp.opam') }}
+
       - name: Install dependencies
         run: opam install --deps-only --with-test ./fpp.opam
 
