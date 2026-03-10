@@ -44,7 +44,7 @@ let node startpos data = { Ast.loc = mk_loc startpos; data }
    PREC_BELOW so that "shift the clause token" always wins. *)
 %token PREC_BELOW
 %nonassoc PREC_BELOW
-%nonassoc SIZE FORMAT TIME TEXT STATE HOOK DROP BLOCK TYPE ARRAY
+%nonassoc SIZE FORMAT TYPE ARRAY
 
 %left PLUS MINUS
 %left STAR SLASH
