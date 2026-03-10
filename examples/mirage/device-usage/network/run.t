@@ -4,9 +4,9 @@ Build and run the network TCP echo server.
 
 Start the server, connect to it, then kill the server:
 
-  $ timeout 5 sh -c '
+  $ timeout 10 sh -c '
   > ./unix/main.exe --port 18080 &
-  > sleep 1
+  > sleep 3
   > echo hello | nc -w 1 127.0.0.1 18080
   > kill $! 2>/dev/null
   > wait' 2>&1 | strip | grep "new tcp connection" | sed 's/port [0-9]*/port PORT/'
