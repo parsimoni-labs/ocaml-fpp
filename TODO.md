@@ -132,21 +132,7 @@ These checks exist in UML tools but target constructs FPP does not have:
 The upstream `fpp-check` compiler performs approximately 24 topology checks.
 Most Tier 1 checks are implemented; a few edge cases remain.
 
-#### Tier 1: replicate upstream checks (99 upstream test files)
-
-These checks are well-specified by the upstream test suite and can be validated
-against it, following the same pattern used for state machine checks.
-
-- [x] **Port direction validation** -- connections must go from output to input
-      (11 tests in `connection_direct/`)
-- [x] **Internal port prohibition** -- internal ports cannot appear in topology
-      connections
-- [x] **Unknown port detection** -- error when a port name does not exist on
-      the component
-- [x] **Port index bounds checking** -- error when an explicit port index
-      exceeds the declared port size
-
-#### Tier 2: deeper analysis (large systems)
+#### Deeper analysis (large systems)
 
 - [ ] **Cross-topology import conflict detection** -- when `import` brings
       connections from another topology, check for conflicting connections to
@@ -155,11 +141,6 @@ against it, following the same pattern used for state machine checks.
       (0..N-1); gaps suggest missing connections
 - [ ] **Pattern completeness** -- when a connection pattern is used, verify
       all eligible component instances participate
-
-## Visualization (`ofpp dot`)
-
-- [ ] **Topology → DOT** -- render topologies as connection diagrams showing
-      component instances, port wiring, and connection patterns
 
 ## Test Generation (`ofpp test`)
 
@@ -190,47 +171,29 @@ Generate filled GTest test cases using standard F Prime test macros:
 
 ## Code Generation (`ofpp to-ml`)
 
-- [x] Generate phantom-typed GADT state machine modules
-- [x] Functor-based actions and guards (module types + dependency injection)
-- [x] Nested state flattening (leaf states only)
-- [x] Choice enter functions with guard dispatch
-- [x] Typed signals (FPP types mapped to OCaml: U32→int32, F64→float, etc.)
-- [x] Effective transitions (inherited from ancestor states)
-- [x] State shadowing support (parent/child same name)
-- [x] Nested initial-transition action collection
-- [x] CLI subcommand with `--output` and `--sm` flags
-- [x] Compile tests for all upstream state machine patterns
 - [ ] Generate OCaml types from FPP type definitions (structs, enums, arrays)
 - [ ] Generate test harness stubs
 
-### Topology codegen vs mirage-skeleton
+### Adapter elimination (tuple-packed connect args)
 
-Comparison of `ofpp to-ml` output against Mirage's generated `main.ml`
-(see `examples/mirage/` and `~/git/mirage-skeleton/applications/static_website_tls/mirage/main.ml`).
+Some MirageOS functors take tuple-packed arguments in their `connect` function
+(e.g. `Dns_client_mirage.Make(S)(H).connect` takes `(S.t * H.t)` as a single
+tuple). The codegen currently generates curried arguments, so adapter modules
+(`adapters/dns_resolver.ml`, `applications/dns/dns_client.ml`) unpack the tuple.
 
-- [x] **Entry point calls user start function** -- the entry point should call
-      the last non-leaf active instance's `.start` method with its dependencies
-      as arguments, not just force lazy bindings and return `()`.
-- [x] **Passive component connect/listen calls** -- passive components (Conduit,
-      CoHTTP) need their connect or listen calls wired in the entry point, not
-      just functor applications. Mirage emits `Cohttp.listen conduit` and
-      `Conduit_mirage.TCP.connect stack`.
-- [ ] **Runtime configuration arguments** -- real MirageOS socket connect
-      signatures take `~ipv4_only` / `~ipv6_only` and network prefix arguments
-      from runtime keys. Currently ofpp relies on wrapper modules with hardcoded
-      defaults. Need a mechanism for connect-time arguments beyond the
-      connection graph.
-- [x] **User functor application** -- when the topology includes a user-facing
-      functor (e.g. `Dispatch.HTTPS(Data)(Certs)(Http)`), generate the
-      application and wire `.start`. Currently ofpp stops at the infrastructure
-      layer.
+- [ ] **Detect tuple-packed connect signatures** -- when a component's connect
+      entry point takes multiple dependencies as a tuple (from the connection
+      graph), generate `(a, b)` instead of `a b`.
+- [ ] **Eliminate `adapters/dns_resolver.ml`** -- make `Dns_resolver.Make` use
+      `Dns_client_mirage.Make` directly with tuple-packed connect call.
+- [ ] **Eliminate `applications/dns/dns_client.ml`** -- same pattern, duplicate
+      of the dns_resolver adapter.
 
 ## Infrastructure
 
 - [ ] CI (GitHub Actions: Ubuntu, macOS; OCaml 4.14, 5.x)
 - [ ] Publish to opam
 - [ ] API documentation (odoc)
-- [ ] Examples directory
 
 ## Proposed Upstream Language Features
 
