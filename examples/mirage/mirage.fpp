@@ -795,6 +795,7 @@ module Mimic_happy_eyeballs {
     async input port connect: serial
     output port _stack: serial
     output port happy_eyeballs: serial
+    output port _dns: serial
   }
 }
 

@@ -48,6 +48,7 @@ topology UnixHttp {
     dns_client.happy_eyeballs -> happy_eyeballs_mirage.connect_device
     mimic_happy_eyeballs._stack -> stackv4v6.connect
     mimic_happy_eyeballs.happy_eyeballs -> happy_eyeballs_mirage.connect_device
+    mimic_happy_eyeballs._dns -> dns_client.start
     connect._tcp -> tcpv4v6_socket.connect
     connect.he -> mimic_happy_eyeballs.connect
     http_server.tcp -> tcpv4v6_socket.connect

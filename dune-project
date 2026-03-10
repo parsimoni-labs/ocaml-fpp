@@ -32,6 +32,7 @@
   cmdliner
   logs
   tty
+  conf-graphviz
   (alcotest :with-test)
   (memtrace :with-test)
   (lwt :with-test)
@@ -81,8 +82,8 @@
   (happy-eyeballs-lwt :with-test)
   (digestif :with-test)
   (ptime :with-test)
-  (mimic :with-test)
-  (mimic-happy-eyeballs :with-test)
+  (mimic (and (>= 0.0.9) :with-test))
+  (mimic-happy-eyeballs (and (>= 0.0.9) :with-test))
   (ca-certs-nss :with-test)
   (x509 :with-test)
   (mirage-crypto-pk :with-test)
