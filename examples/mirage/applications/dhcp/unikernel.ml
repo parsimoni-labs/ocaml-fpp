@@ -10,8 +10,9 @@ module Main (N : Mirage_net.S) = struct
 
   let input_dhcp net config leases buf =
     match Dhcp_wire.pkt_of_buf buf (Cstruct.length buf) with
-    | Error e ->
-        Logs.debug (fun m -> m "Can't parse DHCP packet: %s" e);
+    | Error `Not_dhcp -> Lwt.return leases
+    | Error (`Msg e) ->
+        Logs.err (fun m -> m "Can't parse packet: %s" e);
         Lwt.return leases
     | Ok pkt -> (
         let open Dhcp_server.Input in
@@ -20,7 +21,7 @@ module Main (N : Mirage_net.S) = struct
         in
         match input_pkt config leases pkt now with
         | Silence -> Lwt.return leases
-        | Update leases ->
+        | Update (_, leases) ->
             Logs.info (fun m ->
                 m "Received packet %a - updated lease database" Dhcp_wire.pp_pkt
                   pkt);
@@ -31,7 +32,7 @@ module Main (N : Mirage_net.S) = struct
         | Dhcp_server.Input.Error e ->
             Logs.err (fun m -> m "%s" e);
             Lwt.return leases
-        | Reply (reply, leases) ->
+        | Reply (reply, _, leases) ->
             Logs.info (fun m -> m "Received packet %a" Dhcp_wire.pp_pkt pkt);
             N.write net
               ~size:(N.mtu net + Ethernet.Packet.sizeof_ethernet)

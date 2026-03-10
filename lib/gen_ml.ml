@@ -924,15 +924,29 @@ let starts_with ~prefix s =
   let plen = String.length prefix in
   String.length s >= plen && String.sub s 0 plen = prefix
 
-(** Extract the sig path from a component's [import] declaration. The qualified
-    identifier of the imported interface (e.g. [Ethernet.S]) is used directly as
-    the OCaml module type path. Returns [None] if no import exists. *)
+(** Extract [@ ocaml.sig Path] from pre-annotations, if present. *)
+let extract_ocaml_sig (pre : string list) =
+  List.find_map
+    (fun s ->
+      let s = String.trim s in
+      if starts_with ~prefix:"ocaml.sig " s then
+        Some (String.trim (String.sub s 10 (String.length s - 10)))
+      else None)
+    pre
+
+(** Extract the sig path from a component's [import] declaration. If the import
+    has an [@ ocaml.sig Path] annotation, that path is used instead of the FPP
+    qualified identifier. This handles cases where the FPP interface hierarchy
+    doesn't match the OCaml module type path (e.g. [Cohttp_mirage.Client.S] in
+    FPP maps to [Cohttp_lwt.S.Client] in OCaml). *)
 let import_sig_path (comp : Ast.def_component) =
   List.find_map
     (fun ann ->
-      match (Ast.unannotate ann).Ast.data with
+      let pre, node, _post = ann in
+      match node.Ast.data with
       | Ast.Comp_spec_import_interface qi ->
-          Some (Ast.qual_ident_to_string qi.data)
+          let default = Ast.qual_ident_to_string qi.data in
+          Some (Option.value ~default (extract_ocaml_sig pre))
       | _ -> None)
     comp.comp_members
 
@@ -1007,30 +1021,47 @@ let is_optional_runtime_port (comp : Ast.def_component) port_name =
       | _ -> false)
     comp.comp_members
 
-(** Return the name of the first [sync input port] on a component, if any. Used
-    as the default method name when an instance has no outgoing connections
-    (e.g. a standalone application with [sync input port start]). *)
-let sync_input_port_name (comp : Ast.def_component) =
+(** Return the first explicit constructor port on a component: the first
+    [sync input port] or [async input port]. Returns [(name, is_sync)]. *)
+let constructor_port (comp : Ast.def_component) =
   List.find_map
     (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
       match node.Ast.data with
       | Ast.Comp_spec_port_instance (Ast.Port_general p)
         when p.gen_kind = Sync_input ->
-          Some (camel_to_snake p.gen_name.data)
+          Some (camel_to_snake p.gen_name.data, true)
+      | Ast.Comp_spec_port_instance (Ast.Port_general p)
+        when p.gen_kind = Async_input ->
+          Some (camel_to_snake p.gen_name.data, false)
       | _ -> None)
     comp.comp_members
 
+(** Return the name of the first constructor port on a component, if any. *)
+let sync_input_port_name (comp : Ast.def_component) =
+  constructor_port comp |> Option.map fst
+
+(** Whether the component's constructor method returns a non-Lwt value.
+    [sync input port] → plain [let]; [async input port] → [let*]. Default (no
+    explicit port) is async. *)
+let is_sync_return_method (comp : Ast.def_component) =
+  match constructor_port comp with
+  | Some (_, is_sync) -> is_sync
+  | None -> false
+
 (** Extract [param] declarations from a component, in declaration order. Each
     param has a name, an FPP type, an optional default expression, a flag
-    indicating whether it is positional ([@ ocaml.positional]), and a flag
-    indicating whether it is optional ([@ ocaml.optional]). *)
+    indicating whether it is positional, and a flag indicating whether it is
+    optional ([@ ocaml.optional]). [external param] defaults to positional;
+    regular [param] defaults to labeled (use [@ ocaml.positional] to override).
+*)
 let component_params (comp : Ast.def_component) =
   List.filter_map
     (fun ((pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
       match node.Ast.data with
       | Ast.Comp_spec_param p ->
           let positional =
-            List.exists (fun a -> String.trim a = "ocaml.positional") pre
+            p.param_external
+            || List.exists (fun a -> String.trim a = "ocaml.positional") pre
           in
           let optional =
             List.exists (fun a -> String.trim a = "ocaml.optional") pre
@@ -1388,12 +1419,22 @@ let conns_from inst_name port_name connections =
 
 (** Compute unique target instances for an instance from its output port
     connections. Returns [(target_inst_name, target_component)] pairs, deduped
-    and ordered by first occurrence. *)
-let target_instances inst_name (comp : Ast.def_component) connections sorted =
+    and ordered by first occurrence.
+
+    When [~runtime_only:true], output ports whose name starts with [_] are
+    skipped. By convention a leading underscore marks a functor-only dependency
+    whose value is not passed as a runtime argument to the constructor. *)
+let target_instances ?(runtime_only = false) inst_name
+    (comp : Ast.def_component) connections sorted =
   let ports = collect_general_ports comp in
+  let is_underscore_port (p : Ast.port_instance_general) =
+    let n = p.gen_name.data in
+    String.length n > 0 && n.[0] = '_'
+  in
   let outputs =
     List.filter
-      (fun (p : Ast.port_instance_general) -> p.gen_kind = Output)
+      (fun (p : Ast.port_instance_general) ->
+        p.gen_kind = Output && not (runtime_only && is_underscore_port p))
       ports
   in
   let seen = Hashtbl.create 4 in
@@ -1818,33 +1859,29 @@ let expand_port_params tu (params : Ast.formal_param_list) =
           ])
     params
 
-(** Extract formal params from the connect port's type definition. When a
-    component declares [sync input port connect: SomePort] and [SomePort] has
-    formal parameters, those params become labeled arguments on the connect
-    call. Only applies to ports named [connect] or [start] — not interface ports
-    (which model method signatures). Returns the formal param list. *)
+(** Extract formal params from the constructor port's type definition. When a
+    component declares [async input port init: SomePort] and [SomePort] has
+    formal parameters, those params become labeled arguments on the constructor
+    call. Returns the formal param list. *)
 let connect_port_params tu (comp : Ast.def_component) =
   let method_name =
     sync_input_port_name comp |> Option.value ~default:"connect"
   in
-  if method_name <> "connect" && method_name <> "start" then []
-  else
-    List.find_map
-      (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated)
-         ->
-        match node.Ast.data with
-        | Ast.Comp_spec_port_instance (Ast.Port_general p)
-          when p.gen_kind = Sync_input
-               && camel_to_snake p.gen_name.data = method_name -> (
-            match p.gen_port with
-            | Some qi -> (
-                match resolve_port_def tu qi.Ast.data with
-                | Some pd when pd.port_params <> [] -> Some pd.port_params
-                | _ -> None)
-            | None -> None)
-        | _ -> None)
-      comp.comp_members
-    |> Option.value ~default:[]
+  List.find_map
+    (fun ((_pre, node, _post) : Ast.component_member Ast.node Ast.annotated) ->
+      match node.Ast.data with
+      | Ast.Comp_spec_port_instance (Ast.Port_general p)
+        when (p.gen_kind = Sync_input || p.gen_kind = Async_input)
+             && camel_to_snake p.gen_name.data = method_name -> (
+          match p.gen_port with
+          | Some qi -> (
+              match resolve_port_def tu qi.Ast.data with
+              | Some pd when pd.port_params <> [] -> Some pd.port_params
+              | _ -> None)
+          | None -> None)
+      | _ -> None)
+    comp.comp_members
+  |> Option.value ~default:[]
 
 (** Resolve the value for a port param on an instance from the native FPP
     [instance name(param = expr)] overrides. *)
@@ -1962,7 +1999,9 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
   let method_name =
     sync_input_port_name comp |> Option.value ~default:"connect"
   in
-  let targets = target_instances inst_name comp connections sorted in
+  let targets =
+    target_instances ~runtime_only:true inst_name comp connections sorted
+  in
   let rt_args = runtime_labelled_args inst_name sorted connections in
   let params = component_params comp in
   let port_params = connect_port_params tu comp in
@@ -1979,6 +2018,8 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
   pp_runtime_labelled_args ppf inst_annots inst_name rt_args connections;
   let has_any_arg = rt_args <> [] in
   let has_any_arg = ref has_any_arg in
+  (* Labeled params before targets *)
+  let positional_params = ref [] in
   List.iteri
     (fun i ((p : Ast.spec_param), positional, optional) ->
       let param_name = camel_to_snake p.param_name.data in
@@ -1986,13 +2027,18 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
       match resolve_param_value inst_annots inst_name ci i p with
       | Some code ->
           has_any_arg := true;
-          if positional then pf ppf " %s" code
+          if positional then
+            positional_params :=
+              (fun () -> pf ppf " %s" code) :: !positional_params
           else pf ppf " %s%s:%s" prefix param_name code
       | None ->
           if optional then () (* omit unresolved optional params *)
           else (
             has_any_arg := true;
-            if positional then pf ppf " (%s__%s ())" inst_var param_name
+            if positional then
+              positional_params :=
+                (fun () -> pf ppf " (%s__%s ())" inst_var param_name)
+                :: !positional_params
             else pf ppf " ~%s:(%s__%s ())" param_name inst_var param_name))
     params;
   (* Port params expanded through struct types.  Struct-expanded fields are
@@ -2031,6 +2077,8 @@ let pp_instance_expr ppf tu inst_name (ci : Ast.def_component_instance)
       has_any_arg := true;
       pf ppf " %s" (sanitize_ident target_inst))
     targets;
+  (* Positional params after targets *)
+  List.iter (fun f -> f ()) (List.rev !positional_params);
   if not !has_any_arg then pf ppf " ()"
 
 (** Emit a lazy group binding. [prev_group] is the name and exports of the
@@ -2056,8 +2104,11 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
     (* Single instance, no cross-deps: one-liner *)
     match insts with
     | [ (inst_name, ci, comp) ] ->
+        let sync = is_sync_return_method comp in
         pf ppf "@,@,let %s = lazy (" group_name;
+        if sync then pf ppf "Lwt.return (";
         pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+        if sync then pf ppf ")";
         pf ppf ")"
     | _ -> ()
   else (
@@ -2074,15 +2125,40 @@ let pp_group_function ppf tu ~prev_group group_name insts all_conns sorted
             let names = List.map sanitize_ident prev_exports in
             pf ppf "@,  let* (%s) = Lazy.force %s in" (String.concat ", " names)
               prev_name));
+    (* Collect all instance names that are referenced as arguments by later
+       instances in this group, or appear in the exports tuple. *)
+    let used_vars =
+      let tbl = Hashtbl.create 8 in
+      List.iter (fun e -> Hashtbl.replace tbl e ()) exports;
+      List.iter
+        (fun (inst_name, _ci, (comp : Ast.def_component)) ->
+          let targets =
+            target_instances ~runtime_only:true inst_name comp all_conns sorted
+          in
+          List.iter (fun (t, _) -> Hashtbl.replace tbl t ()) targets)
+        insts;
+      tbl
+    in
     (* let* chain for each instance *)
     List.iteri
       (fun i (inst_name, ci, (comp : Ast.def_component)) ->
         let is_last = i = n - 1 in
+        let sync = is_sync_return_method comp in
+        let var =
+          let v = sanitize_ident inst_name in
+          if Hashtbl.mem used_vars inst_name then v else "_" ^ v
+        in
         if is_last && not need_tuple_return then (
           pf ppf "@,  ";
-          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots)
+          if sync then pf ppf "Lwt.return (";
+          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+          if sync then pf ppf ")")
+        else if sync then (
+          pf ppf "@,  let %s = " var;
+          pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
+          pf ppf " in")
         else (
-          pf ppf "@,  let* %s = " (sanitize_ident inst_name);
+          pf ppf "@,  let* %s = " var;
           pp_instance_expr ppf tu inst_name ci comp all_conns sorted inst_annots;
           pf ppf " in"))
       insts;
@@ -2108,8 +2184,41 @@ let pp_one_cmdliner_term ppf ~inst_var (p : Ast.spec_param) =
   pf ppf "@,  Mirage_runtime.register_arg Cmdliner.Arg.(value & opt %s %s doc)"
     conv default
 
-(** Emit Cmdliner term registrations for component params and port params that
-    are not overridden by annotations or init specs. *)
+(** Emit a single registration for an [external param]: reference the module's
+    own Cmdliner term via [Mirage_runtime.register_arg @@ Module.param]. *)
+let pp_one_external_param ppf ~inst_var ~comp_path (p : Ast.spec_param) =
+  let param_name = camel_to_snake p.param_name.data in
+  let mod_prefix =
+    match String.rindex_opt comp_path '.' with
+    | Some i -> String.sub comp_path 0 i
+    | None -> constructor_name inst_var
+  in
+  pf ppf "@\nlet %s__%s = Mirage_runtime.register_arg @@@@ %s.%s" inst_var
+    param_name mod_prefix param_name
+
+(** Emit [external param] registrations (must appear before module
+    aliases/functor applications to avoid name shadowing). *)
+let pp_external_param_terms ppf inst_annots sorted =
+  List.iter
+    (fun (inst_name, ci, (comp : Ast.def_component)) ->
+      if is_runtime_component comp then ()
+      else begin
+        let params = component_params comp in
+        let inst_var = sanitize_ident inst_name in
+        let comp_path = Ast.qual_ident_to_string ci.Ast.inst_component.data in
+        List.iteri
+          (fun i ((p : Ast.spec_param), _positional, optional) ->
+            if
+              p.param_external
+              && resolve_param_value inst_annots inst_name ci i p = None
+              && not optional
+            then pp_one_external_param ppf ~inst_var ~comp_path p)
+          params
+      end)
+    sorted
+
+(** Emit Cmdliner term registrations for non-external component params that are
+    not overridden by annotations or init specs. *)
 let pp_param_cmdliner_terms ppf _tu inst_annots sorted =
   List.iter
     (fun (inst_name, ci, (comp : Ast.def_component)) ->
@@ -2120,7 +2229,8 @@ let pp_param_cmdliner_terms ppf _tu inst_annots sorted =
         List.iteri
           (fun i ((p : Ast.spec_param), _positional, optional) ->
             if
-              resolve_param_value inst_annots inst_name ci i p = None
+              (not p.param_external)
+              && resolve_param_value inst_annots inst_name ci i p = None
               && not optional
             then pp_one_cmdliner_term ppf ~inst_var p)
           params
@@ -2200,9 +2310,11 @@ let pp_topology_body ppf tu topo sorted groups =
     pf ppf "@,"
   in
   let non_rt = filter_non_runtime sorted in
+  (* External param registrations before module aliases (avoids shadowing) *)
+  pp_external_param_terms ppf inst_annots non_rt;
   pp_module_aliases ppf all_conns module_break non_rt;
   pp_functor_applications ppf all_conns module_break non_rt;
-  (* Cmdliner registrations for component params not overridden *)
+  (* Cmdliner registrations for non-external component params *)
   pp_param_cmdliner_terms ppf tu inst_annots non_rt;
   (* Group bindings *)
   let partitioned = partition_instances_by_group non_rt groups all_conns in
@@ -2310,7 +2422,7 @@ let pp_main_entry_multi ppf topos =
 
 (** Emit the module type for a component based on its typed ports. When the
     component has typed input ports beyond [connect]/[start], emit
-    [sig type t val x : t -> T ... end]; otherwise emit [sig type t end]. *)
+    [sig type t val x : t -> T ... end]; otherwise emit [sig end]. *)
 let pp_mli_derived_sig tu ppf (comp : Ast.def_component) =
   let type_env = build_type_env tu in
   let ports = interface_ports tu comp in
@@ -2319,7 +2431,6 @@ let pp_mli_derived_sig tu ppf (comp : Ast.def_component) =
   in
   let has_type_t = method_name <> "start" in
   match ports with
-  | [] when has_type_t -> pf ppf "sig type t end"
   | [] -> pf ppf "sig end"
   | _ ->
       pf ppf "sig";

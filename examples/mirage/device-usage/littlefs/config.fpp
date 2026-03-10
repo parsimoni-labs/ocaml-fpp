@@ -1,6 +1,6 @@
 module Unikernel {
   passive component Make {
-    sync input port start: serial
+    async input port start: serial
     output port kv: serial
   }
 }

@@ -9,8 +9,8 @@ license: "MIT"
 homepage: "https://github.com/parsimoni-labs/ocaml-fpp"
 bug-reports: "https://github.com/parsimoni-labs/ocaml-fpp/issues"
 depends: [
-  "dune" {>= "3.0"}
   "ocaml" {>= "4.14"}
+  "dune" {>= "3.0" & >= "3.20"}
   "fmt"
   "jsont"
   "menhir"
@@ -52,8 +52,8 @@ depends: [
   "mirage-net-solo5" {with-test}
   "uri" {with-test}
   "ipaddr" {with-test}
-  "charrua" {with-test}
-  "charrua-server" {with-test}
+  "charrua" {>= "3.0.0" & with-test}
+  "charrua-server" {>= "3.0.0" & with-test}
   "ocaml-crunch" {with-test}
   "dune-build-info" {with-test}
   "chamelon" {with-test}

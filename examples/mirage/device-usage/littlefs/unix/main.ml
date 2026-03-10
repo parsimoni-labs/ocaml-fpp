@@ -8,10 +8,14 @@ module Chamelon = Kv.Make(Block)
 module Unikernel = Unikernel.Make(Chamelon)
 
 open Lwt.Syntax
+open Lwt.Infix
 
 let start = lazy (
   let* block = Block.connect "littlefs" in
-  let* chamelon = Chamelon.connect ~program_block_size:16 block in
+  let* chamelon =
+    Chamelon.connect ~program_block_size:16 block
+    >|= Result.map_error (Fmt.str "%a" Chamelon.pp_error)
+    >|= Result.fold ~ok:Fun.id ~error:failwith in
   Unikernel.start chamelon)
 let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
 let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs

@@ -6,8 +6,9 @@ module type Tcpv4v6_socket = Tcpip.Tcp.S
 module type Stackv4v6 = Tcpip.Stack.V4V6
 module type Resolver_unix = Resolver_mirage.S
 module type Conduit_tcp = Conduit_mirage.S
-module type Cohttp_client = Cohttp_mirage.Client.S
+module type Cohttp_client = Cohttp_lwt.S.Client
 module Stackv4v6 : Stackv4v6
+module Resolver_unix : Resolver_unix
 module Conduit_tcp : Conduit_tcp
 module Cohttp_client : Cohttp_client
 module Unikernel : sig end

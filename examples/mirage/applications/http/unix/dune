@@ -63,7 +63,8 @@
   happy-eyeballs-mirage
   dns-client-mirage
   paf
-  paf-cohttp
+  paf.mirage
+  paf.alpn
   h2
   httpaf
   digestif

@@ -783,7 +783,7 @@ let test_simple_topology () =
        {|
     port P
     passive component Sensor { output port dataOut: P }
-    passive component Logger { sync input port dataIn: P }
+    passive component Logger { async input port dataIn: P }
     instance sensor: Sensor base id 0x100
     instance logger: Logger base id 0x200
     topology System {
@@ -807,7 +807,7 @@ let test_typed_port_topology () =
        {|
     port DataPort(value: U32) -> bool
     passive component Producer { output port out: DataPort }
-    passive component Consumer { sync input port in_: DataPort }
+    passive component Consumer { async input port in_: DataPort }
     instance producer: Producer base id 0x100
     instance consumer: Consumer base id 0x200
     topology App {
@@ -832,13 +832,13 @@ let test_annotated_topology () =
     (render_topo
        {|
     port P
-    active component Net { sync input port write: P }
+    active component Net { async input port write: P }
     active component Ethernet {
       output port net: P
     }
     active component Ipv4 {
       output port eth: P
-      sync input port cidr: P
+      async input port cidr: P
     }
     instance net: Net base id 0x100
     instance eth: Ethernet base id 0x200
@@ -870,7 +870,7 @@ let test_annotated_default_functor () =
        {|
     port P
     active component Foo { output port out: P }
-    active component Bar { sync input port in_: P }
+    active component Bar { async input port in_: P }
     instance foo: Foo base id 0x100
     instance bar: Bar base id 0x200
     topology T {
@@ -893,11 +893,11 @@ let test_module_nested_default_functor () =
     (render_topo
        {|
     port P
-    active component Net { sync input port write: P }
+    active component Net { async input port write: P }
     module Tcp {
       active component Flow {
         output port net: P
-        sync input port write: P
+        async input port write: P
       }
     }
     instance net: Net base id 0x100
@@ -922,7 +922,7 @@ let test_topology_import () =
     (render_topo
        {|
     port P
-    active component Net { sync input port write: P }
+    active component Net { async input port write: P }
     active component Eth {
       output port net: P
     }
@@ -969,7 +969,7 @@ let test_passive_in_annotated () =
     module Crunch {
       passive component Kv { output port dep: P }
     }
-    active component Http { sync input port static: P }
+    active component Http { async input port static: P }
     instance kv: Crunch.Kv base id 0x100
     instance http: Http base id 0x200
     topology T {
@@ -999,12 +999,12 @@ let test_external_types () =
     port Write(data: Buffer)
     port GetMac -> Macaddr
     active component Net {
-      sync input port write: Write
+      async input port write: Write
       sync input port mac: GetMac
     }
     active component Eth {
       output port net: Write
-      sync input port write: Write
+      async input port write: Write
     }
     instance net: Net base id 0x100
     instance eth: Eth base id 0x200
@@ -1033,9 +1033,9 @@ let test_bound_leaf_instance () =
     active component Eth {
       output port net: P
     }
-    active component Net { sync input port write: P }
+    active component Net { async input port write: P }
     module Htdocs {
-      active component Data { sync input port get: P }
+      active component Data { async input port get: P }
     }
     instance net: Net base id 0x100
     instance eth: Eth base id 0x200
@@ -1069,9 +1069,9 @@ let test_mixed_bound_unbound () =
       output port kv: P
       output port certs: P
     }
-    active component Kv { sync input port get: P }
+    active component Kv { async input port get: P }
     module Static {
-      active component Kv { sync input port get: P }
+      active component Kv { async input port get: P }
     }
     instance kv: Static.Kv base id 0x100
     instance certs: Kv base id 0x200
@@ -1106,7 +1106,7 @@ let test_all_leaves_bound () =
       output port kv: P
     }
     module Embedded {
-      active component Kv { sync input port get: P }
+      active component Kv { async input port get: P }
     }
     instance kv: Embedded.Kv base id 0x100
     instance srv: Srv base id 0x200
@@ -1136,9 +1136,9 @@ let test_multi_group () =
     passive component A { output port out: P }
     passive component B {
       output port out: P
-      sync input port in_: P
+      async input port in_: P
     }
-    passive component C { sync input port in_: P }
+    passive component C { async input port in_: P }
     instance a: A base id 0x100
     instance b: B base id 0x200
     instance c: C base id 0x300
@@ -1183,7 +1183,7 @@ let test_bound_nonleaf () =
     }
     module Tcpip {
       active component Stack {
-        sync input port provide: Dep
+        async input port provide: Dep
       }
     }
     instance stack: Tcpip.Stack base id 0x100
@@ -1212,7 +1212,7 @@ let test_custom_group_name () =
        {|
     port P
     passive component Sensor { output port dataOut: P }
-    passive component Logger { sync input port dataIn: P }
+    passive component Logger { async input port dataIn: P }
     instance sensor: Sensor base id 0x100
     instance logger: Logger base id 0x200
     topology System {
@@ -1242,7 +1242,7 @@ let test_runtime () =
       output port ipv6_only: serial
     }
     module My {
-      active component Socket { sync input port connect: P }
+      active component Socket { async input port connect: P }
     }
     active component Srv { output port sock: P }
     instance runtime: Runtime base id 0xB00
@@ -1278,7 +1278,7 @@ let test_runtime_parameterised () =
       output port ipv4_only: serial
       output port ipv6_only: serial
     }
-    active component Socket { sync input port connect: P }
+    active component Socket { async input port connect: P }
     active component Stack {
       output port udp: P
       output port tcp: P
@@ -1338,7 +1338,7 @@ let test_mli_sig_path () =
     passive component App {
       output port net: P
       output port block: P
-      sync input port start: serial
+      async input port start: serial
     }
     instance net: Uni.Net base id 0x100
     instance block: Ram.Block base id 0x200
@@ -1372,9 +1372,9 @@ let test_mli_typed_ports () =
     port GetMac -> Mac
     port GetMtu -> U32
 
-    passive component Net { sync input port connect: serial }
+    passive component Net { async input port connect: serial }
     passive component Eth {
-      sync input port connect: serial
+      async input port connect: serial
       output port net: serial
       sync input port mac: GetMac
       sync input port mtu: GetMtu
@@ -1422,10 +1422,10 @@ let test_mli_sig_with_typed_ports () =
       import Ethernet.S
       output port net: serial
     }
-    passive component Net { sync input port connect: serial }
+    passive component Net { async input port connect: serial }
     passive component App {
       output port eth: serial
-      sync input port start: serial
+      async input port start: serial
     }
     instance net: Net base id 0x100
     instance eth: Eth base id 0x200
@@ -1481,7 +1481,7 @@ let test_mli_import_sig_path () =
     passive component App {
       output port net: serial
       output port block: serial
-      sync input port start: serial
+      async input port start: serial
     }
     instance net: Uni.Netif base id 0x100
     instance block: Ram.Disk base id 0x200

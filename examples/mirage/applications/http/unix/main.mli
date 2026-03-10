@@ -3,20 +3,22 @@
 
 module type Udpv4v6_socket = Tcpip.Udp.S
 module type Tcpv4v6_socket = Tcpip.Tcp.S
+module type Certs_data = Mirage_kv.RO
+module type Keys_data = Mirage_kv.RO
+module type Http_server = Paf_mirage.S
 module type Stackv4v6 = Tcpip.Stack.V4V6
 module type Happy_eyeballs_mirage = Happy_eyeballs_mirage.S
 module type Dns_client = Dns_client_mirage.S
-module type Certs_data = Mirage_kv.RO
-module type Keys_data = Mirage_kv.RO
-module type Paf_server = Paf_mirage.S
+module Http_server : Http_server
 module Stackv4v6 : Stackv4v6
 module Happy_eyeballs_mirage : Happy_eyeballs_mirage
 module Dns_client : Dns_client
-module Paf_server : Paf_server
+module Mimic_happy_eyeballs : sig end
+module Connect : sig end
 module Unikernel : sig end
 
-val connect : Stackv4v6.t Lwt.t Lazy.t
+val connect : (Tcpv4v6_socket.t * Stackv4v6.t) Lwt.t Lazy.t
 
-val connect_device : (Stackv4v6.t * Happy_eyeballs_mirage.t) Lwt.t Lazy.t
+val connect_device : (Tcpv4v6_socket.t * Stackv4v6.t * Happy_eyeballs_mirage.t) Lwt.t Lazy.t
 
 val start : unit Lwt.t Lazy.t

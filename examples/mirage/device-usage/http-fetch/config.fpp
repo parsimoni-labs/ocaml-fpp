@@ -1,6 +1,6 @@
 module Unikernel {
   passive component Client {
-    sync input port start: serial
+    async input port start: serial
     output port http: serial
   }
 }
@@ -16,9 +16,10 @@ topology UnixHttpFetch {
   instance unikernel
 
   connections Start {
+    resolver_unix.stack -> stackv4v6.connect
     conduit_tcp.stack -> stackv4v6.connect
     cohttp_client.resolver -> resolver_unix.connect
     cohttp_client.conduit -> conduit_tcp.start
-    unikernel.http -> cohttp_client.connect
+    unikernel.http -> cohttp_client.ctx
   }
 }

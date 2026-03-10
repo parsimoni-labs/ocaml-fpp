@@ -393,12 +393,12 @@ module Mirage_block {
 
 passive component Block {
   import Mirage_block.S
-  sync input port connect: BlockUnixConnect
+  async input port connect: BlockUnixConnect
 }
 
 passive component Ramdisk {
   import Mirage_block.S
-  sync input port connect: BlockConnect
+  async input port connect: BlockConnect
 }
 
 passive component Ccm_block {
@@ -441,7 +441,7 @@ passive component Crunch {
 
 passive component Direct_kv_ro {
   import Mirage_kv.RO
-  sync input port connect: BlockConnect
+  async input port connect: BlockConnect
 }
 
 passive component Kv {
@@ -469,7 +469,7 @@ module Fat {
 
 passive component Direct_kv_rw {
   import Mirage_kv.RW
-  sync input port connect: BlockConnect
+  async input port connect: BlockConnect
 }
 
 passive component Kv_rw_mem {
@@ -479,7 +479,7 @@ passive component Kv_rw_mem {
 module Kv {
   passive component Make {
     import Mirage_kv.RW
-    sync input port connect: ChamelonConnect
+    async input port connect: ChamelonConnect
     output port block: serial
   }
 }
@@ -524,7 +524,7 @@ module Vnetif {
 
 passive component Netif {
   import Mirage_net.S
-  sync input port connect: NetifConnect
+  async input port connect: NetifConnect
   output port on_frame: serial
 }
 
@@ -638,7 +638,7 @@ module Tcpip {
 module Static_ipv4 {
   passive component Make {
     import Tcpip.Ip.S
-    sync input port connect: Ipv4Connect
+    async input port connect: Ipv4Connect
     output port eth: serial
     output port arp: serial
   }
@@ -647,7 +647,7 @@ module Static_ipv4 {
 module Ipv6 {
   passive component Make {
     import Tcpip.Ip.S
-    sync input port connect: Ipv6Connect
+    async input port connect: Ipv6Connect
     output port net: serial
     output port eth: serial
   }
@@ -656,7 +656,7 @@ module Ipv6 {
 module Tcpip_stack_direct {
   passive component IPV4V6 {
     import Tcpip.Ip.S
-    sync input port connect: IpConnect
+    async input port connect: IpConnect
     output port ipv4: serial
     output port ipv6: serial
   }
@@ -693,12 +693,12 @@ module Tcp {
 
 passive component Udpv4v6_socket {
   import Tcpip.Udp.S
-  sync input port connect: SocketConnect
+  async input port connect: SocketConnect
 }
 
 passive component Tcpv4v6_socket {
   import Tcpip.Tcp.S
-  sync input port connect: SocketConnect
+  async input port connect: SocketConnect
 }
 
 module Stackv4v6 {
@@ -730,7 +730,7 @@ module Conduit_mirage {
 module Conduit_tcp {
   passive component Make {
     import Conduit_mirage.S
-    sync input port start: serial
+    async input port start: serial
     output port stack: serial
   }
 }
@@ -749,7 +749,7 @@ module Happy_eyeballs_mirage {
 
   passive component Make {
     import Happy_eyeballs_mirage.S
-    sync input port connect_device: HappyEyeballsConnect
+    async input port connect_device: HappyEyeballsConnect
     output port stack: serial
   }
 }
@@ -767,7 +767,7 @@ module Dns_client_mirage {
 module Dns_resolver {
   passive component Make {
     import Dns_client_mirage.S
-    sync input port start: DnsClientConnect
+    async input port start: DnsClientConnect
     output port stack: serial
     output port happy_eyeballs: serial
   }
@@ -783,12 +783,15 @@ module Mimic {
     sync input port disconnect: Disconnect
     sync input port resolve: MimicResolve
   }
+}
 
+@ Mimic_happy_eyeballs wraps Happy Eyeballs into a Mimic context.
+@ The _stack dep is functor-only (not passed to connect at runtime).
+module Mimic_happy_eyeballs {
   passive component Make {
-    import Mimic.S
-    output port stack: serial
+    async input port connect: serial
+    output port _stack: serial
     output port happy_eyeballs: serial
-    output port dns: serial
   }
 }
 
@@ -805,7 +808,9 @@ module Cohttp_mirage {
     }
 
     passive component Make {
+      @ ocaml.sig Cohttp_mirage.Server.S
       import Cohttp_mirage.Server.S
+      sync input port listen: serial
       output port conduit: serial
     }
   }
@@ -818,7 +823,9 @@ module Cohttp_mirage {
     }
 
     passive component Make {
+      @ ocaml.sig Cohttp_lwt.S.Client
       import Cohttp_mirage.Client.S
+      sync input port ctx: serial
       output port resolver: serial
       output port conduit: serial
     }
@@ -832,9 +839,9 @@ module Paf_mirage {
     sync input port listen: HttpListen
   }
 
-  passive component Server {
+  passive component Make {
     import Paf_mirage.S
-    sync input port connect: HttpServerConnect
+    async input port init: HttpServerConnect
     output port tcp: serial
   }
 }
@@ -937,8 +944,11 @@ module Resolver_mirage {
   }
 }
 
-passive component Resolver_unix_system {
-  import Resolver_mirage.S
+module Resolver_unix {
+  passive component Make {
+    import Resolver_mirage.S
+    output port stack: serial
+  }
 }
 
 @ ══════════════════════════════════════════════════════
@@ -997,12 +1007,13 @@ instance tar_kv: Tar_mirage.Make_KV_RO base id 0
 instance fat_kv: Fat.KV_RO base id 0
 instance conduit_tcp: Conduit_tcp.Make base id 0
 instance conduit_tls: Conduit_mirage.TLS base id 0
-instance resolver_unix: Resolver_unix_system base id 0
+instance resolver_unix: Resolver_unix.Make base id 0
 instance cohttp_server: Cohttp_mirage.Server.Make base id 0
 instance cohttp_client: Cohttp_mirage.Client.Make base id 0
-instance paf_server: Paf_mirage.Server base id 0
+instance paf_server: Paf_mirage.Make base id 0
 instance happy_eyeballs_mirage: Happy_eyeballs_mirage.Make base id 0
 instance dns_client: Dns_resolver.Make base id 0
+instance mimic_happy_eyeballs: Mimic_happy_eyeballs.Make base id 0
 
 @ ══════════════════════════════════════════════════════
 @ Sub-topologies

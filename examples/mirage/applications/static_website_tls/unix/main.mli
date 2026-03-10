@@ -4,9 +4,13 @@
 module type Udpv4v6_socket = Tcpip.Udp.S
 module type Tcpv4v6_socket = Tcpip.Tcp.S
 module type Stackv4v6 = Tcpip.Stack.V4V6
+module type Conduit_tcp = Conduit_mirage.S
+module type Cohttp_server = Cohttp_mirage.Server.S
 module type Static_data = Mirage_kv.RO
 module type Tls_keys = Mirage_kv.RO
 module Stackv4v6 : Stackv4v6
+module Conduit_tcp : Conduit_tcp
+module Cohttp_server : Cohttp_server
 module Unikernel : sig end
 
 val connect : Stackv4v6.t Lwt.t Lazy.t

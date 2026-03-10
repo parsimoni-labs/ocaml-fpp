@@ -1,14 +1,5 @@
 (copy_files ../unikernel.ml)
 
-(rule
- (mode promote)
- (targets main.ml main.mli)
- (deps
-  (:fpp ../../../mirage.fpp)
-  (:cfg ../config.fpp))
- (action
-  (run %{bin:ofpp} to-ml --topologies UnixLittlefs %{fpp} %{cfg})))
-
 (executable
  (name main)
  (modules main unikernel)

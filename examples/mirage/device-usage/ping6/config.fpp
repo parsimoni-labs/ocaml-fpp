@@ -1,6 +1,6 @@
 module Unikernel {
   passive component Main {
-    sync input port start: serial
+    async input port start: serial
     output port net: serial
     output port eth: serial
     output port ipv6: serial

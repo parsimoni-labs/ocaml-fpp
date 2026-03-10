@@ -190,7 +190,7 @@ Simple topology (2 components, 1 connection)
   open Lwt.Syntax
   
   let data = lazy (
-    let* logger = Logger.data_in () in
+    let logger = Logger.data_in () in
     Sensor.connect logger)
 
 
@@ -233,7 +233,7 @@ Typed port topology
   open Lwt.Syntax
   
   let main = lazy (
-    let* consumer = Consumer.in_ () in
+    let consumer = Consumer.in_ () in
     Producer.connect consumer)
 
 
@@ -277,7 +277,7 @@ Filter by topology name
   open Lwt.Syntax
   
   let c = lazy (
-    let* b = B.in_ () in
+    let b = B.in_ () in
     A.connect b)
   let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
   let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs
@@ -361,7 +361,7 @@ SM + topology merged in one file (wrapped in named modules)
   open Lwt.Syntax
   
   let data = lazy (
-    let* logger = Logger.data_in () in
+    let logger = Logger.data_in () in
     Sensor.connect logger)
   end
 
@@ -456,9 +456,9 @@ Annotated topology (functor-application mode)
   open Lwt.Syntax
   
   let w = lazy (
-    let* net = Net.write () in
-    let* eth = Eth.write net in
-    Ipv4.cidr eth)
+    let net = Net.write () in
+    let eth = Eth.write net in
+    Lwt.return (Ipv4.cidr eth))
 
 
 
@@ -473,7 +473,7 @@ Bound leaf instance (qualified component path)
   open Lwt.Syntax
   
   let w = lazy (
-    let* kv = Kv.get () in
+    let kv = Kv.get () in
     Srv.connect kv)
 
 
@@ -516,7 +516,7 @@ External types in port declarations
   open Lwt.Syntax
   
   let c = lazy (
-    let* net = Net.write () in
+    let net = Net.write () in
     Eth.connect net)
 
 
@@ -549,7 +549,7 @@ Entry point generation (--topologies generates topology + entry point)
   open Lwt.Syntax
   
   let w = lazy (
-    let* kv = Kv.get () in
+    let kv = Kv.get () in
     Srv.connect kv)
   let mirage_runtime_delay__key = Mirage_runtime.register_arg @@ Mirage_runtime.delay
   let mirage_runtime_logs__key = Mirage_runtime.register_arg @@ Mirage_runtime.logs

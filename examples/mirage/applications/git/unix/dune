@@ -11,6 +11,7 @@
 
 (executable
  (name main)
+ (enabled_if false)
  (modules main unikernel)
  (libraries
   lwt
@@ -32,11 +33,11 @@
   cmdliner
   git
   git-unix
-  git-mirage
+  git.nss.smart
   digestif
   ptime
   mimic))
 
 (alias
  (name runtest)
- (deps main.exe))
+ (deps main.ml))

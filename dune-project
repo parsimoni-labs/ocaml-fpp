@@ -23,6 +23,8 @@
  (depends
   (ocaml
    (>= 4.14))
+  (dune
+   (>= 3.20))
   fmt
   jsont
   menhir
@@ -64,8 +66,8 @@
   (mirage-net-solo5 :with-test)
   (uri :with-test)
   (ipaddr :with-test)
-  (charrua :with-test)
-  (charrua-server :with-test)
+  (charrua (and (>= 3.0.0) :with-test))
+  (charrua-server (and (>= 3.0.0) :with-test))
   (ocaml-crunch :with-test)
   (dune-build-info :with-test)
   (chamelon :with-test)
